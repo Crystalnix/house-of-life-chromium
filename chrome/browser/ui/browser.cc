@@ -2141,6 +2141,8 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kWebKitAllowRunningInsecureContent, false);
   prefs->RegisterBooleanPref(prefs::kWebKitAllowDisplayingInsecureContent,
                              true);
+
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled, true);
 }
 
 // static

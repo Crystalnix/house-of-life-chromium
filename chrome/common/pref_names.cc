@@ -1376,4 +1376,6 @@ const char kIgnoredProtocolHandlers[] =
 // Whether user-specified handlers for protocols and content types can be
 // specified.
 const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
+
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
 }  // namespace prefs
