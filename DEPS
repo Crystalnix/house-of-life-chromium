@@ -4,7 +4,7 @@ vars = {
   "googlecode_url": "http://%s.googlecode.com/svn",
   "webkit_trunk": "http://svn.webkit.org/repository/webkit/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "85954",
+  "webkit_revision": "86018",
   "chromium_git": "http://git.chromium.org/git",
   "swig_revision": "69281",
   # These hashes need to be updated when nacl_revision is changed.
@@ -114,7 +114,7 @@ deps = {
     "/trunk/deps/page_cycler/acid3@19546",
 
   "src/third_party/bidichecker":
-    "http://bidichecker.googlecode.com/svn/trunk/lib@4",
+    (Var("googlecode_url") % "bidichecker") + "/trunk/lib@4",
 
   # We run these layout tests as UI tests. Since many of the buildbots that
   # run layout tests do NOT have access to the LayoutTest directory, we need
