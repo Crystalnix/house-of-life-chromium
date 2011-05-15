@@ -269,6 +269,9 @@
               'mac_bundle_resources!': [
                 'app/framework-Info.plist',
               ],
+              'xcode_framework_dirs': [
+                '../Sparkle/build/Release',
+              ],
               'dependencies': [
                 # Bring in pdfsqueeze and run it on all pdfs
                 '../build/temp_gyp/pdfsqueeze.gyp:pdfsqueeze',
@@ -277,6 +280,9 @@
                 # dependency here. flash_player.gyp will copy the Flash bundle
                 # into PRODUCT_DIR.
                 '../third_party/adobe/flash/flash_player.gyp:flash_player',
+              ],
+              'libraries': [
+                '../Sparkle/build/Release/Sparkle.framework',
               ],
               'rules': [
                 {
@@ -447,6 +453,14 @@
                     '-fhs',
                     'Versions/Current/Libraries',
                     '${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Libraries'
+                  ],
+                },
+                {
+                  'postbuild_name': 'Copy Sparkle.framework',
+                  'action': [
+                    'tools/build/mac/copy_framework_unversioned',
+                    '../Sparkle/build/Release/Sparkle.framework',
+                    '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
                   ],
                 },
               ],
