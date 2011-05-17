@@ -172,6 +172,9 @@
                 # Define the order of symbols within the framework.  This
                 # sets -order_file.
                 'ORDER_FILE': 'app/framework.order',
+                
+                # add Sparkle framework path
+                'FRAMEWORK_SEARCH_PATHS' : '../Sparkle/build/Release',
               },
               'sources': [
                 'app/chrome_command_ids.h',
@@ -268,9 +271,6 @@
               ],
               'mac_bundle_resources!': [
                 'app/framework-Info.plist',
-              ],
-              'xcode_framework_dirs': [
-                '../Sparkle/build/Release',
               ],
               'dependencies': [
                 # Bring in pdfsqueeze and run it on all pdfs

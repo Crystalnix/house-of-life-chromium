@@ -17,6 +17,8 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
+#include "SUUpdater.h"
+
 namespace platform_util {
 
 void ShowItemInFolder(const FilePath& full_path) {
@@ -230,4 +232,9 @@ bool CanSetAsDefaultBrowser() {
   return GetChannel() != CHANNEL_CANARY;
 }
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+  [[SUUpdater sharedUpdater] setAutomaticallyDownloadsUpdates: (useAutomaticUpdates ? YES : NO)];
+}
+  
 }  // namespace platform_util

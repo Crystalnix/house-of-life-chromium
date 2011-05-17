@@ -3730,6 +3730,7 @@
             '../third_party/GTM/AppKit',
             '../third_party/GTM/DebugUtils',
             '../third_party/GTM/Foundation',
+            '../Sparkle/build/Release/Sparkle.framework/Headers',
           ],
           'link_settings': {
             'libraries': [
@@ -3740,6 +3741,7 @@
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
               '$(SDKROOT)/System/Library/Frameworks/QuartzCore.framework',
               '$(SDKROOT)/System/Library/Frameworks/SecurityInterface.framework',
+              '../Sparkle/build/Release/Sparkle.framework',
             ],
             'mac_bundle_resources': [
               'browser/nacl_loader.sb',
