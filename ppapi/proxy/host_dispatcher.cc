@@ -6,8 +6,8 @@
 
 #include <map>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/proxy/host_var_serialization_rules.h"
@@ -90,10 +90,12 @@ HostDispatcher::~HostDispatcher() {
 }
 
 bool HostDispatcher::InitHostWithChannel(
-    ProxyChannel::Delegate* delegate,
+    Delegate* delegate,
     const IPC::ChannelHandle& channel_handle,
     bool is_client) {
-  return Dispatcher::InitWithChannel(delegate, channel_handle, is_client);
+  if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
+    return false;
+  return true;
 }
 
 // static
@@ -130,9 +132,9 @@ bool HostDispatcher::IsPlugin() const {
 }
 
 bool HostDispatcher::Send(IPC::Message* msg) {
-  GPU_TRACE_EVENT2("ppapi proxy", "HostDispatcher::Send",
-                   "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
-                   "Line", IPC_MESSAGE_ID_LINE(msg->type()));
+  TRACE_EVENT2("ppapi proxy", "HostDispatcher::Send",
+               "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg->type()));
   // Normal sync messages are set to unblock, which would normally cause the
   // plugin to be reentered to process them. We only want to do this when we
   // know the plugin is in a state to accept reentrancy. Since the plugin side
@@ -144,9 +146,9 @@ bool HostDispatcher::Send(IPC::Message* msg) {
 }
 
 bool HostDispatcher::OnMessageReceived(const IPC::Message& msg) {
-  GPU_TRACE_EVENT2("ppapi proxy", "HostDispatcher::OnMessageReceived",
-                   "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
-                   "Line", IPC_MESSAGE_ID_LINE(msg.type()));
+  TRACE_EVENT2("ppapi proxy", "HostDispatcher::OnMessageReceived",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   // We only want to allow reentrancy when the most recent message from the
   // plugin was a scripting message. We save the old state of the flag on the
   // stack in case we're (we are the host) being reentered ourselves. The flag
@@ -160,7 +162,7 @@ bool HostDispatcher::OnMessageReceived(const IPC::Message& msg) {
   if (Dispatcher::OnMessageReceived(msg))
     return true;
 
-  if (msg.routing_id() <= 0 && msg.routing_id() >= INTERFACE_ID_COUNT) {
+  if (msg.routing_id() <= 0 || msg.routing_id() >= INTERFACE_ID_COUNT) {
     NOTREACHED();
     // TODO(brettw): kill the plugin if it starts sending invalid messages?
     return true;

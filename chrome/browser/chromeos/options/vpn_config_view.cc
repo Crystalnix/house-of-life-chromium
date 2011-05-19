@@ -144,18 +144,13 @@ string16 VPNConfigView::GetTitle() {
 }
 
 bool VPNConfigView::CanLogin() {
-  static const size_t kMinPassphraseLen = 0;  // TODO(stevenjb): min length?
+  // TODO(stevenjb): min kMinPassphraseLen length?
   if (service_path_.empty() &&
       (GetService().empty() || GetServer().empty()))
-    return false;
-  if (provider_type_ == VirtualNetwork::PROVIDER_TYPE_L2TP_IPSEC_PSK &&
-      psk_passphrase_textfield_->text().length() < kMinPassphraseLen)
     return false;
   if (UserCertRequired() && GetUserCertID().empty())
     return false;
   if (GetUsername().empty())
-    return false;
-  if (user_passphrase_textfield_->text().length() < kMinPassphraseLen)
     return false;
   return true;
 }
@@ -388,7 +383,7 @@ void VPNConfigView::Init(VirtualNetwork* vpn) {
     server_text_ = NULL;
   } else {
     server_hostname_ = vpn->server_hostname();
-    server_text_ = new views::Label(ASCIIToWide(server_hostname_));
+    server_text_ = new views::Label(UTF8ToWide(server_hostname_));
     server_text_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
     layout->AddView(server_text_);
     server_textfield_ = NULL;

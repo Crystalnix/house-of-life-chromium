@@ -46,6 +46,8 @@ function FileManager(dialogDom, rootEntries, params) {
   // True if we should filter out files that start with a dot.
   this.filterFiles_ = true;
 
+  this.commands_ = {};
+
   this.document_ = dialogDom.ownerDocument;
   this.dialogType_ =
     this.params_.type || FileManager.DialogType.FULL_PAGE;
@@ -61,6 +63,7 @@ function FileManager(dialogDom, rootEntries, params) {
   this.addEventListener('selection-summarized',
                         this.onSelectionSummarized_.bind(this));
 
+  this.initCommands_();
   this.initDom_();
   this.initDialogType_();
 
@@ -93,6 +96,12 @@ FileManager.prototype = {
   const RIGHT_TRIANGLE = '\u25b8';
 
   /**
+   * The DirectoryEntry.fullPath value of the directory containing external
+   * storage volumes.
+   */
+  const MEDIA_DIRECTORY = '/media';
+
+  /**
    * Translated strings.
    */
   var localStrings;
@@ -115,8 +124,10 @@ FileManager.prototype = {
 
 
   const previewArt = {
+    'audio': 'images/filetype_large_audio.png',
+    'folder': 'images/filetype_large_folder.png',
     'unknown': 'images/filetype_large_generic.png',
-    'folder': 'images/filetype_large_folder.png'
+    'video': 'images/filetype_large_video.png'
   };
 
   /**
@@ -144,6 +155,39 @@ FileManager.prototype = {
    */
   function strf(id, var_args) {
     return localStrings.getStringF.apply(localStrings, arguments);
+  }
+
+
+  /**
+   * Checks if |parent_path| is parent file path of |child_path|.
+   *
+   * @param {string} parent_path The parent path.
+   * @param {string} child_path The child path.
+   */
+  function isParentPath(parent_path, child_path) {
+    if (!parent_path || parent_path.length == 0 ||
+        !child_path || child_path.length == 0)
+      return false;
+
+    if (parent_path[parent_path.length -1] != '/')
+      parent_path += '/';
+
+    if (child_path[child_path.length -1] != '/')
+      child_path += '/';
+
+    return child_path.indexOf(parent_path) == 0;
+  }
+
+  /**
+   * Returns parent folder path of file path.
+   *
+   * @param {string} path The file path.
+   */
+  function getParentPath(path) {
+    var parent = path.replace(/[\/]?[^\/]+[\/]?$/,'');
+    if (parent.length == 0)
+      parent = '/';
+    return parent;
   }
 
   /**
@@ -391,6 +435,28 @@ FileManager.prototype = {
   // Instance methods.
 
   /**
+   * One-time initialization of commands.
+   */
+  FileManager.prototype.initCommands_ = function() {
+    var commands = this.dialogDom_.querySelectorAll('command');
+    for (var i = 0; i < commands.length; i++) {
+      var command = commands[i];
+      cr.ui.Command.decorate(command);
+      this.commands_[command.id] = command;
+    }
+
+    this.fileContextMenu_ = this.dialogDom_.querySelector('.file-context-menu');
+    cr.ui.Menu.decorate(this.fileContextMenu_);
+
+    this.document_.addEventListener(
+        'canExecute', this.onRenameCanExecute_.bind(this));
+    this.document_.addEventListener(
+        'canExecute', this.onDeleteCanExecute_.bind(this));
+
+    this.document_.addEventListener('command', this.onCommand_.bind(this));
+  }
+
+  /**
    * One-time initialization of various DOM nodes.
    */
   FileManager.prototype.initDom_ = function() {
@@ -477,6 +543,45 @@ FileManager.prototype = {
     this.dialogDom_.style.opacity = '1';
   };
 
+  /**
+   * Force the canExecute events to be dispatched.
+   */
+  FileManager.prototype.updateCommands_ = function() {
+    this.commands_['rename'].canExecuteChange();
+    this.commands_['delete'].canExecuteChange();
+  };
+
+  /**
+   * Invoked to decide whether the "rename" command can be executed.
+   */
+  FileManager.prototype.onRenameCanExecute_ = function(event) {
+    event.canExecute =
+        (// Full page mode.
+         this.dialogType_ == FileManager.DialogType.FULL_PAGE &&
+         // Rename not in progress.
+         !this.renameInput_.currentEntry &&
+         // Not in root directory.
+         this.currentDirEntry_.fullPath != '/' &&
+         // Not in media directory.
+         this.currentDirEntry_.fullPath != MEDIA_DIRECTORY &&
+         // Only one file selected.
+         this.selection.totalCount == 1);
+  };
+
+  /**
+   * Invoked to decide whether the "delete" command can be executed.
+   */
+  FileManager.prototype.onDeleteCanExecute_ = function(event) {
+    event.canExecute =
+        (// Full page mode.
+         this.dialogType_ == FileManager.DialogType.FULL_PAGE &&
+         // Rename not in progress.
+         !this.renameInput_.currentEntry &&
+         // Not in root directory.
+         this.currentDirEntry_.fullPath != '/' &&
+         // Not in media directory.
+         this.currentDirEntry_.fullPath != MEDIA_DIRECTORY);
+  };
 
   FileManager.prototype.setListType = function(type) {
     if (type && type == this.listType_)
@@ -524,6 +629,14 @@ FileManager.prototype = {
         'dblclick', this.onDetailDoubleClick_.bind(this));
     this.grid_.selectionModel.addEventListener(
         'change', this.onDetailSelectionChanged_.bind(this));
+
+    if (this.dialogType_ == FileManager.DialogType.FULL_PAGE) {
+      cr.ui.contextMenuHandler.addContextMenuProperty(this.grid_);
+      this.grid_.contextMenu = this.fileContextMenu_;
+    }
+
+    this.grid_.addEventListener('mousedown',
+                                this.onGridMouseDown_.bind(this));
   };
 
   /**
@@ -554,6 +667,38 @@ FileManager.prototype = {
         'dblclick', this.onDetailDoubleClick_.bind(this));
     this.table_.selectionModel.addEventListener(
         'change', this.onDetailSelectionChanged_.bind(this));
+
+    if (this.dialogType_ == FileManager.DialogType.FULL_PAGE) {
+      cr.ui.contextMenuHandler.addContextMenuProperty(this.table_);
+      this.table_.contextMenu = this.fileContextMenu_;
+    }
+
+    this.table_.addEventListener('mousedown',
+                                 this.onTableMouseDown_.bind(this));
+  };
+
+  /**
+   * Respond to a command being executed.
+   */
+  FileManager.prototype.onCommand_ = function(event) {
+    switch (event.command.id) {
+      case 'rename':
+        var leadIndex = this.currentList_.selectionModel.leadIndex;
+        var li = this.currentList_.getListItemByIndex(leadIndex);
+        var label = li.querySelector('.filename-label');
+        if (!label) {
+          console.warn('Unable to find label for rename of index: ' +
+                       leadIndex);
+          return;
+        }
+
+        this.initiateRename_(label);
+        break;
+
+      case 'delete':
+        this.deleteEntries(this.selection.entries);
+        break;
+    }
   };
 
   /**
@@ -731,16 +876,18 @@ FileManager.prototype = {
     div.appendChild(img);
 
     div = this.document_.createElement('div');
-    div.className = 'text-container';
-    div.textContent = entry.name;
-    div.addEventListener('click', this.onThumbnailLabelClick_.bind(this));
+    div.className = 'filename-label';
+    var labelText = entry.name;
+    if (this.currentDirEntry_.name == '')
+      labelText = this.getLabelForRootPath_(labelText);
+
+    div.textContent = labelText;
     div.entry = entry;
 
     li.appendChild(div);
 
     cr.defineProperty(li, 'lead', cr.PropertyKind.BOOL_ATTR);
     cr.defineProperty(li, 'selected', cr.PropertyKind.BOOL_ATTR);
-
     return li;
   }
 
@@ -784,9 +931,7 @@ FileManager.prototype = {
   FileManager.prototype.renderName_ = function(entry, columnId, table) {
     var label = this.document_.createElement('div');
     label.entry = entry;
-    label.addEventListener('mousedown',
-                           this.onDetailLabelMouseDown_.bind(this));
-    label.className = 'detail-name';
+    label.className = 'filename-label';
     if (this.currentDirEntry_.name == '') {
       label.textContent = this.getLabelForRootPath_(entry.name);
     } else {
@@ -832,9 +977,17 @@ FileManager.prototype = {
 
     div.textContent = '...';
 
+    var self = this;
     cacheEntryDate(entry, function(entry) {
-      div.textContent = cr.locale.formatDate(entry.cachedMtime_,
-                                             str('LOCALE_FMT_DATE_SHORT'));
+      if (self.currentDirEntry_.fullPath == MEDIA_DIRECTORY &&
+          entry.cachedMtime_.getTime() == 0) {
+        // Mount points for FAT volumes have this time associated with them.
+        // We'd rather display nothing than this bogus date.
+        div.textContent = '---';
+      } else {
+        div.textContent = cr.locale.formatDate(entry.cachedMtime_,
+                                               str('LOCALE_FMT_DATE_SHORT'));
+      }
     });
 
     return div;
@@ -1001,6 +1154,10 @@ FileManager.prototype = {
           task.iconUrl =
               chrome.extension.getURL('images/icon_play_16x16.png');
           task.title = str('PLAY_MEDIA').replace("&", "");
+        } else if (task_parts[1] == 'enqueue') {
+          task.iconUrl =
+              chrome.extension.getURL('images/icon_add_to_queue_16x16.png');
+          task.title = str('ENQUEUE');
         }
       }
 
@@ -1031,7 +1188,11 @@ FileManager.prototype = {
         g_slideshow_data = this.selection.urls;
         chrome.tabs.create({url: "slideshow.html"});
       } else if (task_parts[1] == 'play') {
-        chrome.fileBrowserPrivate.viewFiles(this.selection.urls);
+        chrome.fileBrowserPrivate.viewFiles(this.selection.urls,
+            event.srcElement.task.taskId);
+      } else if (task_parts[1] == 'enqueue') {
+        chrome.fileBrowserPrivate.viewFiles(this.selection.urls,
+            event.srcElement.task.taskId);
       }
       return;
     }
@@ -1343,6 +1504,11 @@ FileManager.prototype = {
    * @param {Event} event The click event.
    */
   FileManager.prototype.onDetailDoubleClick_ = function(event) {
+    if (this.renameInput_.currentEntry) {
+      // Don't pay attention to double clicks during a rename.
+      return;
+    }
+
     var i = this.currentList_.selectionModel.leadIndex;
     var entry = this.dataModel_.item(i);
 
@@ -1365,6 +1531,10 @@ FileManager.prototype = {
                         this.currentDirEntry_.fullPath,
                         location.href);
     }
+
+    // New folder should never be enabled in the root directory.
+    this.newFolderButton_.disabled = this.currentDirEntry_.fullPath == '/';
+
     this.document_.title = this.currentDirEntry_.fullPath;
     this.rescanDirectory_();
   };
@@ -1375,8 +1545,15 @@ FileManager.prototype = {
    * @param {string} path The path that has been mounted or unmounted.
    */
   FileManager.prototype.onDiskChanged_ = function(event) {
-    // TODO(rginda): Please check and wire handling of other data passed here.
-    this.changeDirectory(event.volumeInfo.mountPath);
+    if (event.eventType == 'added') {
+      this.changeDirectory(event.volumeInfo.mountPath);
+    } else if (event.eventType == 'removed') {
+      if (this.currentDirEntry_ &&
+          isParentPath(event.volumeInfo.mountPath,
+                       this.currentDirEntry_.fullPath)) {
+        this.changeDirectory(getParentPath(event.volumeInfo.mountPath));
+      }
+    }
   };
 
   /**
@@ -1445,29 +1622,59 @@ FileManager.prototype = {
       opt_callback();
   };
 
-  FileManager.prototype.onThumbnailLabelClick_ = function(event) {
-    var label = event.srcElement;
-    var row = event.srcElement.parentNode;
+  FileManager.prototype.findListItem_ = function(event) {
+    var node = event.srcElement;
+    while (node) {
+      if (node.tagName == 'LI')
+        break;
+      node = node.parentNode;
+    }
 
-    if (!this.allowRenameClick_(label, row))
-      return;
-
-    this.initiateRename_(label);
-    event.preventDefault();
+    return node;
   };
 
-  FileManager.prototype.onDetailLabelMouseDown_ = function(event) {
-    var label = event.srcElement;
-    var row = event.srcElement.parentNode.parentNode;
+  FileManager.prototype.onGridMouseDown_ = function(event) {
+    this.updateCommands_();
 
-    if (!this.allowRenameClick_(label, row))
+    if (this.allowRenameClick_(event, event.srcElement.parentNode)) {
+      event.preventDefault();
+      this.initiateRename_(event.srcElement);
+    }
+
+    if (event.button != 1)
       return;
 
-    this.initiateRename_(label);
-    event.preventDefault();
+    var li = this.findListItem_(event);
+    if (!li)
+      return;
   };
 
-  FileManager.prototype.allowRenameClick_ = function(label, row) {
+  FileManager.prototype.onTableMouseDown_ = function(event) {
+    this.updateCommands_();
+
+    if (this.allowRenameClick_(event,
+                               event.srcElement.parentNode.parentNode)) {
+      event.preventDefault();
+      this.initiateRename_(event.srcElement);
+    }
+
+    if (event.button != 1)
+      return;
+
+    var li = this.findListItem_(event);
+    if (!li) {
+      console.log('li not found', event);
+      return;
+    }
+  };
+
+  /**
+   * Determine whether or not a click should initiate a rename.
+   *
+   * Renames can happen on mouse click if the user clicks on a label twice,
+   * at least a half second apart.
+   */
+  FileManager.prototype.allowRenameClick_ = function(event, row) {
     if (this.dialogType_ != FileManager.DialogType.FULL_PAGE ||
         this.currentDirEntry_.name == '') {
       // Renaming only enabled for full-page mode, outside of the root
@@ -1475,10 +1682,25 @@ FileManager.prototype = {
       return false;
     }
 
+    // Rename already in progress.
+    if (this.renameInput_.currentEntry)
+      return false;
+
+    // Didn't click on the label.
+    if (event.srcElement.className != 'filename-label')
+      return false;
+
+    // Wrong button or using a keyboard modifier.
+    if (event.button != 0 || event.shiftKey || event.metaKey || event.altKey) {
+      this.lastLabelClick_ = null;
+      return false;
+    }
+
     var now = new Date();
 
     this.lastLabelClick_ = this.lastLabelClick_ || now;
-    if (!row.selected || now - this.lastLabelClick_ < 300)
+    var delay = now - this.lastLabelClick_;
+    if (!row.selected || delay < 500)
       return false;
 
     this.lastLabelClick_ = now;
@@ -1556,7 +1778,7 @@ FileManager.prototype = {
     }
 
     function onError(err) {
-      window.alert(strf('IDS_FILE_BROWSER_ERROR_RENAMING', entry.name,
+      window.alert(strf('ERROR_RENAMING', entry.name,
                         util.getFileErrorMnemonic(err.code)));
     }
 
@@ -1753,7 +1975,7 @@ FileManager.prototype = {
 
     // In full screen mode, open all files for vieweing.
     if (this.dialogType_ == FileManager.DialogType.FULL_PAGE) {
-      chrome.fileBrowserPrivate.viewFiles(ary);
+      chrome.fileBrowserPrivate.viewFiles(ary, "default");
       // Window stays open.
       return;
     }

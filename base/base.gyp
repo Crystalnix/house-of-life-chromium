@@ -20,7 +20,7 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # i18n/rtl.cc uses gtk
             '../build/linux/system.gyp:gtk',
@@ -117,6 +117,7 @@
         'cpu_unittest.cc',
         'debug/leak_tracker_unittest.cc',
         'debug/stack_trace_unittest.cc',
+        'debug/trace_event_unittest.cc',
         'debug/trace_event_win_unittest.cc',
         'dir_reader_posix_unittest.cc',
         'environment_unittest.cc',
@@ -153,6 +154,7 @@
         'message_loop_proxy_impl_unittest.cc',
         'message_loop_unittest.cc',
         'message_pump_glib_unittest.cc',
+        'message_pump_libevent_unittest.cc',
         'metrics/field_trial_unittest.cc',
         'metrics/histogram_unittest.cc',
         'metrics/stats_table_unittest.cc',
@@ -184,6 +186,7 @@
         'sys_info_unittest.cc',
         'sys_string_conversions_mac_unittest.mm',
         'sys_string_conversions_unittest.cc',
+        'system_monitor/system_monitor_unittest.cc',
         'task_queue_unittest.cc',
         'task_unittest.cc',
         'template_util_unittest.cc',
@@ -232,7 +235,7 @@
         '../testing/gtest.gyp:gtest',
       ],
       'conditions': [
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['toolkit_uses_gtk==1', {
           'sources!': [
             'file_version_info_unittest.cc',
           ],
@@ -259,7 +262,7 @@
             '../build/linux/system.gyp:nss',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:xdisplaycheck',
           ],
-        }, {  # OS != "linux" and OS != "freebsd" and OS != "openbsd" and OS != "solaris"
+        }, {  # toolkit_uses_gtk!=1
           'sources!': [
             'message_pump_glib_unittest.cc',
           ]
@@ -274,13 +277,13 @@
             'dir_reader_posix_unittest.cc',
             'file_descriptor_shuffle_unittest.cc',
             'threading/worker_pool_posix_unittest.cc',
+            'message_pump_libevent_unittest.cc',
           ],
         }, {  # OS != "win"
           'sources/': [
             ['exclude', '^win/'],
           ],
           'sources!': [
-            'system_monitor_unittest.cc',
             'time_win_unittest.cc',
             'trace_event_win_unittest.cc',
             'win_util_unittest.cc',
@@ -302,7 +305,7 @@
         'base',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # test_suite initializes GTK.
             '../build/linux/system.gyp:gtk',
@@ -347,7 +350,7 @@
         ],
       },
       'conditions': [
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # Needed to handle the #include chain:
             #   base/test/perf_test_suite.h

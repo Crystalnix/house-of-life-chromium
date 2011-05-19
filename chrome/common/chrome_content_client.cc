@@ -12,6 +12,7 @@
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/render_messages.h"
 #include "content/common/pepper_plugin_registry.h"
 #include "remoting/client/plugin/pepper_entrypoints.h"
 
@@ -28,7 +29,19 @@ const char* kNaClPluginExtension = "nexe";
 const char* kNaClPluginDescription = "Native Client Executable";
 
 #if defined(ENABLE_REMOTING)
-const char* kRemotingPluginMimeType = "pepper-application/x-chromoting";
+const char* kRemotingViewerPluginName = "Remoting Viewer";
+const FilePath::CharType kRemotingViewerPluginPath[] =
+    FILE_PATH_LITERAL("internal-remoting-viewer");
+#if defined(GOOGLE_CHROME_BUILD)
+const char* kRemotingViewerPluginMimeType =
+    "application/vnd.google-chrome.remoting-viewer";
+#else // CHROMIUM_BUILD
+const char* kRemotingViewerPluginMimeType =
+    "application/vnd.chromium.remoting-viewer";
+#endif
+// TODO(wez): Remove the old MIME-type once client code no longer needs it.
+const char* kRemotingViewerPluginOldMimeType =
+    "pepper-application/x-chromoting";
 #endif
 
 const char* kFlashPluginName = "Shockwave Flash";
@@ -90,17 +103,24 @@ void ComputeBuiltInPlugins(std::vector<PepperPluginInfo>* plugins) {
     }
   }
 
-  // Remoting.
+  // The Remoting Viewer plugin is built-in, but behind a flag for now.
 #if defined(ENABLE_REMOTING)
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableRemoting)) {
     PepperPluginInfo info;
     info.is_internal = true;
-    info.path = FilePath(FILE_PATH_LITERAL("internal-chromoting"));
-    webkit::npapi::WebPluginMimeType remoting_mime_type(kRemotingPluginMimeType,
-                                                        std::string(),
-                                                        std::string());
+    info.name = kRemotingViewerPluginName;
+    info.path = FilePath(kRemotingViewerPluginPath);
+    webkit::npapi::WebPluginMimeType remoting_mime_type(
+        kRemotingViewerPluginMimeType,
+        std::string(),
+        std::string());
     info.mime_types.push_back(remoting_mime_type);
+    webkit::npapi::WebPluginMimeType old_remoting_mime_type(
+        kRemotingViewerPluginOldMimeType,
+        std::string(),
+        std::string());
+    info.mime_types.push_back(old_remoting_mime_type);
     info.internal_entry_points.get_interface = remoting::PPP_GetInterface;
     info.internal_entry_points.initialize_module =
         remoting::PPP_InitializeModule;
@@ -182,6 +202,32 @@ void ChromeContentClient::AddPepperPlugins(
   ComputeBuiltInPlugins(plugins);
   AddOutOfProcessFlash(plugins);
 #endif
+}
+
+bool ChromeContentClient::CanSendWhileSwappedOut(const IPC::Message* msg) {
+  // Any Chrome-specific messages that must be allowed to be sent from swapped
+  // out renderers.
+  switch (msg->type()) {
+    case ViewHostMsg_DomOperationResponse::ID:
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+bool ChromeContentClient::CanHandleWhileSwappedOut(
+    const IPC::Message& msg) {
+  // Any Chrome-specific messages (apart from those listed in
+  // CanSendWhileSwappedOut) that must be handled by the browser when sent from
+  // swapped out renderers.
+  switch (msg.type()) {
+    case ViewHostMsg_Snapshot::ID:
+      return true;
+    default:
+      break;
+  }
+  return false;
 }
 
 }  // namespace chrome

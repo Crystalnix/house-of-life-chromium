@@ -8,7 +8,10 @@
 #include "chrome/app/breakpad_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/character_encoding.h"
+#include "chrome/browser/chrome_plugin_message_filter.h"
 #include "chrome/browser/chrome_worker_message_filter.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/debugger/devtools_handler.h"
 #include "chrome/browser/desktop_notification_handler.h"
 #include "chrome/browser/extensions/extension_message_handler.h"
@@ -17,6 +20,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/printing_message_filter.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/renderer_host/chrome_render_message_filter.h"
 #include "chrome/browser/renderer_host/chrome_render_view_host_observer.h"
 #include "chrome/browser/renderer_host/text_input_client_message_filter.h"
@@ -25,16 +29,87 @@
 #include "chrome/browser/ui/webui/chrome_web_ui_factory.h"
 #include "chrome/common/child_process_logging.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
+#include "content/browser/browsing_instance.h"
+#include "content/browser/child_process_security_policy.h"
+#include "content/browser/plugin_process_host.h"
 #include "content/browser/renderer_host/browser_render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/resource_context.h"
+#include "content/browser/site_instance.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/worker_host/worker_process_host.h"
+#include "content/common/bindings_policy.h"
+#include "net/base/cookie_monster.h"
+#include "net/base/cookie_options.h"
+#include "net/base/static_cookie_policy.h"
 
 #if defined(OS_LINUX)
 #include "base/linux_util.h"
 #include "chrome/browser/crash_handler_host_linux.h"
 #endif  // OS_LINUX
+
+namespace {
+
+void InitRenderViewHostForExtensions(RenderViewHost* render_view_host) {
+  // Note that due to GetEffectiveURL(), even hosted apps will have a
+  // chrome-extension:// URL for their site, so we can ignore that wrinkle here.
+  SiteInstance* site_instance = render_view_host->site_instance();
+  const GURL& site = site_instance->site();
+  RenderProcessHost* process = render_view_host->process();
+
+  if (!site.SchemeIs(chrome::kExtensionScheme))
+    return;
+
+  Profile* profile = site_instance->browsing_instance()->profile();
+  ExtensionService* service = profile->GetExtensionService();
+  if (!service)
+    return;
+
+  ExtensionProcessManager* process_manager =
+      profile->GetExtensionProcessManager();
+  CHECK(process_manager);
+
+  // This can happen if somebody typos a chrome-extension:// URL.
+  const Extension* extension = service->GetExtensionByURL(site);
+  if (!extension)
+    return;
+
+  site_instance->GetProcess()->mark_is_extension_process();
+
+  // Register the association between extension and process with
+  // ExtensionProcessManager.
+  process_manager->RegisterExtensionProcess(extension->id(), process->id());
+
+  // Record which, if any, installed app is associated with this process.
+  // TODO(aa): Totally lame to store this state in a global map in extension
+  // service. Can we get it from EPM instead?
+  if (extension->is_app())
+    service->SetInstalledAppForRenderer(process->id(), extension);
+
+  // Some extensions use chrome:// URLs.
+  Extension::Type type = extension->GetType();
+  if (type == Extension::TYPE_EXTENSION ||
+      type == Extension::TYPE_PACKAGED_APP) {
+    ChildProcessSecurityPolicy::GetInstance()->GrantScheme(
+        process->id(), chrome::kChromeUIScheme);
+  }
+
+  // Enable extension bindings for the renderer. Currently only extensions,
+  // packaged apps, and hosted component apps use extension bindings.
+  if (type == Extension::TYPE_EXTENSION ||
+      type == Extension::TYPE_USER_SCRIPT ||
+      type == Extension::TYPE_PACKAGED_APP ||
+      (type == Extension::TYPE_HOSTED_APP &&
+       extension->location() == Extension::COMPONENT)) {
+    render_view_host->Send(new ExtensionMsg_ActivateExtension(extension->id()));
+    render_view_host->AllowBindings(BindingsPolicy::EXTENSION);
+  }
+}
+
+}
 
 namespace chrome {
 
@@ -44,24 +119,8 @@ void ChromeContentBrowserClient::RenderViewHostCreated(
   new DesktopNotificationHandler(render_view_host);
   new DevToolsHandler(render_view_host);
   new ExtensionMessageHandler(render_view_host);
-}
 
-void ChromeContentBrowserClient::PreCreateRenderView(
-    RenderViewHost* render_view_host,
-    Profile* profile,
-    const GURL& url) {
-  // Tell the RenderViewHost whether it will be used for an extension process.
-  ExtensionService* service = profile->GetExtensionService();
-  if (service) {
-    bool is_extension_process = service->ExtensionBindingsAllowed(url);
-    render_view_host->set_is_extension_process(is_extension_process);
-
-    const Extension* installed_app = service->GetInstalledApp(url);
-    if (installed_app) {
-      service->SetInstalledAppForRenderer(
-          render_view_host->process()->id(), installed_app);
-    }
-  }
+  InitRenderViewHostForExtensions(render_view_host);
 }
 
 void ChromeContentBrowserClient::BrowserRenderProcessHostCreated(
@@ -77,6 +136,11 @@ void ChromeContentBrowserClient::BrowserRenderProcessHostCreated(
 #if defined(OS_MACOSX)
   host->channel()->AddFilter(new TextInputClientMessageFilter(host->id()));
 #endif
+}
+
+void ChromeContentBrowserClient::PluginProcessHostCreated(
+    PluginProcessHost* host) {
+  host->AddFilter(new ChromePluginMessageFilter(host));
 }
 
 void ChromeContentBrowserClient::WorkerProcessHostCreated(
@@ -178,6 +242,98 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
 
 std::string ChromeContentBrowserClient::GetApplicationLocale() {
   return g_browser_process->GetApplicationLocale();
+}
+
+bool ChromeContentBrowserClient::AllowAppCache(
+    const GURL& manifest_url, const content::ResourceContext& context) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  ProfileIOData* io_data =
+      reinterpret_cast<ProfileIOData*>(context.GetUserData(NULL));
+  ContentSetting setting = io_data->GetHostContentSettingsMap()->
+      GetContentSetting(manifest_url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+  DCHECK(setting != CONTENT_SETTING_DEFAULT);
+  return setting != CONTENT_SETTING_BLOCK;
+}
+
+bool ChromeContentBrowserClient::AllowGetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const net::CookieList& cookie_list,
+    const content::ResourceContext& context,
+    int render_process_id,
+    int render_view_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  bool allow = true;
+  ProfileIOData* io_data =
+      reinterpret_cast<ProfileIOData*>(context.GetUserData(NULL));
+  if (io_data->GetHostContentSettingsMap()->BlockThirdPartyCookies()) {
+    bool strict = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kBlockReadingThirdPartyCookies);
+    net::StaticCookiePolicy policy(strict ?
+        net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES :
+        net::StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES);
+    int rv = policy.CanGetCookies(url, first_party);
+    DCHECK_NE(net::ERR_IO_PENDING, rv);
+    if (rv != net::OK)
+      allow = false;
+  }
+
+  if (allow) {
+    ContentSetting setting = io_data->GetHostContentSettingsMap()->
+        GetContentSetting(url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+    allow = setting == CONTENT_SETTING_ALLOW ||
+        setting == CONTENT_SETTING_SESSION_ONLY;
+  }
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      NewRunnableFunction(
+          &TabSpecificContentSettings::CookiesRead,
+          render_process_id, render_view_id, url, cookie_list, !allow));
+  return allow;
+}
+
+bool ChromeContentBrowserClient::AllowSetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const std::string& cookie_line,
+    const content::ResourceContext& context,
+    int render_process_id,
+    int render_view_id,
+    net::CookieOptions* options) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  bool allow = true;
+  ProfileIOData* io_data =
+      reinterpret_cast<ProfileIOData*>(context.GetUserData(NULL));
+  if (io_data->GetHostContentSettingsMap()->BlockThirdPartyCookies()) {
+    bool strict = CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kBlockReadingThirdPartyCookies);
+    net::StaticCookiePolicy policy(strict ?
+        net::StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES :
+        net::StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES);
+    int rv = policy.CanSetCookie(url, first_party, cookie_line);
+    if (rv != net::OK)
+      allow = false;
+  }
+
+  if (allow) {
+    ContentSetting setting = io_data->GetHostContentSettingsMap()->
+        GetContentSetting(url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+
+    if (setting == CONTENT_SETTING_SESSION_ONLY)
+      options->set_force_session();
+
+    allow = setting == CONTENT_SETTING_ALLOW ||
+        setting == CONTENT_SETTING_SESSION_ONLY;
+  }
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      NewRunnableFunction(
+          &TabSpecificContentSettings::CookieChanged,
+          render_process_id, render_view_id, url, cookie_line, *options,
+          !allow));
+  return allow;
 }
 
 #if defined(OS_LINUX)

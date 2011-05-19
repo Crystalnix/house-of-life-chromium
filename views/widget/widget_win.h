@@ -23,7 +23,6 @@
 #include "views/ime/input_method_delegate.h"
 #include "views/layout/layout_manager.h"
 #include "views/widget/native_widget.h"
-#include "views/widget/widget.h"
 
 namespace ui {
 class ViewProp;
@@ -44,8 +43,6 @@ class Window;
 namespace internal {
 class NativeWidgetDelegate;
 }
-
-RootView* GetRootViewForHWND(HWND hwnd);
 
 // A Windows message reflected from other windows. This message is sent
 // with the following arguments:
@@ -80,12 +77,11 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 //
 ///////////////////////////////////////////////////////////////////////////////
 class WidgetWin : public ui::WindowImpl,
-                  public Widget,
                   public NativeWidget,
                   public MessageLoopForUI::Observer,
                   public internal::InputMethodDelegate {
  public:
-  WidgetWin();
+  explicit WidgetWin(internal::NativeWidgetDelegate* delegate);
   virtual ~WidgetWin();
 
   // Returns true if we are on Windows Vista or greater and composition is
@@ -112,20 +108,6 @@ class WidgetWin : public ui::WindowImpl,
 
   // Clear a view that has recently been removed on a hierarchy change.
   void ClearAccessibilityViewEvent(View* view);
-
-  // Overridden from Widget:
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
-  virtual bool GetAccelerator(int cmd_id,
-                              ui::Accelerator* accelerator) OVERRIDE;
-  virtual Window* GetWindow() OVERRIDE;
-  virtual const Window* GetWindow() const OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add, View *parent,
-                                    View *child) OVERRIDE;
-  virtual void NotifyAccessibilityEvent(
-      View* view,
-      ui::AccessibilityTypes::Event event_type,
-      bool send_native_event);
 
   BOOL IsWindow() const {
     return ::IsWindow(GetNativeView());
@@ -183,24 +165,26 @@ class WidgetWin : public ui::WindowImpl,
     return ::GetClientRect(GetNativeView(), rect);
   }
 
-  // Resets the last move flag so that we can go around the optimization
-  // that disregards duplicate mouse moves when ending animation requires
-  // a new hit-test to do some highlighting as in TabStrip::RemoveTabAnimation
-  // to cause the close button to highlight.
-  void ResetLastMouseMoveFlag() {
-    last_mouse_event_was_move_ = false;
-  }
-
   // Overridden from NativeWidget:
   virtual void InitNativeWidget(const Widget::InitParams& params) OVERRIDE;
   virtual Widget* GetWidget() OVERRIDE;
+  virtual const Widget* GetWidget() const OVERRIDE;
+  virtual gfx::NativeView GetNativeView() const OVERRIDE;
+  virtual gfx::NativeWindow GetNativeWindow() const OVERRIDE;
+  virtual Window* GetContainingWindow() OVERRIDE;
+  virtual const Window* GetContainingWindow() const OVERRIDE;
+  virtual void ViewRemoved(View* view) OVERRIDE;
   virtual void SetNativeWindowProperty(const char* name, void* value) OVERRIDE;
   virtual void* GetNativeWindowProperty(const char* name) OVERRIDE;
   virtual TooltipManager* GetTooltipManager() const OVERRIDE;
   virtual bool IsScreenReaderActive() const OVERRIDE;
+  virtual void SendNativeAccessibilityEvent(
+      View* view,
+      ui::AccessibilityTypes::Event event_type) OVERRIDE;
   virtual void SetMouseCapture() OVERRIDE;
   virtual void ReleaseMouseCapture() OVERRIDE;
   virtual bool HasMouseCapture() const OVERRIDE;
+  virtual bool IsMouseButtonDown() const OVERRIDE;
   virtual InputMethod* GetInputMethodNative() OVERRIDE;
   virtual void ReplaceInputMethod(InputMethod* input_method) OVERRIDE;
   virtual gfx::Rect GetWindowScreenBounds() const OVERRIDE;
@@ -260,6 +244,7 @@ class WidgetWin : public ui::WindowImpl,
     MESSAGE_HANDLER_EX(WM_MOUSEACTIVATE, OnMouseActivate)
     MESSAGE_HANDLER_EX(WM_MOUSELEAVE, OnMouseRange)
     MESSAGE_HANDLER_EX(WM_NCMOUSELEAVE, OnMouseRange)
+    MESSAGE_HANDLER_EX(WM_SETCURSOR, OnSetCursor);
 
     // Key events.
     MESSAGE_HANDLER_EX(WM_KEYDOWN, OnKeyEvent)
@@ -374,6 +359,7 @@ class WidgetWin : public ui::WindowImpl,
   virtual void OnPaint(HDC dc);
   virtual LRESULT OnPowerBroadcast(DWORD power_event, DWORD data);
   virtual LRESULT OnReflectedMessage(UINT msg, WPARAM w_param, LPARAM l_param);
+  virtual LRESULT OnSetCursor(UINT message, WPARAM w_param, LPARAM l_param);
   virtual void OnSetFocus(HWND focused_window);
   virtual LRESULT OnSetIcon(UINT size_type, HICON new_icon);
   virtual LRESULT OnSetText(const wchar_t* text);
@@ -411,6 +397,8 @@ class WidgetWin : public ui::WindowImpl,
   // Are a subclass of WindowWin?
   bool is_window_;
 
+  const gfx::Rect& invalid_rect() const { return invalid_rect_; }
+
  private:
   typedef ScopedVector<ui::ViewProp> ViewProps;
 
@@ -443,6 +431,7 @@ class WidgetWin : public ui::WindowImpl,
   virtual void DispatchKeyEventPostIME(const KeyEvent& key) OVERRIDE;
 
   // A delegate implementation that handles events received here.
+  // See class documentation for Widget in widget.h for a note about ownership.
   internal::NativeWidgetDelegate* delegate_;
 
   // The following factory is used for calls to close the WidgetWin
@@ -473,16 +462,19 @@ class WidgetWin : public ui::WindowImpl,
   // window.
   scoped_ptr<gfx::CanvasSkia> layered_window_contents_;
 
-  // We must track the invalid rect for a layered window ourselves, since
-  // Windows will not do this properly with InvalidateRect()/GetUpdateRect().
-  // (In fact, it'll return misleading information from GetUpdateRect()).
-  gfx::Rect layered_window_invalid_rect_;
+  // We must track the invalid rect ourselves, for two reasons:
+  // For layered windows, Windows will not do this properly with
+  // InvalidateRect()/GetUpdateRect(). (In fact, it'll return misleading
+  // information from GetUpdateRect()).
+  // We also need to keep track of the invalid rectangle for the RootView should
+  // we need to paint the non-client area. The data supplied to WM_NCPAINT seems
+  // to be insufficient.
+  gfx::Rect invalid_rect_;
 
   // A factory that allows us to schedule a redraw for layered windows.
   ScopedRunnableMethodFactory<WidgetWin> paint_layered_window_factory_;
 
-  // Whether or not the window should delete itself when it is destroyed.
-  // Set this to false via its setter for stack allocated instances.
+  // See class documentation for Widget in widget.h for a note about ownership.
   bool delete_on_destroy_;
 
   // True if we are allowed to update the layered window from the DIB backing

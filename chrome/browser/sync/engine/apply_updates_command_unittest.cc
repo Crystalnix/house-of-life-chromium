@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/format_macros.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/browser/sync/engine/apply_updates_command.h"
 #include "chrome/browser/sync/engine/syncer.h"
 #include "chrome/browser/sync/engine/syncer_util.h"
@@ -338,6 +338,7 @@ TEST_F(ApplyUpdatesCommandTest, NigoriUpdate) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
@@ -382,6 +383,7 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
@@ -390,7 +392,7 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
     cryptographer =
         session()->context()->directory_manager()->GetCryptographer(&trans);
 
-    // With empty encrypted_types, this should be true.
+    // With default encrypted_types, this should be true.
     EXPECT_TRUE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
 
     Syncer::UnsyncedMetaHandles handles;
@@ -408,13 +410,13 @@ TEST_F(ApplyUpdatesCommandTest, EncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), id_factory_.root(),
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
 
@@ -478,6 +480,7 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
   // know it's safe.
   Cryptographer* cryptographer;
   syncable::ModelTypeSet encrypted_types;
+  encrypted_types.insert(syncable::PASSWORDS);
   {
     ScopedDirLookup dir(syncdb()->manager(), syncdb()->name());
     ASSERT_TRUE(dir.good());
@@ -486,7 +489,7 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
     cryptographer =
         session()->context()->directory_manager()->GetCryptographer(&trans);
 
-    // With empty encrypted_types, this should be true.
+    // With default encrypted_types, this should be true.
     EXPECT_TRUE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
 
     Syncer::UnsyncedMetaHandles handles;
@@ -504,13 +507,13 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
   size_t batch_s = 5;
   for (i = 0; i < batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), folder_id,
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
   // Next five items are children of the root.
   for (; i < 2*batch_s; ++i) {
     CreateUnsyncedItem(id_factory_.NewLocalId(), id_factory_.root(),
-                       StringPrintf("Item %"PRIuS"", i), false,
+                       base::StringPrintf("Item %"PRIuS"", i), false,
                        syncable::BOOKMARKS, NULL);
   }
 
@@ -566,6 +569,7 @@ TEST_F(ApplyUpdatesCommandTest, CannotEncryptUnsyncedChanges) {
     // changes.
     EXPECT_FALSE(VerifyUnsyncedChangesAreEncrypted(&trans, encrypted_types));
     encrypted_types.clear();
+    encrypted_types.insert(syncable::PASSWORDS);
     EXPECT_EQ(encrypted_types, GetEncryptedDataTypes(&trans));
 
     Syncer::UnsyncedMetaHandles handles;

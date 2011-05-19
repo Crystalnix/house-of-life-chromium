@@ -13,10 +13,6 @@
 
 class PrefService;
 
-namespace net {
-class URLRequestContextGetter;
-}
-
 namespace policy {
 
 class CloudPolicyCacheBase;
@@ -80,8 +76,7 @@ class CloudPolicySubsystem
   virtual void OnIPAddressChanged() OVERRIDE;
 
   // Initializes the subsystem.
-  void Initialize(PrefService* prefs,
-                  net::URLRequestContextGetter* request_context);
+  void Initialize(PrefService* prefs);
 
   // Shuts the subsystem down. This must be called before threading and network
   // infrastructure goes away.
@@ -120,6 +115,9 @@ class CloudPolicySubsystem
 
   // Tracks the pref value for the policy refresh rate.
   IntegerPrefMember policy_refresh_rate_;
+
+  // Weak reference to pass on to |cloud_policy_controller_| on creation.
+  CloudPolicyIdentityStrategy* identity_strategy_;
 
   // Cloud policy infrastructure stuff.
   scoped_ptr<PolicyNotifier> notifier_;

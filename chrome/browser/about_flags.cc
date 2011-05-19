@@ -130,6 +130,20 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableCrxlessWebApps)
   },
   {
+    "ignore-gpu-blacklist",
+    IDS_FLAGS_IGNORE_GPU_BLACKLIST_NAME,
+    IDS_FLAGS_IGNORE_GPU_BLACKLIST_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kIgnoreGpuBlacklist)
+  },
+  {
+    "force-compositing-mode",
+    IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME,
+    IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kForceCompositingMode)
+  },
+  {
     "composited-layer-borders",
     IDS_FLAGS_COMPOSITED_LAYER_BORDERS,
     IDS_FLAGS_COMPOSITED_LAYER_BORDERS_DESCRIPTION,
@@ -150,13 +164,17 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableAccelerated2dCanvas)
   },
+#if !defined(GOOGLE_CHROME_BUILD)
+  // Only expose this for Chromium builds where users may not have the PDF
+  // plugin. Do not give Google Chrome users the option to disable it here.
   {
     "print-preview",  // FLAGS:RECORD_UMA
     IDS_FLAGS_PRINT_PREVIEW_NAME,
     IDS_FLAGS_PRINT_PREVIEW_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux, // This switch is not available in CrOS.
+    kOsMac | kOsWin | kOsLinux,  // This switch is not available in CrOS.
     SINGLE_VALUE_TYPE(switches::kEnablePrintPreview)
   },
+#endif
   {
     "enable-nacl",  // FLAGS:RECORD_UMA
     IDS_FLAGS_ENABLE_NACL_NAME,
@@ -245,6 +263,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kFocusExistingTabOnOpen)
   },
   {
+    "compact-navigation",
+    IDS_FLAGS_ENABLE_COMPACT_NAVIGATION,
+    IDS_FLAGS_ENABLE_COMPACT_NAVIGATION_DESCRIPTION,
+    kOsWin,  // TODO(stevet): Add other platforms when ready.
+    SINGLE_VALUE_TYPE(switches::kEnableCompactNavigation)
+  },
+  {
     "new-tab-page-4",
     IDS_FLAGS_NEW_TAB_PAGE_4_NAME,
     IDS_FLAGS_NEW_TAB_PAGE_4_DESCRIPTION,
@@ -275,18 +300,6 @@ const Experiment kExperiments[] = {
   },
 #endif
   {
-    "enable-experimental-eap",
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_NAME,
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_DESCRIPTION,
-    kOsCrOS,
-#if defined(OS_CHROMEOS)
-    // The switch exists only on Chrome OS.
-    SINGLE_VALUE_TYPE(switches::kEnableExperimentalEap)
-#else
-    SINGLE_VALUE_TYPE("")
-#endif
-  },
-  {
     "enable-vpn",
     IDS_FLAGS_ENABLE_VPN_NAME,
     IDS_FLAGS_ENABLE_VPN_DESCRIPTION,
@@ -304,13 +317,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_MULTI_PROFILES_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kMultiProfiles)
-  },
-  {
-    "enable-history-quick-provider",
-    IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER,
-    IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableHistoryQuickProvider)
   },
   {
     "restrict-instant-to-search",
@@ -718,7 +724,7 @@ void FlagsState::reset() {
   flags_switches_.clear();
 }
 
-} // namespace
+}  // namespace
 
 namespace testing {
 

@@ -491,7 +491,7 @@ FirstRunBubble* FirstRunBubble::Show(Profile* profile,
   bubble->set_view(view);
   bubble->InitBubble(
       parent, position_relative_to, arrow_location, view, bubble);
-  bubble->GetFocusManager()->AddFocusChangeListener(view);
+  bubble->GetWidget()->GetFocusManager()->AddFocusChangeListener(view);
   view->BubbleShown();
   return bubble;
 }
@@ -504,11 +504,20 @@ FirstRunBubble::FirstRunBubble()
 
 FirstRunBubble::~FirstRunBubble() {
   enable_window_method_factory_.RevokeAll();
-  GetFocusManager()->RemoveFocusChangeListener(view_);
+  GetWidget()->GetFocusManager()->RemoveFocusChangeListener(view_);
 }
 
 void FirstRunBubble::EnableParent() {
   ::EnableWindow(GetParent(), true);
+  // The EnableWindow() call above causes the parent to become active, which
+  // resets the flag set by Bubble's call to DisableInactiveRendering(), so we
+  // have to call it again before activating the bubble to prevent the parent
+  // window from rendering inactive.
+  // TODO(beng): this only works in custom-frame mode, not glass-frame mode.
+  views::NativeWidget* parent =
+      views::NativeWidget::GetNativeWidgetForNativeView(GetParent());
+  if (parent)
+    parent->GetWidget()->GetContainingWindow()->DisableInactiveRendering();
   // Reactivate the FirstRunBubble so it responds to OnActivate messages.
   SetWindowPos(GetParent(), 0, 0, 0, 0,
                SWP_NOSIZE | SWP_NOMOVE | SWP_NOREDRAW | SWP_SHOWWINDOW);

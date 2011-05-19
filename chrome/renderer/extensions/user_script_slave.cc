@@ -12,7 +12,7 @@
 #include "base/pickle.h"
 #include "base/shared_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
@@ -180,8 +180,9 @@ void UserScriptSlave::InsertInitExtensionCode(
   DCHECK(sources);
   bool incognito = ChromeRenderProcessObserver::is_incognito_process();
   sources->insert(sources->begin(), WebScriptSource(WebString::fromUTF8(
-      StringPrintf(kInitExtension, extension_id.c_str(),
-                   incognito ? "true" : "false"))));
+      base::StringPrintf(kInitExtension,
+                         extension_id.c_str(),
+                         incognito ? "true" : "false"))));
 }
 
 void UserScriptSlave::InjectScripts(WebFrame* frame,

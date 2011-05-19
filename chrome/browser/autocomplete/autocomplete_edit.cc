@@ -261,17 +261,17 @@ bool AutocompleteEditModel::UseVerbatimInstant() {
   // TODO(suzhe): Fix Mac port to display Instant suggest in a separated NSView,
   // so that we can display instant suggest along with composition text.
   const AutocompleteInput& input = autocomplete_controller_->input();
-  if (input.initial_prevent_inline_autocomplete())
+  if (input.prevent_inline_autocomplete())
     return true;
 #endif
 
-  // The value of input.initial_prevent_inline_autocomplete() is determined by
+  // The value of input.prevent_inline_autocomplete() is determined by
   // following conditions:
   // 1. If the caret is at the end of the text (checked below).
   // 2. If it's in IME composition mode.
   // As we use a separated widget for displaying the instant suggest, it won't
   // interfere with IME composition, so we don't need to care about the value of
-  // input.initial_prevent_inline_autocomplete() here.
+  // input.prevent_inline_autocomplete() here.
   if (view_->DeleteAtEndPressed() || (popup_->selected_line() != 0) ||
       just_deleted_text_)
     return true;
@@ -411,8 +411,8 @@ bool AutocompleteEditModel::CanPasteAndGo(const string16& text) const {
   if (!view_->GetCommandUpdater()->IsCommandEnabled(IDC_OPEN_CURRENT_URL))
     return false;
 
-  profile_->GetAutocompleteClassifier()->Classify(text, string16(), false,
-      &paste_and_go_match_, &paste_and_go_alternate_nav_url_);
+  profile_->GetAutocompleteClassifier()->Classify(text, string16(),
+      false, false, &paste_and_go_match_, &paste_and_go_alternate_nav_url_);
   return paste_and_go_match_.destination_url.is_valid();
 }
 
@@ -934,8 +934,8 @@ void AutocompleteEditModel::GetInfoForCurrentText(
     InfoForCurrentSelection(match, alternate_nav_url);
   } else {
     profile_->GetAutocompleteClassifier()->Classify(
-        UserTextFromDisplayText(view_->GetText()), GetDesiredTLD(), true,
-        match, alternate_nav_url);
+        UserTextFromDisplayText(view_->GetText()), GetDesiredTLD(),
+        KeywordIsSelected(), true, match, alternate_nav_url);
   }
 }
 

@@ -8,14 +8,17 @@
 
 #include "base/process_util.h"
 #include "base/rand_util.h"
+#include "base/stringprintf.h"
 #include "content/common/child_process.h"
 #include "content/ppapi_plugin/broker_process_dispatcher.h"
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
+#include "content/ppapi_plugin/ppapi_webkit_thread.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppp.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "webkit/plugins/ppapi/webkit_forwarding_impl.h"
 
 #if defined(OS_WIN)
 #include "sandbox/src/sandbox.h"
@@ -78,6 +81,23 @@ base::WaitableEvent* PpapiThread::GetShutdownEvent() {
 
 std::set<PP_Instance>* PpapiThread::GetGloballySeenInstanceIDSet() {
   return &globally_seen_instance_ids_;
+}
+
+ppapi::WebKitForwarding* PpapiThread::GetWebKitForwarding() {
+  if (!webkit_forwarding_.get())
+    webkit_forwarding_.reset(new webkit::ppapi::WebKitForwardingImpl);
+  return webkit_forwarding_.get();
+}
+
+void PpapiThread::PostToWebKitThread(const tracked_objects::Location& from_here,
+                                     const base::Closure& task) {
+  if (!webkit_thread_.get())
+    webkit_thread_.reset(new PpapiWebKitThread);
+  webkit_thread_->PostTask(from_here, task);
+}
+
+bool PpapiThread::SendToBrowser(IPC::Message* msg) {
+  return Send(msg);
 }
 
 void PpapiThread::OnMsgLoadPlugin(const FilePath& path) {
@@ -171,11 +191,12 @@ bool PpapiThread::SetupRendererChannel(base::ProcessHandle host_process_handle,
   bool init_result = false;
   if (is_broker_) {
     BrokerProcessDispatcher* broker_dispatcher =
-      new BrokerProcessDispatcher(host_process_handle, connect_instance_func_);
-      init_result = broker_dispatcher->InitBrokerWithChannel(this,
-                                                             plugin_handle,
-                                                             false);
-      dispatcher = broker_dispatcher;
+        new BrokerProcessDispatcher(host_process_handle,
+                                    connect_instance_func_);
+    init_result = broker_dispatcher->InitBrokerWithChannel(this,
+                                                           plugin_handle,
+                                                           false);
+    dispatcher = broker_dispatcher;
   } else {
     PluginProcessDispatcher* plugin_dispatcher =
         new PluginProcessDispatcher(host_process_handle, get_plugin_interface_);

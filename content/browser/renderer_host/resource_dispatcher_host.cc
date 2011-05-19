@@ -40,6 +40,7 @@
 #include "content/browser/cert_store.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/chrome_blob_storage_context.h"
+#include "content/browser/content_browser_client.h"
 #include "content/browser/cross_site_request_manager.h"
 #include "content/browser/in_process_webkit/webkit_thread.h"
 #include "content/browser/plugin_service.h"
@@ -67,12 +68,14 @@
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
+#include "net/base/registry_controlled_domain.h"
 #include "net/base/request_priority.h"
 #include "net/base/ssl_cert_request_info.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_job_factory.h"
 #include "webkit/appcache/appcache_interceptor.h"
 #include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/blob/blob_storage_controller.h"
@@ -235,6 +238,32 @@ void RemoveDownloadFileFromChildSecurityPolicy(int child_id,
 #pragma warning(default: 4748)
 #endif
 
+// Relationship of resource being authenticated with the top level page.
+enum HttpAuthResourceType {
+  HTTP_AUTH_RESOURCE_TOP,              // Top-level page itself
+  HTTP_AUTH_RESOURCE_SAME_DOMAIN,      // Sub-content from same domain
+  HTTP_AUTH_RESOURCE_BLOCKED_CROSS,    // Blocked Sub-content from cross domain
+  HTTP_AUTH_RESOURCE_ALLOWED_CROSS,    // Allowed Sub-content per command line
+  HTTP_AUTH_RESOURCE_LAST
+};
+
+HttpAuthResourceType HttpAuthResourceTypeOf(net::URLRequest* request) {
+  // Use the same critera as for cookies to determine the sub-resource type
+  // that is requesting to be authenticated.
+  if (!request->first_party_for_cookies().is_valid())
+    return HTTP_AUTH_RESOURCE_TOP;
+
+  if (net::RegistryControlledDomainService::SameDomainOrHost(
+          request->first_party_for_cookies(), request->url()))
+    return HTTP_AUTH_RESOURCE_SAME_DOMAIN;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kAllowCrossOriginAuthPrompt))
+    return HTTP_AUTH_RESOURCE_ALLOWED_CROSS;
+
+  return HTTP_AUTH_RESOURCE_BLOCKED_CROSS;
+}
+
 }  // namespace
 
 ResourceDispatcherHost::ResourceDispatcherHost(
@@ -308,14 +337,18 @@ void ResourceDispatcherHost::OnShutdown() {
   }
 }
 
-bool ResourceDispatcherHost::HandleExternalProtocol(int request_id,
-                                                    int child_id,
-                                                    int route_id,
-                                                    const GURL& url,
-                                                    ResourceType::Type type,
-                                                    ResourceHandler* handler) {
-  if (!ResourceType::IsFrame(type) || net::URLRequest::IsHandledURL(url))
+bool ResourceDispatcherHost::HandleExternalProtocol(
+    int request_id,
+    int child_id,
+    int route_id,
+    const GURL& url,
+    ResourceType::Type type,
+    const net::URLRequestJobFactory& job_factory,
+    ResourceHandler* handler) {
+  if (!ResourceType::IsFrame(type) ||
+      job_factory.IsHandledURL(url)) {
     return false;
+  }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -344,7 +377,7 @@ bool ResourceDispatcherHost::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_FollowRedirect, OnFollowRedirect)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SwapOut_ACK, OnSwapOutACK)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -453,9 +486,7 @@ void ResourceDispatcherHost::BeginRequest(
         filter_, request_data.url, sync_result, this);
   } else {
     handler = new AsyncResourceHandler(
-        filter_, route_id, request_data.url,
-        resource_context.host_zoom_map(),
-        resource_context.host_content_settings_map(),
+        filter_, route_id, request_data.url, resource_context.host_zoom_map(),
         this);
   }
 
@@ -465,6 +496,7 @@ void ResourceDispatcherHost::BeginRequest(
 
   if (HandleExternalProtocol(request_id, child_id, route_id,
                              request_data.url, request_data.resource_type,
+                             *resource_context.request_context()->job_factory(),
                              handler)) {
     return;
   }
@@ -567,7 +599,8 @@ void ResourceDispatcherHost::BeginRequest(
           upload_size,
           false,  // is download
           ResourceType::IsFrame(request_data.resource_type),  // allow_download
-          request_data.has_user_gesture);
+          request_data.has_user_gesture,
+          &resource_context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
   chrome_browser_net::SetOriginPIDForRequest(
       request_data.origin_pid, request);
@@ -691,13 +724,17 @@ void ResourceDispatcherHost::OnFollowRedirect(
 ResourceHandler* ResourceDispatcherHost::CreateSafeBrowsingResourceHandler(
     ResourceHandler* handler, int child_id, int route_id,
     ResourceType::Type resource_type) {
-  return new SafeBrowsingResourceHandler(
+  return SafeBrowsingResourceHandler::Create(
       handler, child_id, route_id, resource_type, safe_browsing_, this);
 }
 
 ResourceDispatcherHostRequestInfo*
 ResourceDispatcherHost::CreateRequestInfoForBrowserRequest(
-    ResourceHandler* handler, int child_id, int route_id, bool download) {
+    ResourceHandler* handler,
+    int child_id,
+    int route_id,
+    bool download,
+    const content::ResourceContext& context) {
   return new ResourceDispatcherHostRequestInfo(handler,
                                                ChildProcessInfo::RENDER_PROCESS,
                                                child_id,
@@ -707,33 +744,27 @@ ResourceDispatcherHost::CreateRequestInfoForBrowserRequest(
                                                0,         // upload_size
                                                download,  // is_download
                                                download,  // allow_download
-                                               false);    // has_user_gesture
+                                               false,     // has_user_gesture
+                                               &context);
 }
 
-void ResourceDispatcherHost::OnClosePageACK(
-    const ViewMsg_ClosePage_Params& params) {
-  if (params.for_cross_site_transition) {
-    // Closes for cross-site transitions are handled such that the cross-site
-    // transition continues.
-    GlobalRequestID global_id(params.new_render_process_host_id,
-                              params.new_request_id);
-    PendingRequestList::iterator i = pending_requests_.find(global_id);
-    if (i != pending_requests_.end()) {
-      // The response we were meant to resume could have already been canceled.
-      ResourceDispatcherHostRequestInfo* info = InfoForRequest(i->second);
-      if (info->cross_site_handler())
-        info->cross_site_handler()->ResumeResponse();
-    }
-  } else {
-    // This is a tab close, so we will close the tab in OnClosePageACK.
-    DCHECK(params.new_render_process_host_id == -1);
-    DCHECK(params.new_request_id == -1);
+void ResourceDispatcherHost::OnSwapOutACK(
+    const ViewMsg_SwapOut_Params& params) {
+  // Closes for cross-site transitions are handled such that the cross-site
+  // transition continues.
+  GlobalRequestID global_id(params.new_render_process_host_id,
+                            params.new_request_id);
+  PendingRequestList::iterator i = pending_requests_.find(global_id);
+  if (i != pending_requests_.end()) {
+    // The response we were meant to resume could have already been canceled.
+    ResourceDispatcherHostRequestInfo* info = InfoForRequest(i->second);
+    if (info->cross_site_handler())
+      info->cross_site_handler()->ResumeResponse();
   }
   // Update the RenderViewHost's internal state after the ACK.
   CallRenderViewHost(params.closing_process_id,
                      params.closing_route_id,
-                     &RenderViewHost::OnClosePageACK,
-                     params.for_cross_site_transition);
+                     &RenderViewHost::OnSwapOutACK);
 }
 
 // We are explicitly forcing the download of 'url'.
@@ -744,7 +775,7 @@ void ResourceDispatcherHost::BeginDownload(
     bool prompt_for_save_location,
     int child_id,
     int route_id,
-    net::URLRequestContext* request_context) {
+    const content::ResourceContext& context) {
   if (is_shutdown_)
     return;
 
@@ -781,7 +812,9 @@ void ResourceDispatcherHost::BeginDownload(
                                                 ResourceType::MAIN_FRAME);
   }
 
-  if (!net::URLRequest::IsHandledURL(url)) {
+  const net::URLRequestContext* request_context = context.request_context();
+
+  if (!request_context->job_factory()->IsHandledURL(url)) {
     VLOG(1) << "Download request for unsupported protocol: "
             << url.possibly_invalid_spec();
     return;
@@ -789,12 +822,13 @@ void ResourceDispatcherHost::BeginDownload(
 
   request->set_method("GET");
   request->set_referrer(MaybeStripReferrer(referrer).spec());
-  request->set_context(request_context);
+  request->set_context(context.request_context());
   request->set_load_flags(request->load_flags() |
       net::LOAD_IS_DOWNLOAD);
 
   ResourceDispatcherHostRequestInfo* extra_info =
-      CreateRequestInfoForBrowserRequest(handler, child_id, route_id, true);
+      CreateRequestInfoForBrowserRequest(
+          handler, child_id, route_id, true, context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
 
   BeginRequestInternal(request);
@@ -806,7 +840,7 @@ void ResourceDispatcherHost::BeginSaveFile(
     const GURL& referrer,
     int child_id,
     int route_id,
-    net::URLRequestContext* request_context) {
+    const content::ResourceContext& context) {
   if (is_shutdown_)
     return;
 
@@ -817,7 +851,9 @@ void ResourceDispatcherHost::BeginSaveFile(
                                   save_file_manager_.get()));
   request_id_--;
 
-  bool known_proto = net::URLRequest::IsHandledURL(url);
+  const net::URLRequestContext* request_context = context.request_context();
+  bool known_proto =
+      request_context->job_factory()->IsHandledURL(url);
   if (!known_proto) {
     // Since any URLs which have non-standard scheme have been filtered
     // by save manager(see GURL::SchemeIsStandard). This situation
@@ -832,11 +868,12 @@ void ResourceDispatcherHost::BeginSaveFile(
   // So far, for saving page, we need fetch content from cache, in the
   // future, maybe we can use a configuration to configure this behavior.
   request->set_load_flags(net::LOAD_PREFERRING_CACHE);
-  request->set_context(request_context);
+  request->set_context(context.request_context());
 
   // Since we're just saving some resources we need, disallow downloading.
   ResourceDispatcherHostRequestInfo* extra_info =
-      CreateRequestInfoForBrowserRequest(handler, child_id, route_id, false);
+      CreateRequestInfoForBrowserRequest(
+          handler, child_id, route_id, false, context);
   SetRequestInfo(request, extra_info);  // Request takes ownership.
 
   BeginRequestInternal(request);
@@ -1068,7 +1105,9 @@ void ResourceDispatcherHost::OnReceivedRedirect(net::URLRequest* request,
 
   if (HandleExternalProtocol(info->request_id(), info->child_id(),
                              info->route_id(), new_url,
-                             info->resource_type(), info->resource_handler())) {
+                             info->resource_type(),
+                             *request->context()->job_factory(),
+                             info->resource_handler())) {
     // The request is complete so we can remove it.
     RemovePendingRequest(info->child_id(), info->request_id());
     return;
@@ -1089,6 +1128,23 @@ void ResourceDispatcherHost::OnAuthRequired(
     request->CancelAuth();
     return;
   }
+
+  // Prevent third-party content from prompting for login, unless it is
+  // a proxy that is trying to authenticate.  This is often the foundation
+  // of a scam to extract credentials for another domain from the user.
+  if (!auth_info->is_proxy) {
+    HttpAuthResourceType resource_type = HttpAuthResourceTypeOf(request);
+    UMA_HISTOGRAM_ENUMERATION("Net.HttpAuthResource",
+                              resource_type,
+                              HTTP_AUTH_RESOURCE_LAST);
+
+    if (resource_type == HTTP_AUTH_RESOURCE_BLOCKED_CROSS) {
+      request->CancelAuth();
+      return;
+    }
+  }
+
+
   // Create a login dialog on the UI thread to get authentication data,
   // or pull from cache and continue on the IO thread.
   // TODO(mpcomplete): We should block the parent tab while waiting for
@@ -1128,52 +1184,49 @@ void ResourceDispatcherHost::OnSSLCertificateError(
   SSLManager::OnSSLCertificateError(this, request, cert_error, cert);
 }
 
-void ResourceDispatcherHost::OnGetCookies(
-    net::URLRequest* request,
-    bool blocked_by_policy) {
+bool ResourceDispatcherHost::CanGetCookies(net::URLRequest* request) {
   VLOG(1) << "OnGetCookies: " << request->url().spec();
-
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
-    return;
+    return false;
 
   net::URLRequestContext* context = request->context();
-
   net::CookieMonster* cookie_monster =
       context->cookie_store()->GetCookieMonster();
   net::CookieList cookie_list =
       cookie_monster->GetAllCookiesForURL(request->url());
-  CallRenderViewHostContentSettingsDelegate(
-      render_process_id, render_view_id,
-      &RenderViewHostDelegate::ContentSettings::OnCookiesRead,
-      request->url(), cookie_list, blocked_by_policy);
+  ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
+
+  return content::GetContentClient()->browser()->AllowGetCookie(
+      request->url(), request->first_party_for_cookies(), cookie_list,
+      *info->context(), render_process_id, render_view_id);
 }
 
-void ResourceDispatcherHost::OnSetCookie(net::URLRequest* request,
-                                         const std::string& cookie_line,
-                                         const net::CookieOptions& options,
-                                         bool blocked_by_policy) {
+bool ResourceDispatcherHost::CanSetCookie(net::URLRequest* request,
+                                          const std::string& cookie_line,
+                                          net::CookieOptions* options) {
   VLOG(1) << "OnSetCookie: " << request->url().spec();
 
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
-    return;
+    return false;
 
-  CallRenderViewHostContentSettingsDelegate(
-      render_process_id, render_view_id,
-      &RenderViewHostDelegate::ContentSettings::OnCookieChanged,
-      request->url(), cookie_line, options, blocked_by_policy);
+  ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
+  return content::GetContentClient()->browser()->AllowSetCookie(
+      request->url(), request->first_party_for_cookies(), cookie_line,
+      *info->context(), render_process_id, render_view_id, options);
 }
 
 void ResourceDispatcherHost::OnResponseStarted(net::URLRequest* request) {
   VLOG(1) << "OnResponseStarted: " << request->url().spec();
   ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
-  if (PauseRequestIfNeeded(info)) {
-    VLOG(1) << "OnResponseStarted pausing: " << request->url().spec();
-    return;
-  }
 
   if (request->status().is_success()) {
+    if (PauseRequestIfNeeded(info)) {
+      VLOG(1) << "OnResponseStarted pausing: " << request->url().spec();
+      return;
+    }
+
     // We want to send a final upload progress message prior to sending
     // the response complete message even if we're waiting for an ack to
     // to a previous upload progress message.
@@ -1475,6 +1528,15 @@ void ResourceDispatcherHost::OnReadCompleted(net::URLRequest* request,
   VLOG(1) << "OnReadCompleted: " << request->url().spec();
   ResourceDispatcherHostRequestInfo* info = InfoForRequest(request);
 
+  // bytes_read == -1 always implies an error, so we want to skip the
+  // pause checks and just call OnResponseCompleted.
+  if (bytes_read == -1) {
+    DCHECK(!request->status().is_success());
+
+    OnResponseCompleted(request);
+    return;
+  }
+
   // OnReadCompleted can be called without Read (e.g., for chrome:// URLs).
   // Make sure we know that a read has begun.
   info->set_has_started_reading(true);
@@ -1566,7 +1628,6 @@ void ResourceDispatcherHost::OnResponseCompleted(net::URLRequest* request) {
   if (info->resource_handler()->OnResponseCompleted(info->request_id(),
                                                     request->status(),
                                                     security_info)) {
-    NotifyResponseCompleted(request, info->child_id());
 
     // The request is complete so we can remove it.
     RemovePendingRequest(info->child_id(), info->request_id());
@@ -1623,14 +1684,6 @@ bool ResourceDispatcherHost::RenderViewForRequest(
   return true;
 }
 
-void ResourceDispatcherHost::AddObserver(Observer* obs) {
-  observer_list_.AddObserver(obs);
-}
-
-void ResourceDispatcherHost::RemoveObserver(Observer* obs) {
-  observer_list_.RemoveObserver(obs);
-}
-
 net::URLRequest* ResourceDispatcherHost::GetURLRequest(
     const GlobalRequestID& request_id) const {
   // This should be running in the IO loop.
@@ -1654,8 +1707,6 @@ static int GetCertID(net::URLRequest* request, int child_id) {
 void ResourceDispatcherHost::NotifyResponseStarted(net::URLRequest* request,
                                                    int child_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_, OnRequestStarted(this, request));
 
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
@@ -1672,20 +1723,9 @@ void ResourceDispatcherHost::NotifyResponseStarted(net::URLRequest* request,
           render_process_id, render_view_id, detail));
 }
 
-void ResourceDispatcherHost::NotifyResponseCompleted(net::URLRequest* request,
-                                                     int child_id) {
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnResponseCompleted(this, request));
-}
-
 void ResourceDispatcherHost::NotifyReceivedRedirect(net::URLRequest* request,
                                                     int child_id,
                                                     const GURL& new_url) {
-  // Notify the observers on the IO thread.
-  FOR_EACH_OBSERVER(Observer, observer_list_,
-                    OnReceivedRedirect(this, request, new_url));
-
   int render_process_id, render_view_id;
   if (!RenderViewForRequest(request, &render_process_id, &render_view_id))
     return;

@@ -183,6 +183,7 @@ using WebKit::WebFormControlElement;
 using WebKit::WebFormElement;
 using WebKit::WebFrame;
 using WebKit::WebHistoryItem;
+using WebKit::WebIconURL;
 using WebKit::WebImage;
 using WebKit::WebInputElement;
 using WebKit::WebMediaPlayer;
@@ -297,6 +298,16 @@ static bool WebAccessibilityNotificationToViewHostMsg(
       return false;
   }
   return true;
+}
+
+// If |data_source| is non-null and has a NavigationState associated with it,
+// the AltErrorPageResourceFetcher is reset.
+static void StopAltErrorPageFetcher(WebDataSource* data_source) {
+  if (data_source) {
+    NavigationState* state = NavigationState::FromDataSource(data_source);
+    if (state)
+      state->set_alt_error_page_fetcher(NULL);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -530,11 +541,10 @@ WebPlugin* RenderView::CreatePluginNoCheck(WebFrame* frame,
                                            const WebPluginParams& params) {
   webkit::npapi::WebPluginInfo info;
   bool found;
-  int content_setting;
   std::string mime_type;
   Send(new ViewHostMsg_GetPluginInfo(
       routing_id_, params.url, frame->top()->url(), params.mimeType.utf8(),
-      &found, &info, &content_setting, &mime_type));
+      &found, &info, &mime_type));
   if (!found || !webkit::npapi::IsPluginEnabled(info))
     return NULL;
 
@@ -632,6 +642,7 @@ bool RenderView::OnMessageReceived(const IPC::Message& message) {
                         OnEnumerateDirectoryResponse)
     IPC_MESSAGE_HANDLER(ViewMsg_RunFileChooserResponse, OnFileChooserResponse)
     IPC_MESSAGE_HANDLER(ViewMsg_ShouldClose, OnShouldClose)
+    IPC_MESSAGE_HANDLER(ViewMsg_SwapOut, OnSwapOut)
     IPC_MESSAGE_HANDLER(ViewMsg_ClosePage, OnClosePage)
     IPC_MESSAGE_HANDLER(ViewMsg_ThemeChanged, OnThemeChanged)
     IPC_MESSAGE_HANDLER(ViewMsg_DisassociateFromPopupCount,
@@ -684,6 +695,10 @@ bool RenderView::OnMessageReceived(const IPC::Message& message) {
 void RenderView::OnNavigate(const ViewMsg_Navigate_Params& params) {
   if (!webview())
     return;
+
+  // Swap this renderer back in if necessary.
+  if (is_swapped_out_)
+    SetSwappedOut(false);
 
   history_list_offset_ = params.current_history_list_offset;
   history_list_length_ = params.current_history_list_length;
@@ -788,8 +803,15 @@ void RenderView::OnNavigate(const ViewMsg_Navigate_Params& params) {
 
 // Stop loading the current page
 void RenderView::OnStop() {
-  if (webview())
-    webview()->mainFrame()->stopLoading();
+  if (webview()) {
+    WebFrame* main_frame = webview()->mainFrame();
+    // Stop the alt error page fetcher. If we let it continue it may complete
+    // and cause RenderViewHostManager to swap to this RenderView, even though
+    // it may no longer be active.
+    StopAltErrorPageFetcher(main_frame->provisionalDataSource());
+    StopAltErrorPageFetcher(main_frame->dataSource());
+    main_frame->stopLoading();
+  }
 }
 
 // Reload current focused frame.
@@ -1564,6 +1586,12 @@ bool RenderView::runModalPromptDialog(
 
 bool RenderView::runModalBeforeUnloadDialog(
     WebFrame* frame, const WebString& message) {
+  // If we are swapping out, we have already run the beforeunload handler.
+  // TODO(creis): Fix OnSwapOut to clear the frame without running beforeunload
+  // at all, to avoid running it twice.
+  if (is_swapped_out_)
+    return true;
+
   bool success = false;
   // This is an ignored return value, but is included so we can accept the same
   // response as RunJavaScriptMessage.
@@ -1926,6 +1954,12 @@ void RenderView::loadURLExternally(
 WebNavigationPolicy RenderView::decidePolicyForNavigation(
     WebFrame* frame, const WebURLRequest& request, WebNavigationType type,
     const WebNode&, WebNavigationPolicy default_policy, bool is_redirect) {
+  // TODO(creis): Remove this when we fix OnSwapOut to not need a navigation.
+  if (is_swapped_out_) {
+    DCHECK(request.url() == GURL("about:swappedout"));
+    return default_policy;
+  }
+
   // Webkit is asking whether to navigate to a new URL.
   // This is fine normally, except if we're showing UI from one security
   // context and they're trying to navigate to a different context.
@@ -2437,8 +2471,9 @@ void RenderView::didReceiveTitle(WebFrame* frame, const WebString& title,
   UpdateEncoding(frame, frame->view()->pageEncoding().utf8());
 }
 
-void RenderView::didChangeIcons(WebFrame* frame) {
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, DidChangeIcons(frame));
+void RenderView::didChangeIcon(WebFrame* frame, WebIconURL::Type type) {
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_,
+                    DidChangeIcon(frame, type));
 }
 
 void RenderView::didFinishDocumentLoad(WebFrame* frame) {
@@ -3510,7 +3545,38 @@ void RenderView::OnShouldClose() {
   Send(new ViewHostMsg_ShouldClose_ACK(routing_id_, should_close));
 }
 
-void RenderView::OnClosePage(const ViewMsg_ClosePage_Params& params) {
+void RenderView::OnSwapOut(const ViewMsg_SwapOut_Params& params) {
+  if (is_swapped_out_)
+    return;
+
+  // Swap this RenderView out so the tab can navigate to a page rendered by a
+  // different process.  This involves running the unload handler and clearing
+  // the page.  Once WasSwappedOut is called, we also allow this process to exit
+  // if there are no other active RenderViews in it.
+
+  // Send an UpdateState message before we get swapped out.
+  SyncNavigationState();
+
+  // Synchronously run the unload handler before sending the ACK.
+  webview()->dispatchUnloadEvent();
+
+  // Swap out and stop sending any IPC messages that are not ACKs.
+  SetSwappedOut(true);
+
+  // Replace the page with a blank dummy URL.  The unload handler will not be
+  // run a second time, thanks to a check in FrameLoader::stopLoading.
+  // TODO(creis): Need to add a better way to do this that avoids running the
+  // beforeunload handler.  For now, we just run it a second time silently.
+  webview()->mainFrame()->loadHTMLString(std::string(),
+                                         GURL("about:swappedout"),
+                                         GURL("about:swappedout"),
+                                         false);
+
+  // Just echo back the params in the ACK.
+  Send(new ViewHostMsg_SwapOut_ACK(routing_id_, params));
+}
+
+void RenderView::OnClosePage() {
   // TODO(creis): We'd rather use webview()->Close() here, but that currently
   // sets the WebView's delegate_ to NULL, preventing any JavaScript dialogs
   // in the onunload handler from appearing.  For now, we're bypassing that and
@@ -3520,8 +3586,7 @@ void RenderView::OnClosePage(const ViewMsg_ClosePage_Params& params) {
   // http://b/issue?id=753080.
   webview()->dispatchUnloadEvent();
 
-  // Just echo back the params in the ACK.
-  Send(new ViewHostMsg_ClosePage_ACK(routing_id_, params));
+  Send(new ViewHostMsg_ClosePage_ACK(routing_id_));
 }
 
 void RenderView::OnThemeChanged() {
@@ -3646,6 +3711,14 @@ void RenderView::DidFlushPaint() {
       navigation_state->set_first_paint_after_load_time(now);
     }
   }
+}
+
+void RenderView::OnViewContextSwapBuffersComplete() {
+  RenderWidget::OnSwapBuffersComplete();
+}
+
+void RenderView::OnViewContextSwapBuffersAborted() {
+  RenderWidget::OnSwapBuffersAborted();
 }
 
 webkit::ppapi::PluginInstance* RenderView::GetBitmapForOptimizedPluginPaint(
@@ -3836,6 +3909,15 @@ void RenderView::OnWasRestored(bool needs_repainting) {
     (*plugin_it)->SetContainerVisibility(true);
   }
 #endif  // OS_MACOSX
+}
+
+bool RenderView::SupportsAsynchronousSwapBuffers() {
+  WebKit::WebGraphicsContext3D* context = webview()->graphicsContext3D();
+  if (!context)
+    return false;
+  std::string extensions(context->getRequestableExtensionsCHROMIUM().utf8());
+  return extensions.find("GL_CHROMIUM_swapbuffers_complete_callback") !=
+      std::string::npos;
 }
 
 void RenderView::OnSetFocus(bool enable) {

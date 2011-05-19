@@ -10,7 +10,7 @@
 #define CONTENT_RENDERER_RENDERER_GL_CONTEXT_H_
 #pragma once
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -231,6 +231,7 @@ class RendererGLContext : public base::SupportsWeakPtr<RendererGLContext> {
   gpu::gles2::GLES2Implementation* gles2_implementation_;
   gfx::Size size_;
   Error last_error_;
+  int frame_number_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererGLContext);
 };

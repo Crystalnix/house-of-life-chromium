@@ -94,7 +94,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 89
+#   For your editing convenience: highest ID currently used: 87
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -478,7 +478,7 @@
       'type': 'string',
       'supported_on': ['chrome.win:11-', 'chrome.mac:11-'],
       'features': {'dynamic_refresh': 0},
-      'example_value': '${user_home}\Chrome',
+      'example_value': '${user_home}/Chrome',
       'id': 63,
       'caption': '''Set user data directory''',
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for storing user data.
@@ -491,7 +491,7 @@
       'type': 'string',
       'supported_on': ['chrome.*:11-'],
       'features': {'dynamic_refresh': 1},
-      'example_value': '${user_home}\Chrome',
+      'example_value': '${user_home}/Downloads',
       'id': 64,
       'caption': '''Set download directory''',
       'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will use for downloading files.
@@ -799,76 +799,6 @@
 
           Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. Extensions that are blacklisted in 'ExtensionInstallBlacklist' and not whitelisted, cannot be force-installed by this policy.''',
           'label': '''Extension IDs and update URLs to be silently installed''',
-        },
-      ],
-    },
-    {
-      'name': 'Chromoting',
-      'type': 'group',
-      'caption': '''Remote access''',
-      'desc': '''Configure remote access in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevent users from changing it.
-
-      Enabling these features requires that the Chromoting application be installed.''',
-      'policies': [
-        {
-          'name': 'ChromotingEnabled',
-          'type': 'main',
-          'supported_on': ['chrome.*:13-', 'chrome_os:0.13-'],
-          'features': {'dynamic_refresh': 1},
-          'example_value': True,
-          'id': 87,
-          'caption': '''Enable remote access.''',
-          'desc': '''Enables basic remote access features from within <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>, which includes the ability to access other machines that have been shared with the current user.
-
-          Note that enabling this setting has no effect unless the Chromoting application has been installed.
-
-          If this setting is enabled, then users can access other machines that have been shared with them.
-
-          If this setting is disabled, then all remote access features are disabled, even if the Chromoting application has been installed.
-
-          If this setting is not configured, then the value of this setting depends on whether or not there is a group policy in place. If there is a group policy, then this option defaults to being disabled. If there is no group policy, then this option defaults to being enabled.
-
-          If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
-        },
-        {
-          'name': 'ChromotingHostEnabled',
-          'type': 'main',
-          'supported_on': ['chrome.*:13-', 'chrome_os:0.13-'],
-          'features': {'dynamic_refresh': 1},
-          'example_value': True,
-          'id': 88,
-          'caption': '''Enable sharing of this machine for remote access.''',
-          'desc': '''Enables the option to share this machine so that it can be accessed from another machine running <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
-
-          Note that enabling this setting has no effect unless the Chromoting application has been installed and the ChromotingEnabled setting is enabled.
-
-          If this setting is enabled, then users have the option to share their machine to allow remote access from another machine.
-
-          If this setting is disabled, then users cannot share their machine for remote access. Note that they will still be able to access other remote machines if the ChromotingEnabled setting is enabled.
-
-          If this setting is not configured, then the value of this setting depends on whether or not there is a group policy in place. If there is a group policy, then this option defaults to being disabled. If there is no group policy, then this option defaults to being enabled.
-
-          If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
-        },
-        {
-          'name': 'ChromotingHostFirewallTraversal',
-          'type': 'main',
-          'supported_on': ['chrome.*:13-', 'chrome_os:0.13-'],
-          'features': {'dynamic_refresh': 1},
-          'example_value': True,
-          'id': 89,
-          'caption': '''Enable access to this machine through a firewall.''',
-          'desc': '''If the machine is being shared as a host, then this enables the ability for viewers to discover and connect to this machine, even the two machines are separated by a firewall.
-
-          Note that enabling this setting has no effect unless the Chromoting application has been installed, the ChromotingEnabled and ChromotingHostEnabled settings have been enabled.
-
-          If this setting is enabled, then remote viewers can discover and connect to this machine even if they are separated by a firewall.
-
-          If this setting is disabled, then only machines within the local network (i.e., not separated by a firewall) are allowed to connect to this machine.
-
-          If this setting is not configured, then the value of this setting depends on whether or not there is a group policy in place. If there is a group policy, then this option defaults to being disabled. If there is no group policy, then this option defaults to being enabled.
-
-          If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.''',
         },
       ],
     },
@@ -1579,6 +1509,19 @@
       If you disable this setting, whenever the user perfoms an action which would provoke a file selection dialog (like importing bookmarks, uploading files, saving links, etc.) a message is displayed instead and the user is assumed to have clicked Cancel on the file selection dialog.
 
       If this setting is not set, users can open file selection dialogs as normal.''',
+    },
+    {
+      'name': 'GCFUserDataDir',
+      'type': 'string',
+      'supported_on': ['chrome_frame:12-'],
+      'features': {'dynamic_refresh': 0},
+      'example_value': '${user_home}/Chrome Frame',
+      'id': 87,
+      'caption': '''Set <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> user data directory''',
+      'desc': '''Configures the directory that <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use for storing user data.
+
+      If you set this policy, <ph name="PRODUCT_NAME">$3<ex>Google Chrome Frame</ex></ph> will use the provided directory.''',
+      'label': '''Set user data directory''',
     },
   ],
   'messages': {

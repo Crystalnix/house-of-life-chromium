@@ -493,6 +493,7 @@
         'controls/single_split_view_unittest.cc',
         'controls/tabbed_pane/tabbed_pane_unittest.cc',
         'controls/table/table_view_unittest.cc',
+        'controls/combobox/native_combobox_views_unittest.cc',
         'controls/textfield/native_textfield_views_unittest.cc',
         'controls/textfield/textfield_views_model_unittest.cc',
         'events/event_unittest.cc',
@@ -600,8 +601,10 @@
         'examples/throbber_example.h',
         'examples/widget_example.cc',
         'examples/widget_example.h',
-
+        'test/test_views_delegate.cc',
+        'test/test_views_delegate.h',
         '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
       ],
       'conditions': [
         ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {

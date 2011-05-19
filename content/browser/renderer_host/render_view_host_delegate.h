@@ -13,9 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/process_util.h"
 #include "base/string16.h"
-#include "chrome/common/content_settings_types.h"
-#include "chrome/common/view_types.h"
-#include "content/common/dom_storage_common.h"
+#include "content/common/view_types.h"
 #include "content/common/window_container_type.h"
 #include "ipc/ipc_channel.h"
 #include "net/base/load_states.h"
@@ -39,8 +37,6 @@ class RenderViewHost;
 class ResourceRedirectDetails;
 class ResourceRequestDetails;
 class SkBitmap;
-class SSLClientAuthHandler;
-class SSLAddCertHandler;
 class TabContents;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_FrameNavigate_Params;
@@ -239,66 +235,6 @@ class RenderViewHostDelegate : public IPC::Channel::Listener {
     virtual ~RendererManagement() {}
   };
 
-  // ContentSettings------------------------------------------------------------
-  // Interface for content settings related events.
-
-  class ContentSettings {
-   public:
-    // Called when content in the current page was blocked due to the user's
-    // content settings.
-    virtual void OnContentBlocked(ContentSettingsType type,
-                                  const std::string& resource_identifier) = 0;
-
-    // Called when cookies for the given URL were read either from within the
-    // current page or while loading it. |blocked_by_policy| should be true, if
-    // reading cookies was blocked due to the user's content settings. In that
-    // case, this function should invoke OnContentBlocked.
-    virtual void OnCookiesRead(
-        const GURL& url,
-        const net::CookieList& cookie_list,
-        bool blocked_by_policy) = 0;
-
-    // Called when a specific cookie in the current page was changed.
-    // |blocked_by_policy| should be true, if the cookie was blocked due to the
-    // user's content settings. In that case, this function should invoke
-    // OnContentBlocked.
-    virtual void OnCookieChanged(const GURL& url,
-                                 const std::string& cookie_line,
-                                 const net::CookieOptions& options,
-                                 bool blocked_by_policy) = 0;
-
-    // Called when a specific indexed db factory in the current page was
-    // accessed. If access was blocked due to the user's content settings,
-    // |blocked_by_policy| should be true, and this function should invoke
-    // OnContentBlocked.
-    virtual void OnIndexedDBAccessed(const GURL& url,
-                                     const string16& description,
-                                     bool blocked_by_policy) = 0;
-
-    // Called when a specific local storage area in the current page was
-    // accessed. If access was blocked due to the user's content settings,
-    // |blocked_by_policy| should be true, and this function should invoke
-    // OnContentBlocked.
-    virtual void OnLocalStorageAccessed(const GURL& url,
-                                        DOMStorageType storage_type,
-                                        bool blocked_by_policy) = 0;
-
-    // Called when a specific appcache in the current page was accessed. If
-    // access was blocked due to the user's content settings,
-    // |blocked_by_policy| should eb true, and this function should invoke
-    // OnContentBlocked.
-    virtual void OnAppCacheAccessed(const GURL& manifest_url,
-                                    bool blocked_by_policy) = 0;
-
-    // Called when geolocation permission was set in a frame on the current
-    // page.
-    virtual void OnGeolocationPermissionSet(const GURL& requesting_frame,
-                                            bool allowed) = 0;
-
-   protected:
-    virtual ~ContentSettings() {}
-  };
-
   // BookmarkDrag --------------------------------------------------------------
   // Interface for forwarding bookmark drag and drop to extenstions.
 
@@ -313,57 +249,14 @@ class RenderViewHostDelegate : public IPC::Channel::Listener {
     virtual ~BookmarkDrag() {}
   };
 
-  // SSL -----------------------------------------------------------------------
-  // Interface for UI and other RenderViewHost-specific interactions with SSL.
-
-  class SSL {
-   public:
-    // Displays a dialog to select client certificates from |request_info|,
-    // returning them to |handler|.
-    virtual void ShowClientCertificateRequestDialog(
-        scoped_refptr<SSLClientAuthHandler> handler) = 0;
-
-    // Called when |handler| encounters an error in verifying a
-    // received client certificate. Note that, because CAs often will
-    // not send us intermediate certificates, the verification we can
-    // do is minimal: we verify the certificate is parseable, that we
-    // have the corresponding private key, and that the certificate
-    // has not expired.
-    virtual void OnVerifyClientCertificateError(
-        scoped_refptr<SSLAddCertHandler> handler, int error_code) = 0;
-
-    // Called when |handler| requests the user's confirmation in adding a
-    // client certificate.
-    virtual void AskToAddClientCertificate(
-        scoped_refptr<SSLAddCertHandler> handler) = 0;
-
-    // Called when |handler| successfully adds a client certificate.
-    virtual void OnAddClientCertificateSuccess(
-        scoped_refptr<SSLAddCertHandler> handler) = 0;
-
-    // Called when |handler| encounters an error adding a client certificate.
-    virtual void OnAddClientCertificateError(
-        scoped_refptr<SSLAddCertHandler> handler, int error_code) = 0;
-
-    // Called when |handler| has completed, so the delegate may release any
-    // state accumulated.
-    virtual void OnAddClientCertificateFinished(
-        scoped_refptr<SSLAddCertHandler> handler) = 0;
-
-   protected:
-    virtual ~SSL() {}
-  };
-
   // ---------------------------------------------------------------------------
 
   // Returns the current delegate associated with a feature. May return NULL if
   // there is no corresponding delegate.
   virtual View* GetViewDelegate();
   virtual RendererManagement* GetRendererManagementDelegate();
-  virtual ContentSettings* GetContentSettingsDelegate();
 
   virtual BookmarkDrag* GetBookmarkDragDelegate();
-  virtual SSL* GetSSLDelegate();
 
   // IPC::Channel::Listener implementation.
   // This is used to give the delegate a chance to filter IPC messages.
@@ -374,7 +267,7 @@ class RenderViewHostDelegate : public IPC::Channel::Listener {
 
   // Return this object cast to a TabContents, if it is one. If the object is
   // not a TabContents, returns NULL. DEPRECATED: Be sure to include brettw and
-  // jam as reviewers before you use this method.
+  // jam as reviewers before you use this method. http://crbug.com/82582
   virtual TabContents* GetAsTabContents();
 
   // Return this object cast to a BackgroundContents, if it is one. If the
@@ -468,22 +361,17 @@ class RenderViewHostDelegate : public IPC::Channel::Listener {
                               const GURL& referrer,
                               WindowOpenDisposition disposition) {}
 
-  // A message for external host. By default we ignore such messages.
-  // |receiver| can be a receiving script and |message| is any
-  // arbitrary string that makes sense to the receiver.
-  virtual void ProcessExternalHostMessage(const std::string& message,
-                                          const std::string& origin,
-                                          const std::string& target) {}
-
   // A javascript message, confirmation or prompt should be shown.
-  virtual void RunJavaScriptMessage(const std::wstring& message,
+  virtual void RunJavaScriptMessage(const RenderViewHost* rvh,
+                                    const std::wstring& message,
                                     const std::wstring& default_prompt,
                                     const GURL& frame_url,
                                     const int flags,
                                     IPC::Message* reply_msg,
                                     bool* did_suppress_message) {}
 
-  virtual void RunBeforeUnloadConfirm(const std::wstring& message,
+  virtual void RunBeforeUnloadConfirm(const RenderViewHost* rvh,
+                                      const std::wstring& message,
                                       IPC::Message* reply_msg) {}
 
   // |url| is assigned to a server that can provide alternate error pages.  If

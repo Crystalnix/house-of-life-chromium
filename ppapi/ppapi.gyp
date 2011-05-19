@@ -2,6 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# This is the "public" ppapi.gyp file, which must have dependencies on the
+# redistributable portions of PPAPI only. This prevents circular dependencies
+# in the .gyp files (since ppapi_internal depends on parts of Chrome).
+
 {
   'variables': {
     'chromium_code': 1,  # Use higher warning level.
@@ -26,7 +30,5 @@
   'includes': [
     'ppapi_cpp.gypi',
     'ppapi_gl.gypi',
-    'ppapi_shared_proxy.gypi',
-    'ppapi_tests.gypi',
   ],
 }

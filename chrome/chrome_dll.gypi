@@ -23,19 +23,20 @@
               'VCLinkerTool': {
                 'BaseAddress': '0x01c30000',
                 'DelayLoadDLLs': [
+                  'comdlg32.dll',
                   'crypt32.dll',
                   'cryptui.dll',
-                  'winhttp.dll',
-                  'wininet.dll',
-                  'wsock32.dll',
-                  'ws2_32.dll',
-                  'winspool.drv',
-                  'comdlg32.dll',
+                  'dhcpcsvc.dll',
                   'imagehlp.dll',
-                  'urlmon.dll',
                   'imm32.dll',
                   'iphlpapi.dll',
                   'setupapi.dll',
+                  'urlmon.dll',
+                  'winhttp.dll',
+                  'wininet.dll',
+                  'winspool.drv',
+                  'ws2_32.dll',
+                  'wsock32.dll',
                 ],
                 # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                 'SubSystem': '2',
@@ -119,6 +120,7 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources_standard.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.rc',
 
@@ -399,6 +401,7 @@
                       '<(grit_out_dir)/devtools_frontend_resources.pak',
                       '<(grit_out_dir)/devtools_resources.pak',
                       '<(grit_out_dir)/net_internals_resources.pak',
+                      '<(grit_out_dir)/options_resources.pak',
                       '<(grit_out_dir)/shared_resources.pak',
                       '<(grit_out_dir)/sync_internals_resources.pak',
                     ],
@@ -492,6 +495,9 @@
                     ['disable_nacl!=1', {
                       'files': [
                         '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
+                        # We leave out nacl_irt_x86_64.nexe because we only
+                        # support x86-32 NaCl on Mac OS X.
+                        '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                       ],
                     }],
                   ],

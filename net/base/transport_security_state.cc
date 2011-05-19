@@ -46,9 +46,11 @@ void TransportSecurityState::EnableHost(const std::string& host,
   // TODO(cevans) -- we likely want to permit a host to override a built-in,
   // for at least the case where the override is stricter (i.e. includes
   // subdomains, or includes certificate pinning).
-  DomainState temp;
-  if (IsPreloadedSTS(canonicalized_host, true, &temp))
+  DomainState out;
+  if (IsPreloadedSTS(canonicalized_host, true, &out) &&
+      canonicalized_host == CanonicalizeHost(out.domain)) {
     return;
+  }
 
   // Use the original creation date if we already have this host.
   DomainState state_copy(state);
@@ -79,12 +81,6 @@ bool TransportSecurityState::DeleteHost(const std::string& host) {
   return false;
 }
 
-// IncludeNUL converts a char* to a std::string and includes the terminating
-// NUL in the result.
-static std::string IncludeNUL(const char* in) {
-  return std::string(in, strlen(in) + 1);
-}
-
 bool TransportSecurityState::HasPinsForHost(DomainState* result,
                                             const std::string& host,
                                             bool sni_available) {
@@ -108,16 +104,20 @@ bool TransportSecurityState::HasMetadata(DomainState* result,
   if (canonicalized_host.empty())
     return false;
 
-  if (IsPreloadedSTS(canonicalized_host, sni_available, result))
-    return true;
+  bool has_preload = IsPreloadedSTS(canonicalized_host, sni_available, result);
+  std::string canonicalized_preload = CanonicalizeHost(result->domain);
 
   base::Time current_time(base::Time::Now());
 
   for (size_t i = 0; canonicalized_host[i]; i += canonicalized_host[i] + 1) {
-    std::string hashed_domain(HashHost(IncludeNUL(&canonicalized_host[i])));
+    std::string host_sub_chunk(&canonicalized_host[i],
+                               canonicalized_host.size() - i);
+    // Exact match of a preload always wins.
+    if (has_preload && host_sub_chunk == canonicalized_preload)
+      return true;
 
     std::map<std::string, DomainState>::iterator j =
-        enabled_hosts_.find(hashed_domain);
+        enabled_hosts_.find(HashHost(host_sub_chunk));
     if (j == enabled_hosts_.end())
       continue;
 
@@ -128,8 +128,7 @@ bool TransportSecurityState::HasMetadata(DomainState* result,
     }
 
     *result = j->second;
-    result->domain = DNSDomainToString(
-        canonicalized_host.substr(i, canonicalized_host.size() - i));
+    result->domain = DNSDomainToString(host_sub_chunk);
 
     // If we matched the domain exactly, it doesn't matter what the value of
     // include_subdomains is.
@@ -561,15 +560,12 @@ bool TransportSecurityState::IsPreloadedSTS(
       "sha1/AbkhxY0L343gKf+cki7NVWp+ozk=";
   static const char kCertPKHashEquifaxSecureCA[] =
       "sha1/SOZo+SvSspXXR9gjIBBPM5iQn9Q=";
-  static const char kCertPKHashGeoTrustGlobalCA[] =
-      "sha1/wHqYaI2J+6sFZAwRfap9ZbjKzE4=";
   static const char* kGoogleAcceptableCerts[] = {
     kCertPKHashVerisignClass3,
     kCertPKHashVerisignClass3G3,
     kCertPKHashGoogle1024,
     kCertPKHashGoogle2048,
     kCertPKHashEquifaxSecureCA,
-    kCertPKHashGeoTrustGlobalCA,
     0,
   };
 
@@ -608,6 +604,12 @@ bool TransportSecurityState::IsPreloadedSTS(
     {16, true, "\012googleapis\003com", false, kGoogleAcceptableCerts },
     {22, true, "\020googleadservices\003com", false, kGoogleAcceptableCerts },
     {16, true, "\012googlecode\003com", false, kGoogleAcceptableCerts },
+    {13, true, "\007appspot\003com", false, kGoogleAcceptableCerts },
+    {23, true, "\021googlesyndication\003com", false, kGoogleAcceptableCerts },
+    {17, true, "\013doubleclick\003net", false, kGoogleAcceptableCerts },
+    // Exclude the learn.doubleclick.net subdomain because it uses a different
+    // CA.
+    {23, true, "\005learn\013doubleclick\003net", false, 0 },
     // Now we force HTTPS for other sites that have requested it.
     {16, false, "\003www\006paypal\003com", true, 0 },
     {16, false, "\003www\006elanex\003biz", true, 0 },
@@ -635,6 +637,8 @@ bool TransportSecurityState::IsPreloadedSTS(
     {20, false, "\003www\012logentries\003com", true, 0 },
     {12, true, "\006stripe\003com", true, 0 },
     {27, true, "\025cloudsecurityalliance\003org", true, 0 },
+    {15, true, "\005login\004sapo\002pt", true, 0 },
+    {19, true, "\015mattmccutchen\003net", true, 0 },
 #if defined(OS_CHROMEOS)
     {13, false, "\007twitter\003com", true, 0 },
     {17, false, "\003www\007twitter\003com", true, 0 },
@@ -654,6 +658,8 @@ bool TransportSecurityState::IsPreloadedSTS(
     // These SNI-only domains must use an acceptable certificate iff using
     // HTTPS.
     {22, true, "\020google-analytics\003com", false, kGoogleAcceptableCerts },
+    // www. requires SNI.
+    {18, true, "\014googlegroups\003com", false, kGoogleAcceptableCerts },
   };
   static const size_t kNumPreloadedSNISTS = ARRAYSIZE_UNSAFE(kPreloadedSNISTS);
 

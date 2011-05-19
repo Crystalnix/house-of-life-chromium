@@ -35,7 +35,6 @@
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/history/download_create_info.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
@@ -168,6 +167,38 @@ bool IsReservedName(const string16& filename) {
 }
 #endif  // OS_WIN
 
+void GenerateFileNameInternal(const GURL& url,
+                              const std::string& content_disposition,
+                              const std::string& referrer_charset,
+                              const std::string& suggested_name,
+                              const std::string& mime_type,
+                              FilePath* generated_name) {
+
+  string16 default_file_name(
+      l10n_util::GetStringUTF16(IDS_DEFAULT_DOWNLOAD_FILENAME));
+
+  string16 new_name = net::GetSuggestedFilename(GURL(url),
+                                                content_disposition,
+                                                referrer_charset,
+                                                suggested_name,
+                                                default_file_name);
+
+  // TODO(evan): this code is totally wrong -- we should just generate
+  // Unicode filenames and do all this encoding switching at the end.
+  // However, I'm just shuffling wrong code around, at least not adding
+  // to it.
+#if defined(OS_WIN)
+  *generated_name = FilePath(new_name);
+#else
+  *generated_name = FilePath(
+      base::SysWideToNativeMB(UTF16ToWide(new_name)));
+#endif
+
+  DCHECK(!generated_name->empty());
+
+  GenerateSafeFileName(mime_type, generated_name);
+}
+
 }  // namespace
 
 // Download temporary file creation --------------------------------------------
@@ -252,11 +283,17 @@ void GenerateExtension(const FilePath& file_name,
 
 void GenerateFileNameFromInfo(DownloadCreateInfo* info,
                               FilePath* generated_name) {
-  GenerateFileName(GURL(info->url()),
-                   info->content_disposition,
-                   info->referrer_charset,
-                   info->mime_type,
-                   generated_name);
+  GenerateFileNameInternal(GURL(info->url()), info->content_disposition,
+                           info->referrer_charset, std::string(),
+                           info->mime_type, generated_name);
+}
+
+void GenerateFileNameFromSuggestedName(const GURL& url,
+                                       const std::string& suggested_name,
+                                       const std::string& mime_type,
+                                       FilePath* generated_name) {
+  GenerateFileNameInternal(url, std::string(), std::string(),
+                           suggested_name, mime_type, generated_name);
 }
 
 void GenerateFileName(const GURL& url,
@@ -264,28 +301,8 @@ void GenerateFileName(const GURL& url,
                       const std::string& referrer_charset,
                       const std::string& mime_type,
                       FilePath* generated_name) {
-  string16 default_file_name(
-      l10n_util::GetStringUTF16(IDS_DEFAULT_DOWNLOAD_FILENAME));
-
-  string16 new_name = net::GetSuggestedFilename(GURL(url),
-                                                content_disposition,
-                                                referrer_charset,
-                                                default_file_name);
-
-  // TODO(evan): this code is totally wrong -- we should just generate
-  // Unicode filenames and do all this encoding switching at the end.
-  // However, I'm just shuffling wrong code around, at least not adding
-  // to it.
-#if defined(OS_WIN)
-  *generated_name = FilePath(new_name);
-#else
-  *generated_name = FilePath(
-      base::SysWideToNativeMB(UTF16ToWide(new_name)));
-#endif
-
-  DCHECK(!generated_name->empty());
-
-  GenerateSafeFileName(mime_type, generated_name);
+  GenerateFileNameInternal(url, content_disposition, referrer_charset,
+                           std::string(), mime_type, generated_name);
 }
 
 void GenerateSafeFileName(const std::string& mime_type, FilePath* file_name) {
@@ -341,8 +358,9 @@ void OpenChromeExtension(Profile* profile,
   installer->set_apps_require_extension_mime_type(true);
   installer->set_original_url(download_item.url());
   installer->set_is_gallery_install(is_gallery_download);
-  installer->InstallCrx(download_item.full_path());
   installer->set_allow_silent_install(is_gallery_download);
+  installer->set_install_cause(extension_misc::INSTALL_CAUSE_USER_DOWNLOAD);
+  installer->InstallCrx(download_item.full_path());
 }
 
 void RecordDownloadCount(DownloadCountTypes type) {
@@ -797,12 +815,8 @@ void DownloadUrl(
     ResourceDispatcherHost* rdh,
     int render_process_host_id,
     int render_view_id,
-    net::URLRequestContextGetter* request_context_getter) {
+    const content::ResourceContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  net::URLRequestContext* context =
-      request_context_getter->GetURLRequestContext();
-  context->set_referrer_charset(referrer_charset);
 
   rdh->BeginDownload(url,
                      referrer,
@@ -810,16 +824,27 @@ void DownloadUrl(
                      true,  // Show "Save as" UI.
                      render_process_host_id,
                      render_view_id,
-                     context);
+                     *context);
+}
+
+static void CancelDownloadRequestOnIOThread(
+    ResourceDispatcherHost* rdh, DownloadProcessHandle process_handle) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // |rdh| may be NULL in unit tests.
+  if (!rdh)
+    return;
+
+  rdh->CancelRequest(process_handle.child_id(),
+                     process_handle.request_id(),
+                     false);
 }
 
 void CancelDownloadRequest(ResourceDispatcherHost* rdh,
-                           int render_process_id,
-                           int request_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // |rdh| may be NULL in unit tests.
-  if (rdh)
-    rdh->CancelRequest(render_process_id, request_id, false);
+                           DownloadProcessHandle process_handle) {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      NewRunnableFunction(&download_util::CancelDownloadRequestOnIOThread,
+                          rdh, process_handle));
 }
 
 void NotifyDownloadInitiated(int render_process_id, int render_view_id) {

@@ -14,13 +14,11 @@ void ContentBrowserClient::RenderViewHostCreated(
     RenderViewHost* render_view_host) {
 }
 
-void ContentBrowserClient::PreCreateRenderView(RenderViewHost* render_view_host,
-                                               Profile* profile,
-                                               const GURL& url) {
-}
-
 void ContentBrowserClient::BrowserRenderProcessHostCreated(
     BrowserRenderProcessHost* host) {
+}
+
+void ContentBrowserClient::PluginProcessHostCreated(PluginProcessHost* host) {
 }
 
 void ContentBrowserClient::WorkerProcessHostCreated(WorkerProcessHost* host) {
@@ -50,6 +48,32 @@ void ContentBrowserClient::AppendExtraCommandLineSwitches(
 
 std::string ContentBrowserClient::GetApplicationLocale() {
   return std::string();
+}
+
+bool ContentBrowserClient::AllowAppCache(
+    const GURL& manifest_url, const content::ResourceContext& context) {
+  return true;
+}
+
+bool ContentBrowserClient::AllowGetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const net::CookieList& cookie_list,
+    const content::ResourceContext& context,
+    int render_process_id,
+    int render_view_id) {
+  return true;
+}
+
+bool ContentBrowserClient::AllowSetCookie(
+    const GURL& url,
+    const GURL& first_party,
+    const std::string& cookie_line,
+    const content::ResourceContext& context,
+    int render_process_id,
+    int render_view_id,
+    net::CookieOptions* options) {
+  return true;
 }
 
 #if defined(OS_LINUX)

@@ -39,7 +39,8 @@ class WindowDelegate;
 //              implementation. Multiple inheritance is required for this
 //              transitional step.
 //
-class Window : public internal::NativeWindowDelegate {
+class Window : public Widget,
+               public internal::NativeWindowDelegate {
  public:
   struct InitParams {
     // |window_delegate| cannot be NULL.
@@ -49,6 +50,12 @@ class Window : public internal::NativeWindowDelegate {
     gfx::NativeWindow parent_window;
     NativeWindow* native_window;
     Widget::InitParams widget_init_params;
+  };
+
+  enum FrameType {
+    FRAME_TYPE_DEFAULT,         // Use whatever the default would be.
+    FRAME_TYPE_FORCE_CUSTOM,    // Force the custom frame.
+    FRAME_TYPE_FORCE_NATIVE     // Force the native frame.
   };
 
   Window();
@@ -70,16 +77,6 @@ class Window : public internal::NativeWindowDelegate {
   static int GetLocalizedContentsHeight(int row_resource_id);
   static gfx::Size GetLocalizedContentsSize(int col_resource_id,
                                             int row_resource_id);
-
-  // Closes all windows that aren't identified as "app windows" via
-  // IsAppWindow. Called during application shutdown when the last "app window"
-  // is closed.
-  static void CloseAllSecondaryWindows();
-
-  // Used by |CloseAllSecondaryWindows|. If |widget|'s window is a secondary
-  // window, the window is closed. If |widget| has no window, it is closed.
-  // Does nothing if |widget| is null.
-  static void CloseSecondaryWidget(Widget* widget);
 
   // Initializes the window. Must be called before any post-configuration
   // operations are performed.
@@ -124,7 +121,7 @@ class Window : public internal::NativeWindowDelegate {
   // Closes the window, ultimately destroying it. The window hides immediately,
   // and is destroyed after a return to the message loop. Close() can be called
   // multiple times.
-  void CloseWindow();
+  virtual void Close() OVERRIDE;
 
   // Maximizes/minimizes/restores the window.
   void Maximize();
@@ -138,7 +135,7 @@ class Window : public internal::NativeWindowDelegate {
   bool IsVisible() const;
 
   // Whether or not the window is maximized or minimized.
-  bool IsMaximized() const;
+  virtual bool IsMaximized() const;
   bool IsMinimized() const;
 
   // Accessors for fullscreen state.
@@ -148,11 +145,6 @@ class Window : public internal::NativeWindowDelegate {
   // Sets whether or not the window should show its frame as a "transient drag
   // frame" - slightly transparent and without the standard window controls.
   void SetUseDragFrame(bool use_drag_frame);
-
-  // Returns true if the Window is considered to be an "app window" - i.e.
-  // any window which when it is the last of its type closed causes the
-  // application to exit.
-  virtual bool IsAppWindow() const;
 
   // Toggles the enable state for the Close button (and the Close menu item in
   // the system menu).
@@ -176,15 +168,18 @@ class Window : public internal::NativeWindowDelegate {
   // Retrieves the Window's native window handle.
   gfx::NativeWindow GetNativeWindow() const;
 
+  void set_frame_type(FrameType frame_type) { frame_type_ = frame_type; }
+  FrameType frame_type() const { return frame_type_; }
+
   // Whether we should be using a native frame.
   bool ShouldUseNativeFrame() const;
 
+  // Forces the frame into the alternate frame type (custom or native) depending
+  // on its current state.
+  void DebugToggleFrameType();
+
   // Tell the window that something caused the frame type to change.
   void FrameTypeChanged();
-
-  // TODO(beng): remove once Window subclasses Widget.
-  Widget* AsWidget();
-  const Widget* AsWidget() const;
 
   WindowDelegate* window_delegate() {
     return const_cast<WindowDelegate*>(
@@ -213,17 +208,12 @@ class Window : public internal::NativeWindowDelegate {
   NativeWindow* native_window() { return native_window_; }
 
  protected:
-  // TODO(beng): Temporarily provided as a way to associate the subclass'
-  //             implementation of NativeWidget with this.
-  void SetNativeWindow(NativeWindow* native_window);
-
   // Overridden from NativeWindowDelegate:
   virtual bool CanActivate() const OVERRIDE;
   virtual bool IsInactiveRenderingDisabled() const OVERRIDE;
   virtual void EnableInactiveRendering() OVERRIDE;
   virtual bool IsModal() const OVERRIDE;
   virtual bool IsDialogBox() const OVERRIDE;
-  virtual bool IsUsingNativeFrame() const OVERRIDE;
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
   virtual bool ExecuteCommand(int command_id) OVERRIDE;
@@ -234,6 +224,8 @@ class Window : public internal::NativeWindowDelegate {
   virtual void OnNativeWindowDestroying() OVERRIDE;
   virtual void OnNativeWindowDestroyed() OVERRIDE;
   virtual void OnNativeWindowBoundsChanged() OVERRIDE;
+  virtual Window* AsWindow() OVERRIDE;
+  virtual internal::NativeWidgetDelegate* AsNativeWidgetDelegate() OVERRIDE;
 
  private:
   // Sizes and positions the window just after it is created.
@@ -267,6 +259,10 @@ class Window : public internal::NativeWindowDelegate {
 
   // Set to true if the window is in the process of closing .
   bool window_closed_;
+
+  // The current frame type in use by this window. Defaults to
+  // FRAME_TYPE_DEFAULT.
+  FrameType frame_type_;
 
   DISALLOW_COPY_AND_ASSIGN(Window);
 };

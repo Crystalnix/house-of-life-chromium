@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,6 +53,8 @@
 #define IDC_TOGGLE_VERTICAL_TABS        34034
 #define IDC_SEARCH                      34035
 #define IDC_TABPOSE                     34036
+#define IDC_COMPACT_NAVBAR              34037
+#define IDC_DEBUG_FRAME_TOGGLE          34038
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -188,9 +190,6 @@
 #define IDC_WRITING_DIRECTION_LTR        41122     // OSX only
 #define IDC_WRITING_DIRECTION_RTL        41123     // OSX only
 
-// Remoting
-#define IDC_REMOTING_SETUP               41140
-
 // Translate
 #define IDC_TRANSLATE_OPTIONS_ALWAYS                42000
 #define IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG  42001
@@ -274,3 +273,6 @@
 #define IDC_BOOKMARK_BAR_NEW_FOLDER 51008
 #define IDC_BOOKMARK_MANAGER 51009
 #define IDC_BOOKMARK_BAR_ALWAYS_SHOW 51010
+
+// Context menu items in the status tray
+#define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100

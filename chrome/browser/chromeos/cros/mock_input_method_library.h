@@ -15,8 +15,8 @@ namespace chromeos {
 
 class MockInputMethodLibrary : public InputMethodLibrary {
  public:
-  MockInputMethodLibrary() {}
-  virtual ~MockInputMethodLibrary() {}
+  MockInputMethodLibrary();
+  virtual ~MockInputMethodLibrary();
 
   MOCK_METHOD1(AddObserver, void(Observer*));
   MOCK_METHOD1(RemoveObserver, void(Observer*));
@@ -29,8 +29,8 @@ class MockInputMethodLibrary : public InputMethodLibrary {
   MOCK_METHOD1(InputMethodIsActivated, bool(const std::string&));
   MOCK_METHOD3(SetImeConfig, bool(const std::string&, const std::string&,
                                   const ImeConfigValue&));
-  MOCK_CONST_METHOD0(previous_input_method, const InputMethodDescriptor&(void));
-  MOCK_CONST_METHOD0(current_input_method, const InputMethodDescriptor&(void));
+  MOCK_CONST_METHOD0(previous_input_method, InputMethodDescriptor(void));
+  MOCK_CONST_METHOD0(current_input_method, InputMethodDescriptor(void));
   MOCK_CONST_METHOD0(current_ime_properties, const ImePropertyList&(void));
   MOCK_METHOD1(GetKeyboardOverlayId, std::string(const std::string&));
   MOCK_METHOD0(StartInputMethodDaemon, bool(void));
@@ -38,7 +38,7 @@ class MockInputMethodLibrary : public InputMethodLibrary {
   MOCK_METHOD1(SetDeferImeStartup, void(bool));
   MOCK_METHOD1(SetEnableAutoImeShutdown, void(bool));
   MOCK_METHOD1(SendHandwritingStroke, void(const HandwritingStroke&));
-  MOCK_METHOD1(CancelHandwriting, void(int));
+  MOCK_METHOD1(CancelHandwritingStrokes, void(int));
 };
 
 }  // namespace chromeos

@@ -37,24 +37,8 @@
 #include "base/files/file_path_watcher.h"
 #endif
 
-#if defined(OS_CHROMEOS)
-namespace chromeos {
-class PluginSelectionPolicy;
-}
-#endif
-
-namespace IPC {
-class Message;
-}
-
-class MessageLoop;
 struct PepperPluginInfo;
 class PluginDirWatcherDelegate;
-class ResourceDispatcherHost;
-
-namespace net {
-class URLRequestContext;
-}  // namespace net
 
 // This must be created on the main thread but it's only called on the IO/file
 // thread.
@@ -89,7 +73,8 @@ class PluginService
   PluginProcessHost* FindOrStartNpapiPluginProcess(
       const FilePath& plugin_path);
   PpapiPluginProcessHost* FindOrStartPpapiPluginProcess(
-      const FilePath& plugin_path);
+      const FilePath& plugin_path,
+      PpapiPluginProcessHost::Client* client);
   PpapiBrokerProcessHost* FindOrStartPpapiBrokerProcess(
       const FilePath& plugin_path);
 
@@ -106,14 +91,14 @@ class PluginService
   void OpenChannelToPpapiBroker(const FilePath& path,
                                 PpapiBrokerProcessHost::Client* client);
 
-  // Gets the first allowed plugin in the list of plugins that matches
-  // the given url and mime type.  Must be called on the FILE thread.
-  bool GetFirstAllowedPluginInfo(int render_process_id,
-                                 int render_view_id,
-                                 const GURL& url,
-                                 const std::string& mime_type,
-                                 webkit::npapi::WebPluginInfo* info,
-                                 std::string* actual_mime_type);
+  // Gets the plugin in the list of plugins that matches the given url and mime
+  // type.  Must be called on the FILE thread.
+  bool GetPluginInfo(int render_process_id,
+                     int render_view_id,
+                     const GURL& url,
+                     const std::string& mime_type,
+                     webkit::npapi::WebPluginInfo* info,
+                     std::string* actual_mime_type);
 
   // Safe to be called from any thread.
   void OverridePluginForTab(const OverriddenPlugin& plugin);
@@ -132,9 +117,6 @@ class PluginService
   // list, and optionally also reload all the pages with plugins.
   // NOTE: can only be called on the UI thread.
   static void PurgePluginListCache(bool reload_pages);
-
-  // The UI thread's message loop
-  MessageLoop* main_message_loop() { return main_message_loop_; }
 
  private:
   friend struct DefaultSingletonTraits<PluginService>;
@@ -177,9 +159,6 @@ class PluginService
       base::files::FilePathWatcher::Delegate* delegate);
 #endif
 
-  // The main thread's message loop.
-  MessageLoop* main_message_loop_;
-
   // The browser's UI locale.
   const std::string ui_locale_;
 
@@ -189,10 +168,6 @@ class PluginService
   RestrictedPluginMap restricted_plugin_;
 
   NotificationRegistrar registrar_;
-
-#if defined(OS_CHROMEOS)
-  scoped_refptr<chromeos::PluginSelectionPolicy> plugin_selection_policy_;
-#endif
 
 #if defined(OS_WIN)
   // Registry keys for getting notifications when new plugins are installed.

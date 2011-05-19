@@ -247,9 +247,7 @@ void BrowserOptionsHandler::SetDefaultBrowserUIString(int status_string_id) {
        status_string_id == IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT)));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateDefaultBrowserState",
-                                  *(status_string.get()),
-                                  *(is_default.get()),
-                                  *(can_be_default.get()));
+                                  *status_string, *is_default, *can_be_default);
 }
 
 void BrowserOptionsHandler::OnTemplateURLModelChanged() {
@@ -270,16 +268,18 @@ void BrowserOptionsHandler::OnTemplateURLModelChanged() {
     DictionaryValue* entry = new DictionaryValue();
     entry->SetString("name", model_urls[i]->short_name());
     entry->SetInteger("index", i);
-    entry->SetBoolean("hasInstant", model_urls[i]->instant_url() != NULL);
     search_engines.Append(entry);
     if (model_urls[i] == default_url)
       default_index = i;
   }
 
   scoped_ptr<Value> default_value(Value::CreateIntegerValue(default_index));
+  scoped_ptr<Value> default_managed(Value::CreateBooleanValue(
+      template_url_model_->is_default_search_managed()));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateSearchEngines",
-                                  search_engines, *(default_value.get()));
+                                  search_engines, *default_value,
+                                  *default_managed);
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(const ListValue* args) {

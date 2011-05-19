@@ -46,8 +46,8 @@
       <include name="IDR_GPU_BLACKLIST" file="resources\software_rendering_list.json" type="BINDATA" />
       <include name="IDR_NEW_INCOGNITO_TAB_THEME_CSS" file="resources\new_incognito_tab_theme.css" flattenhtml="true" type="BINDATA" />
       <if expr="not pp_ifdef('touchui')">
-        <include name="IDR_NEW_TAB_HTML" file="resources\new_new_tab.html" flattenhtml="true" type="BINDATA" />
-        <include name="IDR_NEW_TAB_THEME_CSS" file="resources\new_new_tab_theme.css" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_NEW_TAB_HTML" file="resources\new_tab.html" flattenhtml="true" type="BINDATA" />
+        <include name="IDR_NEW_TAB_THEME_CSS" file="resources\new_tab_theme.css" flattenhtml="true" type="BINDATA" />
       </if>
       <if expr="pp_ifdef('touchui')">
         <include name="IDR_NEW_TAB_HTML" file="resources\touch_ntp\newtab.html" flattenhtml="true" type="BINDATA" />
@@ -58,7 +58,6 @@
       <include name="IDR_NOTIFICATION_1LINE_HTML" file="resources\notification_1line.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_NOTIFICATION_2LINE_HTML" file="resources\notification_2line.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_NOTIFICATION_ICON_HTML" file="resources\notification_icon.html" type="BINDATA" />
-      <include name="IDR_OPTIONS_HTML" file="resources\options\options.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_PLUGINS_HTML" file="resources\plugins.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_READER_OUT_OF_DATE_HTML" file="resources\reader_out_of_date.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_PRINT_PREVIEW_HTML" file="resources\print_preview.html" flattenhtml="true" type="BINDATA" />
@@ -70,14 +69,9 @@
       <include name="IDR_SSL_ROAD_BLOCK_HTML" file="resources\ssl_roadblock.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_SYNC_CONFIGURE_HTML" file="sync\resources\configure.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_SYNC_PASSPHRASE_HTML" file="sync\resources\passphrase.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_SYNC_FIRST_PASSPHRASE_HTML" file="sync\resources\firstpassphrase.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_SYNC_SETTING_UP_HTML" file="sync\resources\setting_up.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_SYNC_SETUP_DONE_HTML" file="sync\resources\setup_done.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_SYNC_SETUP_FLOW_HTML" file="sync\resources\setup_flow.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_REMOTING_SETUP_FLOW_HTML" file="remoting\resources\remoting_setup_flow.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_REMOTING_SETUP_DONE_HTML" file="remoting\resources\remoting_setup_done.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_REMOTING_SETUP_ERROR_HTML" file="remoting\resources\remoting_setup_error.html" flattenhtml="true" type="BINDATA" />
-      <include name="IDR_REMOTING_SETTING_UP_HTML" file="remoting\resources\remoting_setting_up.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_CLOUD_PRINT_SETUP_FLOW_HTML" file="printing\cloud_print\resources\cloud_print_setup_flow.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_CLOUD_PRINT_SETUP_LOGIN_HTML" file="printing\cloud_print\resources\cloud_print_setup_login.html" flattenhtml="true" type="BINDATA" />
       <include name="IDR_CLOUD_PRINT_SETUP_DONE_HTML" file="printing\cloud_print\resources\cloud_print_setup_done.html" flattenhtml="true" type="BINDATA" />
@@ -121,7 +115,6 @@
       </if>
       <if expr="pp_ifdef('chromeos') and pp_ifdef('_google_chrome')">
         <include name="IDR_HELP_MANIFEST" file="resources\help_app\manifest.json" type="BINDATA" />
-        <include name="IDR_GETSTARTED_MANIFEST" file="resources\getstarted\manifest.json" type="BINDATA" />
       </if>
     </includes>
   </release>

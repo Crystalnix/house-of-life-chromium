@@ -41,6 +41,7 @@
 #include "chrome/browser/bookmarks/bookmark_storage.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_shelf.h"
@@ -71,6 +72,7 @@
 #include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
+#include "chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h"
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -100,6 +102,7 @@
 #include "net/base/cookie_store.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "ui/base/events.h"
+#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/message_box_flags.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
@@ -1877,8 +1880,12 @@ void TestingAutomationProvider::GetInfoBarCount(int handle, size_t* count) {
   *count = static_cast<size_t>(-1);  // -1 means error.
   if (tab_tracker_->ContainsHandle(handle)) {
     NavigationController* nav_controller = tab_tracker_->GetResource(handle);
-    if (nav_controller)
-      *count = nav_controller->tab_contents()->infobar_count();
+    if (nav_controller) {
+      TabContentsWrapper* wrapper =
+          TabContentsWrapper::GetCurrentWrapperForContents(
+              nav_controller->tab_contents());
+      *count = wrapper->infobar_count();
+    }
   }
 }
 
@@ -1891,14 +1898,18 @@ void TestingAutomationProvider::ClickInfoBarAccept(
   if (tab_tracker_->ContainsHandle(handle)) {
     NavigationController* nav_controller = tab_tracker_->GetResource(handle);
     if (nav_controller) {
-      if (info_bar_index < nav_controller->tab_contents()->infobar_count()) {
+      TabContentsWrapper* wrapper =
+          TabContentsWrapper::GetCurrentWrapperForContents(
+              nav_controller->tab_contents());
+      if (info_bar_index < wrapper->infobar_count()) {
         if (wait_for_navigation) {
           new NavigationNotificationObserver(nav_controller, this,
                                              reply_message, 1, false, false);
         }
         InfoBarDelegate* delegate =
-            nav_controller->tab_contents()->GetInfoBarDelegateAt(
-                info_bar_index);
+            TabContentsWrapper::GetCurrentWrapperForContents(
+                nav_controller->tab_contents())->GetInfoBarDelegateAt(
+                    info_bar_index);
         if (delegate->AsConfirmInfoBarDelegate())
           delegate->AsConfirmInfoBarDelegate()->Accept();
         success = true;
@@ -2212,10 +2223,14 @@ void TestingAutomationProvider::SendJSONRequest(int handle,
       &TestingAutomationProvider::SendOSLevelKeyEventToTab;
   handler_map["ActivateTab"] =
       &TestingAutomationProvider::ActivateTabJSON;
-  handler_map["UpdateExtensionsNow"] =
-      &TestingAutomationProvider::UpdateExtensionsNow;
+  handler_map["GetAppModalDialogMessage"] =
+      &TestingAutomationProvider::GetAppModalDialogMessage;
+  handler_map["AcceptOrDismissAppModalDialog"] =
+      &TestingAutomationProvider::AcceptOrDismissAppModalDialog;
   handler_map["GetChromeDriverAutomationVersion"] =
       &TestingAutomationProvider::GetChromeDriverAutomationVersion;
+  handler_map["UpdateExtensionsNow"] =
+      &TestingAutomationProvider::UpdateExtensionsNow;
 #if defined(OS_CHROMEOS)
   handler_map["GetLoginInfo"] = &TestingAutomationProvider::GetLoginInfo;
   handler_map["ShowCreateAccountUI"] =
@@ -2354,6 +2369,12 @@ void TestingAutomationProvider::SendJSONRequest(int handle,
       &TestingAutomationProvider::GetAutofillProfile;
   browser_handler_map["FillAutofillProfile"] =
       &TestingAutomationProvider::FillAutofillProfile;
+  browser_handler_map["AutofillTriggerSuggestions"] =
+      &TestingAutomationProvider::AutofillTriggerSuggestions;
+  browser_handler_map["AutofillHighlightSuggestion"] =
+      &TestingAutomationProvider::AutofillHighlightSuggestion;
+  browser_handler_map["AutofillAcceptSelection"] =
+      &TestingAutomationProvider::AutofillAcceptSelection;
 
   browser_handler_map["GetActiveNotifications"] =
       &TestingAutomationProvider::GetActiveNotifications;
@@ -2452,9 +2473,11 @@ void TestingAutomationProvider::SetWindowDimensions(
 ListValue* TestingAutomationProvider::GetInfobarsInfo(TabContents* tc) {
   // Each infobar may have different properties depending on the type.
   ListValue* infobars = new ListValue;
-  for (size_t i = 0; i < tc->infobar_count(); ++i) {
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(tc);
+  for (size_t i = 0; i < wrapper->infobar_count(); ++i) {
     DictionaryValue* infobar_item = new DictionaryValue;
-    InfoBarDelegate* infobar = tc->GetInfoBarDelegateAt(i);
+    InfoBarDelegate* infobar = wrapper->GetInfoBarDelegateAt(i);
     if (infobar->AsConfirmInfoBarDelegate()) {
       // Also covers ThemeInstalledInfoBarDelegate.
       infobar_item->SetString("type", "confirm_infobar");
@@ -2518,7 +2541,8 @@ void TestingAutomationProvider::PerformActionOnInfobar(
     reply.SendError("Invalid or missing args");
     return;
   }
-  TabContents* tab_contents = browser->GetTabContentsAt(tab_index);
+  TabContentsWrapper* tab_contents =
+      browser->GetTabContentsWrapperAt(tab_index);
   if (!tab_contents) {
     reply.SendError(StringPrintf("No such tab at index %d", tab_index));
     return;
@@ -3689,8 +3713,10 @@ TabContentsWrapper* GetTabContentsWrapperFromDict(const Browser* browser,
 // Get the TranslateInfoBarDelegate from TabContents.
 TranslateInfoBarDelegate* GetTranslateInfoBarDelegate(
     TabContents* tab_contents) {
-  for (size_t i = 0; i < tab_contents->infobar_count(); i++) {
-    InfoBarDelegate* infobar = tab_contents->GetInfoBarDelegateAt(i);
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents);
+  for (size_t i = 0; i < wrapper->infobar_count(); i++) {
+    InfoBarDelegate* infobar = wrapper->GetInfoBarDelegateAt(i);
     if (infobar->AsTranslateInfoBarDelegate())
       return infobar->AsTranslateInfoBarDelegate();
   }
@@ -3892,7 +3918,7 @@ void TestingAutomationProvider::SelectTranslateOption(
     // This is the function called when an infobar is dismissed or when the
     // user clicks the 'Nope' translate button.
     translate_bar->TranslationDeclined();
-    tab_contents->RemoveInfoBar(translate_bar);
+    tab_contents_wrapper->RemoveInfoBar(translate_bar);
     reply.SendSuccess(NULL);
   } else {
     reply.SendError("Invalid string found for option.");
@@ -4185,6 +4211,87 @@ void TestingAutomationProvider::FillAutofillProfile(
     return;
   }
   AutomationJSONReply(this, reply_message).SendSuccess(NULL);
+}
+
+void TestingAutomationProvider::AutofillTriggerSuggestions(
+    Browser* browser,
+    DictionaryValue* args,
+    IPC::Message* reply_message) {
+  int tab_index;
+  if (!args->GetInteger("tab_index", &tab_index)) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "Invalid or missing args");
+    return;
+  }
+
+  TabContents* tab_contents = browser->GetTabContentsAt(tab_index);
+  if (!tab_contents) {
+    AutomationJSONReply(this, reply_message).SendError(
+        StringPrintf("No such tab at index %d", tab_index));
+    return;
+  }
+
+  new AutofillDisplayedObserver(
+      NotificationType::AUTOFILL_DID_SHOW_SUGGESTIONS,
+      tab_contents->render_view_host(), this, reply_message);
+  SendWebKeyPressEventAsync(ui::VKEY_DOWN, tab_contents);
+}
+
+void TestingAutomationProvider::AutofillHighlightSuggestion(
+    Browser* browser,
+    DictionaryValue* args,
+    IPC::Message* reply_message) {
+  int tab_index;
+  if (!args->GetInteger("tab_index", &tab_index)) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "Invalid or missing args");
+    return;
+  }
+
+  TabContents* tab_contents = browser->GetTabContentsAt(tab_index);
+  if (!tab_contents) {
+    AutomationJSONReply(this, reply_message).SendError(
+        StringPrintf("No such tab at index %d", tab_index));
+    return;
+  }
+
+  std::string direction;
+  if (!args->GetString("direction", &direction) || (direction != "up" &&
+                                                    direction != "down")) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "Must specify a direction of either 'up' or 'down'.");
+    return;
+  }
+  int key_code = (direction == "up") ? ui::VKEY_UP : ui::VKEY_DOWN;
+
+  new AutofillDisplayedObserver(
+      NotificationType::AUTOFILL_DID_FILL_FORM_DATA,
+      tab_contents->render_view_host(), this, reply_message);
+  SendWebKeyPressEventAsync(key_code, tab_contents);
+}
+
+void TestingAutomationProvider::AutofillAcceptSelection(
+    Browser* browser,
+    DictionaryValue* args,
+    IPC::Message* reply_message) {
+  int tab_index;
+  if (!args->GetInteger("tab_index", &tab_index)) {
+    AutomationJSONReply(this, reply_message).SendError(
+        "Invalid or missing args");
+    return;
+  }
+
+  TabContents* tab_contents = browser->GetTabContentsAt(tab_index);
+  if (!tab_contents) {
+    AutomationJSONReply(this, reply_message).SendError(
+        StringPrintf("No such tab at index %d", tab_index));
+    return;
+  }
+
+  new AutofillDisplayedObserver(
+      NotificationType::AUTOFILL_DID_FILL_FORM_DATA,
+      tab_contents->render_view_host(), this, reply_message);
+  SendWebKeyPressEventAsync(ui::VKEY_RETURN, tab_contents);
 }
 
 // Sample json output: { "success": true }
@@ -4655,7 +4762,7 @@ void TestingAutomationProvider::CloseNotification(
   }
   // This will delete itself when finished.
   new OnNotificationBalloonCountObserver(
-      this, reply_message, collection, balloon_count - 1);
+      this, reply_message, balloon_count - 1);
   manager->CancelById(balloons[index]->notification().notification_id());
 }
 
@@ -4672,16 +4779,8 @@ void TestingAutomationProvider::WaitForNotificationCount(
         .SendError("'count' missing or invalid.");
     return;
   }
-  NotificationUIManager* manager = g_browser_process->notification_ui_manager();
-  BalloonCollection* collection = manager->balloon_collection();
-  const BalloonCollection::Balloons& balloons = collection->GetActiveBalloons();
-  if (static_cast<int>(balloons.size()) == count) {
-    AutomationJSONReply(this, reply_message).SendSuccess(NULL);
-    return;
-  }
   // This will delete itself when finished.
-  new OnNotificationBalloonCountObserver(
-      this, reply_message, collection, count);
+  new OnNotificationBalloonCountObserver(this, reply_message, count);
 }
 
 // Sample JSON input: { "command": "GetNTPInfo" }
@@ -4883,6 +4982,35 @@ bool TestingAutomationProvider::BuildWebKeyEventFromArgs(
   return true;
 }
 
+void TestingAutomationProvider::BuildSimpleWebKeyEvent(
+    WebKit::WebInputEvent::Type type,
+    int windows_key_code,
+    NativeWebKeyboardEvent* event) {
+  event->nativeKeyCode = 0;
+  event->windowsKeyCode = windows_key_code;
+  event->setKeyIdentifierFromWindowsKeyCode();
+  event->type = type;
+  event->modifiers = 0;
+  event->isSystemKey = false;
+  event->timeStampSeconds = base::Time::Now().ToDoubleT();
+  event->skip_in_browser = true;
+}
+
+void TestingAutomationProvider::SendWebKeyPressEventAsync(
+    int key_code,
+    TabContents* tab_contents) {
+  // Create and send a "key down" event for the specified key code.
+  NativeWebKeyboardEvent event_down;
+  BuildSimpleWebKeyEvent(WebKit::WebInputEvent::RawKeyDown, key_code,
+                         &event_down);
+  tab_contents->render_view_host()->ForwardKeyboardEvent(event_down);
+
+  // Create and send a corresponding "key up" event.
+  NativeWebKeyboardEvent event_up;
+  BuildSimpleWebKeyEvent(WebKit::WebInputEvent::KeyUp, key_code, &event_up);
+  tab_contents->render_view_host()->ForwardKeyboardEvent(event_up);
+}
+
 void TestingAutomationProvider::SendWebkitKeyEvent(
     DictionaryValue* args,
     IPC::Message* reply_message) {
@@ -4961,6 +5089,65 @@ void TestingAutomationProvider::SendOSLevelKeyEventToTab(
 
 void TestingAutomationProvider::SendSuccessReply(IPC::Message* reply_message) {
   AutomationJSONReply(this, reply_message).SendSuccess(NULL);
+}
+
+namespace {
+
+// Gets the active JavaScript modal dialog, or NULL if none.
+JavaScriptAppModalDialog* GetActiveJavaScriptModalDialog(
+    std::string* error_msg) {
+  AppModalDialogQueue* dialog_queue = AppModalDialogQueue::GetInstance();
+  if (!dialog_queue->HasActiveDialog()) {
+    *error_msg = "No modal dialog is showing";
+    return NULL;
+  }
+  if (!dialog_queue->active_dialog()->IsJavaScriptModalDialog()) {
+    *error_msg = "No JavaScript modal dialog is showing";
+    return NULL;
+  }
+  return static_cast<JavaScriptAppModalDialog*>(dialog_queue->active_dialog());
+}
+
+}  // namespace
+
+void TestingAutomationProvider::GetAppModalDialogMessage(
+    DictionaryValue* args, IPC::Message* reply_message) {
+  AutomationJSONReply reply(this, reply_message);
+  std::string error_msg;
+  JavaScriptAppModalDialog* dialog = GetActiveJavaScriptModalDialog(&error_msg);
+  if (!dialog) {
+    reply.SendError(error_msg);
+    return;
+  }
+  DictionaryValue result_dict;
+  result_dict.SetString("message", WideToUTF8(dialog->message_text()));
+  reply.SendSuccess(&result_dict);
+}
+
+void TestingAutomationProvider::AcceptOrDismissAppModalDialog(
+    DictionaryValue* args, IPC::Message* reply_message) {
+  AutomationJSONReply reply(this, reply_message);
+  bool accept;
+  if (!args->GetBoolean("accept", &accept)) {
+    reply.SendError("Missing or invalid 'accept'");
+    return;
+  }
+
+  std::string error_msg;
+  JavaScriptAppModalDialog* dialog = GetActiveJavaScriptModalDialog(&error_msg);
+  if (!dialog) {
+    reply.SendError(error_msg);
+    return;
+  }
+  if (accept) {
+    std::string prompt_text;
+    if (args->GetString("prompt_text", &prompt_text))
+      dialog->SetOverridePromptText(UTF8ToUTF16(prompt_text));
+    dialog->native_dialog()->AcceptAppModalDialog();
+  } else {
+    dialog->native_dialog()->CancelAppModalDialog();
+  }
+  reply.SendSuccess(NULL);
 }
 
 // Sample JSON input: { "command": "GetNTPThumbnailMode" }

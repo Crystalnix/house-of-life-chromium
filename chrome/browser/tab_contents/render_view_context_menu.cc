@@ -33,6 +33,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/spellcheck_host.h"
@@ -57,7 +58,6 @@
 #include "content/common/content_restriction.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
-#include "net/url_request/url_request.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMediaPlayerAction.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -176,8 +176,7 @@ bool RenderViewContextMenu::IsDevToolsURL(const GURL& url) {
 bool RenderViewContextMenu::IsInternalResourcesURL(const GURL& url) {
   if (!url.SchemeIs(chrome::kChromeUIScheme))
     return false;
-  return url.host() == chrome::kChromeUISyncResourcesHost ||
-      url.host() == chrome::kChromeUIRemotingResourcesHost;
+  return url.host() == chrome::kChromeUISyncResourcesHost;
 }
 
 static const int kSpellcheckRadioGroup = 1;
@@ -689,7 +688,7 @@ void RenderViewContextMenu::AppendSearchProvider() {
 
   AutocompleteMatch match;
   profile_->GetAutocompleteClassifier()->Classify(
-      params_.selection_text, string16(), false, &match, NULL);
+      params_.selection_text, string16(), false, false, &match, NULL);
   selection_navigation_url_ = match.destination_url;
   if (!selection_navigation_url_.is_valid())
     return;
@@ -907,9 +906,12 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       return IsDevCommandEnabled(id);
 
     case IDC_CONTENT_CONTEXT_TRANSLATE: {
-      TranslateTabHelper* helper =
+      TabContentsWrapper* tab_contents_wrapper =
           TabContentsWrapper::GetCurrentWrapperForContents(
-              source_tab_contents_)->translate_tab_helper();
+              source_tab_contents_);
+      if (!tab_contents_wrapper)
+        return false;
+      TranslateTabHelper* helper = tab_contents_wrapper->translate_tab_helper();
       std::string original_lang =
           helper->language_state().original_language();
       std::string target_lang = g_browser_process->GetApplicationLocale();
@@ -946,7 +948,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
         return false;
 
       return params_.link_url.is_valid() &&
-             net::URLRequest::IsHandledURL(params_.link_url);
+          ProfileIOData::IsHandledProtocol(params_.link_url.scheme());
     }
 
     case IDC_CONTENT_CONTEXT_SAVEIMAGEAS: {
@@ -957,7 +959,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
         return false;
 
       return params_.src_url.is_valid() &&
-             net::URLRequest::IsHandledURL(params_.src_url);
+          ProfileIOData::IsHandledProtocol(params_.src_url.scheme());
     }
 
     case IDC_CONTENT_CONTEXT_OPENIMAGENEWTAB:
@@ -1008,7 +1010,7 @@ bool RenderViewContextMenu::IsCommandIdEnabled(int id) const {
       return (params_.media_flags &
               WebContextMenuData::MediaCanSave) &&
              params_.src_url.is_valid() &&
-             net::URLRequest::IsHandledURL(params_.src_url);
+             ProfileIOData::IsHandledProtocol(params_.src_url.scheme());
     }
 
     case IDC_CONTENT_CONTEXT_OPENAVNEWTAB:
@@ -1336,10 +1338,12 @@ void RenderViewContextMenu::ExecuteCommand(int id) {
       break;
 
     case IDC_SAVE_PAGE: {
-      TabContentsWrapper* wrapper =
+      TabContentsWrapper* tab_contents_wrapper =
           TabContentsWrapper::GetCurrentWrapperForContents(
               source_tab_contents_);
-      wrapper->download_tab_helper()->OnSavePage();
+      if (!tab_contents_wrapper)
+        break;
+      tab_contents_wrapper->download_tab_helper()->OnSavePage();
       break;
     }
 
@@ -1351,15 +1355,16 @@ void RenderViewContextMenu::ExecuteCommand(int id) {
 
     case IDC_PRINT:
       if (params_.media_type == WebContextMenuData::MediaTypeNone) {
-        if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnablePrintPreview)) {
+        if (switches::IsPrintPreviewEnabled()) {
           printing::PrintPreviewTabController::PrintPreview(
               source_tab_contents_);
         } else {
-          TabContentsWrapper* wrapper =
+          TabContentsWrapper* tab_contents_wrapper =
               TabContentsWrapper::GetCurrentWrapperForContents(
                   source_tab_contents_);
-          wrapper->print_view_manager()->PrintNow();
+          if (!tab_contents_wrapper)
+            break;
+          tab_contents_wrapper->print_view_manager()->PrintNow();
         }
       } else {
         RenderViewHost* rvh = source_tab_contents_->render_view_host();
@@ -1386,9 +1391,12 @@ void RenderViewContextMenu::ExecuteCommand(int id) {
     case IDC_CONTENT_CONTEXT_TRANSLATE: {
       // A translation might have been triggered by the time the menu got
       // selected, do nothing in that case.
-      TranslateTabHelper* helper =
+      TabContentsWrapper* tab_contents_wrapper =
           TabContentsWrapper::GetCurrentWrapperForContents(
-              source_tab_contents_)->translate_tab_helper();
+              source_tab_contents_);
+      if (!tab_contents_wrapper)
+        return;
+      TranslateTabHelper* helper = tab_contents_wrapper->translate_tab_helper();
       if (helper->language_state().IsPageTranslated() ||
           helper->language_state().translation_pending()) {
         return;
@@ -1474,11 +1482,17 @@ void RenderViewContextMenu::ExecuteCommand(int id) {
     case IDC_SPELLCHECK_SUGGESTION_1:
     case IDC_SPELLCHECK_SUGGESTION_2:
     case IDC_SPELLCHECK_SUGGESTION_3:
-    case IDC_SPELLCHECK_SUGGESTION_4:
+    case IDC_SPELLCHECK_SUGGESTION_4: {
       source_tab_contents_->render_view_host()->Replace(
           params_.dictionary_suggestions[id - IDC_SPELLCHECK_SUGGESTION_0]);
+      SpellCheckHost* spellcheck_host = profile_->GetSpellCheckHost();
+      if (!spellcheck_host) {
+        NOTREACHED();
+        break;
+      }
+      spellcheck_host->RecordReplacedWordStats(1);
       break;
-
+    }
     case IDC_CHECK_SPELLING_OF_THIS_FIELD: {
       RenderViewHost* view = source_tab_contents_->render_view_host();
       view->Send(new SpellCheckMsg_ToggleSpellCheck(view->routing_id()));

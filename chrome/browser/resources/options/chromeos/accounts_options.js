@@ -76,10 +76,6 @@ cr.define('options', function() {
      */
     handleVisibleChange_: function(e) {
       if (this.visible) {
-        // fetchUserPictures calls back AccountsOptions.setUserPictures and
-        // triggers redraw.
-        chrome.send('fetchUserPictures', []);
-
         this.updateControls_();
       }
     },
@@ -123,17 +119,17 @@ cr.define('options', function() {
   };
 
   /**
+   * Returns whether we're currently in guest mode.
+   */
+  AccountsOptions.loggedInAsGuest = function() {
+    return localStrings.getString('logged_in_as_guest') == 'true';
+  };
+
+  /**
    * Returns whether the whitelist is managed by policy or not.
    */
   AccountsOptions.whitelistIsManaged = function() {
     return localStrings.getString('whitelist_is_managed') == 'true';
-  };
-
-  /**
-   * Updates user picture cache in UserList.
-   */
-  AccountsOptions.setUserPictures = function(cache) {
-    $('userList').setUserPictures(cache);
   };
 
   /**

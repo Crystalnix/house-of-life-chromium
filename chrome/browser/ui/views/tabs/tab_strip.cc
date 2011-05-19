@@ -302,7 +302,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
     }
   }
 
-  if (GetWindow()->non_client_view()->UseNativeFrame()) {
+  if (GetWindow()->ShouldUseNativeFrame()) {
     bool multiple_tabs_selected = (!selected_tabs.empty() ||
                                    tabs_dragging.size() > 1);
     // Make sure non-active tabs are somewhat transparent.
@@ -860,7 +860,7 @@ TabStrip::DropInfo::DropInfo(int drop_index, bool drop_before, bool point_down)
   arrow_view = new views::ImageView;
   arrow_view->SetImage(GetDropArrowImage(point_down));
 
-  arrow_window = views::Widget::CreateWidget();
+  arrow_window = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.keep_on_top = true;
   params.transparent = true;

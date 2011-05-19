@@ -87,8 +87,7 @@ class AutofillTest : public InProcessBrowserTest {
         browser()->profile()->GetPersonalDataManager();
     ASSERT_TRUE(personal_data_manager);
 
-    std::vector<AutofillProfile> profiles(1, profile);
-    personal_data_manager->SetProfiles(&profiles);
+    personal_data_manager->AddProfile(profile);
   }
 
   void ExpectFieldValue(const std::wstring& field_name,
@@ -383,9 +382,13 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillFormsDistinguishedById) {
 
 // Test that form filling works after reloading the current page.
 // This test brought to you by http://crbug.com/69204
+#if defined(OS_MACOSX)
 // Sometimes times out on Mac: http://crbug.com/81451
-// Currently enabled to try to debug timeouts.
-IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillAfterReload) {
+#define MAYBE_AutofillAfterReload DISABLED_AutofillAfterReload
+#else
+#define MAYBE_AutofillAfterReload AutofillAfterReload
+#endif
+IN_PROC_BROWSER_TEST_F(AutofillTest, MAYBE_AutofillAfterReload) {
   LOG(WARNING) << "Creating test profile.";
   CreateTestProfile();
 
@@ -454,8 +457,9 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, AutofillAfterTranslate) {
   // Get translation bar.
   render_view_host()->OnMessageReceived(ViewHostMsg_TranslateLanguageDetermined(
       0, "ja", true));
-  TranslateInfoBarDelegate* infobar = browser()->GetSelectedTabContents()->
-      GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate();
+  TranslateInfoBarDelegate* infobar =
+      browser()->GetSelectedTabContentsWrapper()->
+        GetInfoBarDelegateAt(0)->AsTranslateInfoBarDelegate();
 
   ASSERT_TRUE(infobar != NULL);
   EXPECT_EQ(TranslateInfoBarDelegate::BEFORE_TRANSLATE, infobar->type());

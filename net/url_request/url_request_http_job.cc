@@ -16,7 +16,6 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "net/base/cert_status_flags.h"
-#include "net/base/cookie_policy.h"
 #include "net/base/cookie_store.h"
 #include "net/base/filter.h"
 #include "net/base/host_port_pair.h"
@@ -28,6 +27,7 @@
 #include "net/base/ssl_cert_request_info.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/transport_security_state.h"
+#include "net/http/http_mac_signature.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
@@ -54,6 +54,31 @@ static const size_t kSdchPacketHistogramCount = 5;
 namespace net {
 
 namespace {
+
+void AddAuthorizationHeader(
+    const std::vector<CookieStore::CookieInfo>& cookie_infos,
+    HttpRequestInfo* request_info) {
+  const GURL& url = request_info->url;
+  const std::string& method = request_info->method;
+  std::string request_uri = HttpUtil::PathForRequest(url);
+  const std::string& host = url.host();
+  int port = url.EffectiveIntPort();
+  for (size_t i = 0; i < cookie_infos.size(); ++i) {
+    HttpMacSignature signature;
+    if (!signature.AddStateInfo(cookie_infos[i].name,
+                                cookie_infos[i].creation_date,
+                                cookie_infos[i].mac_key,
+                                cookie_infos[i].mac_algorithm)) {
+      continue;
+    }
+    if (!signature.AddHttpInfo(method, request_uri, host, port))
+      continue;
+    request_info->extra_headers.SetHeader(
+        HttpRequestHeaders::kAuthorization,
+        signature.GenerateAuthorizationHeader());
+    return;  // Only add the first valid header.
+  }
+}
 
 class HTTPSProberDelegateImpl : public HTTPSProberDelegate {
  public:
@@ -427,17 +452,37 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
   // be notifying our consumer asynchronously via OnStartCompleted.
   SetStatus(URLRequestStatus(URLRequestStatus::IO_PENDING, 0));
 
-  int policy = OK;
+  // If the request was destroyed, then there is no more work to do.
+  if (!request_)
+    return;
 
-  if (request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES) {
-    policy = ERR_FAILED;
-  } else if (request_->context()->cookie_policy()) {
-    policy = request_->context()->cookie_policy()->CanGetCookies(
-        request_->url(),
-        request_->first_party_for_cookies());
+  bool allow = true;
+  if (request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES ||
+      (request_->delegate() &&
+       !request_->delegate()->CanGetCookies(request_))) {
+    allow = false;
   }
 
-  OnCanGetCookiesCompleted(policy);
+  if (request_->context()->cookie_store() && allow) {
+    CookieOptions options;
+    options.set_include_httponly();
+    std::string cookie_line;
+    std::vector<CookieStore::CookieInfo> cookie_infos;
+    request_->context()->cookie_store()->GetCookiesWithInfo(
+        request_->url(), options, &cookie_line, &cookie_infos);
+    if (!cookie_line.empty()) {
+      request_info_.extra_headers.SetHeader(
+          HttpRequestHeaders::kCookie, cookie_line);
+    }
+    if (URLRequest::AreMacCookiesEnabled())
+      AddAuthorizationHeader(cookie_infos, &request_info_);
+  }
+  // We may have been canceled within CanGetCookies.
+  if (GetStatus().is_success()) {
+    StartTransaction();
+  } else {
+    NotifyCanceled();
+  }
 }
 
 void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete() {
@@ -468,18 +513,29 @@ void URLRequestHttpJob::SaveNextCookie() {
   // be notifying our consumer asynchronously via OnStartCompleted.
   SetStatus(URLRequestStatus(URLRequestStatus::IO_PENDING, 0));
 
-  int policy = OK;
-
+  bool allow = true;
+  CookieOptions options;
   if (request_info_.load_flags & LOAD_DO_NOT_SAVE_COOKIES) {
-    policy = ERR_FAILED;
-  } else if (request_->context()->cookie_policy()) {
-    policy = request_->context()->cookie_policy()->CanSetCookie(
-        request_->url(),
-        request_->first_party_for_cookies(),
-        response_cookies_[response_cookies_save_index_]);
+    allow = false;
+  } else if (request_->delegate() && request_->context()->cookie_store()) {
+    CookieOptions options;
+    options.set_include_httponly();
+    if (request_->delegate()->CanSetCookie(
+            request_,
+            response_cookies_[response_cookies_save_index_], &options)) {
+      request_->context()->cookie_store()->SetCookieWithOptions(
+          request_->url(), response_cookies_[response_cookies_save_index_],
+          options);
+    }
   }
 
-  OnCanSetCookieCompleted(policy);
+  response_cookies_save_index_++;
+  // We may have been canceled within OnSetCookie.
+  if (GetStatus().is_success()) {
+    SaveNextCookie();
+  } else {
+    NotifyCanceled();
+  }
 }
 
 void URLRequestHttpJob::FetchResponseCookies(
@@ -579,72 +635,6 @@ void URLRequestHttpJob::ProcessStrictTransportSecurityHeader() {
     if (!prober->ProbeHost(request_info_.url.host(), request()->context(),
                            delegate)) {
       delete delegate;
-    }
-  }
-}
-
-void URLRequestHttpJob::OnCanGetCookiesCompleted(int policy) {
-  // If the request was destroyed, then there is no more work to do.
-  if (request_ && request_->delegate()) {
-    if (request_->context()->cookie_store()) {
-      if (policy == ERR_ACCESS_DENIED) {
-        request_->delegate()->OnGetCookies(request_, true);
-      } else if (policy == OK) {
-        request_->delegate()->OnGetCookies(request_, false);
-        CookieOptions options;
-        options.set_include_httponly();
-        std::string cookies =
-            request_->context()->cookie_store()->GetCookiesWithOptions(
-                request_->url(), options);
-        if (!cookies.empty()) {
-          request_info_.extra_headers.SetHeader(
-              HttpRequestHeaders::kCookie, cookies);
-        }
-      }
-    }
-    // We may have been canceled within OnGetCookies.
-    if (GetStatus().is_success()) {
-      StartTransaction();
-    } else {
-      NotifyCanceled();
-    }
-  }
-}
-
-void URLRequestHttpJob::OnCanSetCookieCompleted(int policy) {
-  // If the request was destroyed, then there is no more work to do.
-  if (request_ && request_->delegate()) {
-    if (request_->context()->cookie_store()) {
-      if (policy == ERR_ACCESS_DENIED) {
-        CookieOptions options;
-        options.set_include_httponly();
-        request_->delegate()->OnSetCookie(
-            request_,
-            response_cookies_[response_cookies_save_index_],
-            options,
-            true);
-      } else if (policy == OK || policy == OK_FOR_SESSION_ONLY) {
-        // OK to save the current response cookie now.
-        CookieOptions options;
-        options.set_include_httponly();
-        if (policy == OK_FOR_SESSION_ONLY)
-          options.set_force_session();
-        request_->context()->cookie_store()->SetCookieWithOptions(
-            request_->url(), response_cookies_[response_cookies_save_index_],
-            options);
-        request_->delegate()->OnSetCookie(
-            request_,
-            response_cookies_[response_cookies_save_index_],
-            options,
-            false);
-      }
-    }
-    response_cookies_save_index_++;
-    // We may have been canceled within OnSetCookie.
-    if (GetStatus().is_success()) {
-      SaveNextCookie();
-    } else {
-      NotifyCanceled();
     }
   }
 }
@@ -1127,8 +1117,7 @@ void URLRequestHttpJob::RecordTimer() {
   request_creation_time_ = base::Time();
 
   static const bool use_prefetch_histogram =
-      base::FieldTrialList::Find("Prefetch") &&
-      !base::FieldTrialList::Find("Prefetch")->group_name().empty();
+      base::FieldTrialList::TrialExists("Prefetch");
 
   UMA_HISTOGRAM_MEDIUM_TIMES("Net.HttpTimeToFirstByte", to_start);
   if (use_prefetch_histogram) {

@@ -20,7 +20,6 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "base/timer.h"
 #include "content/browser/renderer_host/resource_queue.h"
 #include "content/common/child_process_info.h"
@@ -45,10 +44,13 @@ class WebKitThread;
 struct DownloadSaveInfo;
 struct GlobalRequestID;
 struct ResourceHostMsg_Request;
-struct ViewMsg_ClosePage_Params;
+struct ViewMsg_SwapOut_Params;
 
+namespace content {
+class ResourceContext;
+}
 namespace net {
-class URLRequestContext;
+class URLRequestJobFactory;
 }  // namespace net
 
 namespace webkit_blob {
@@ -57,19 +59,6 @@ class DeletableFileReference;
 
 class ResourceDispatcherHost : public net::URLRequest::Delegate {
  public:
-  class Observer {
-   public:
-    virtual ~Observer() {}
-    virtual void OnRequestStarted(ResourceDispatcherHost* resource_dispatcher,
-                                  net::URLRequest* request) = 0;
-    virtual void OnResponseCompleted(
-        ResourceDispatcherHost* resource_dispatcher,
-        net::URLRequest* request) = 0;
-    virtual void OnReceivedRedirect(ResourceDispatcherHost* resource_dispatcher,
-                                    net::URLRequest* request,
-                                    const GURL& new_url) = 0;
-  };
-
   explicit ResourceDispatcherHost(
       const ResourceQueue::DelegateSet& resource_queue_delegates);
   ~ResourceDispatcherHost();
@@ -94,7 +83,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                      bool prompt_for_save_location,
                      int process_unique_id,
                      int route_id,
-                     net::URLRequestContext* request_context);
+                     const content::ResourceContext& context);
 
   // Initiates a save file from the browser process (as opposed to a resource
   // request from the renderer or another child process).
@@ -102,7 +91,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                      const GURL& referrer,
                      int process_unique_id,
                      int route_id,
-                     net::URLRequestContext* request_context);
+                     const content::ResourceContext& context);
 
   // Cancels the given request if it still exists. We ignore cancels from the
   // renderer in the event of a download.
@@ -171,8 +160,8 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
     return webkit_thread_.get();
   }
 
-  // Called when the onunload handler for a cross-site request has finished.
-  void OnClosePageACK(const ViewMsg_ClosePage_Params& params);
+  // Called when the unload handler for a cross-site request has finished.
+  void OnSwapOutACK(const ViewMsg_SwapOut_Params& params);
 
   // Force cancels any pending requests for the given process.
   void CancelRequestsForProcess(int process_unique_id);
@@ -193,12 +182,10 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   virtual void OnSSLCertificateError(net::URLRequest* request,
                                      int cert_error,
                                      net::X509Certificate* cert);
-  virtual void OnGetCookies(net::URLRequest* request,
-                            bool blocked_by_policy);
-  virtual void OnSetCookie(net::URLRequest* request,
-                           const std::string& cookie_line,
-                           const net::CookieOptions& options,
-                           bool blocked_by_policy);
+  virtual bool CanGetCookies(net::URLRequest* request);
+  virtual bool CanSetCookie(net::URLRequest* request,
+                            const std::string& cookie_line,
+                            net::CookieOptions* options);
   virtual void OnResponseStarted(net::URLRequest* request);
   virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
   void OnResponseCompleted(net::URLRequest* request);
@@ -218,19 +205,8 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                                    int* render_process_host_id,
                                    int* render_view_host_id);
 
-  // Adds an observer.  The observer will be called on the IO thread.  To
-  // observe resource events on the UI thread, subscribe to the
-  // NOTIFY_RESOURCE_* notifications of the notification service.
-  void AddObserver(Observer* obs);
-
-  // Removes an observer.
-  void RemoveObserver(Observer* obs);
-
   // Retrieves a net::URLRequest.  Must be called from the IO thread.
   net::URLRequest* GetURLRequest(const GlobalRequestID& request_id) const;
-
-  // Notifies our observers that a request has been cancelled.
-  void NotifyResponseCompleted(net::URLRequest* request, int process_unique_id);
 
   void RemovePendingRequest(int process_unique_id, int request_id);
 
@@ -373,6 +349,7 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
                               int route_id,
                               const GURL& url,
                               ResourceType::Type resource_type,
+                              const net::URLRequestJobFactory& job_factory,
                               ResourceHandler* handler);
 
   // Checks all pending requests and updates the load states and upload
@@ -417,7 +394,11 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   // (a download or a page save). |download| should be true if the request
   // is a file download.
   ResourceDispatcherHostRequestInfo* CreateRequestInfoForBrowserRequest(
-      ResourceHandler* handler, int child_id, int route_id, bool download);
+      ResourceHandler* handler,
+      int child_id,
+      int route_id,
+      bool download,
+      const content::ResourceContext& context);
 
   // Returns true if |request| is in |pending_requests_|.
   bool IsValidRequest(net::URLRequest* request);
@@ -475,9 +456,6 @@ class ResourceDispatcherHost : public net::URLRequest::Delegate {
   // observed in the real world!) event where we have two requests with the same
   // request_id_.
   int request_id_;
-
-  // List of objects observing resource dispatching.
-  ObserverList<Observer> observer_list_;
 
   // For running tasks.
   ScopedRunnableMethodFactory<ResourceDispatcherHost> method_runner_;

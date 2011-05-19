@@ -89,6 +89,10 @@
 #include "webkit/fileapi/file_system_path_manager.h"
 #endif
 
+#if defined(OS_CHROMEOS) && defined(TOUCH_UI)
+#include "chrome/browser/extensions/extension_input_ui_api.h"
+#endif
+
 using base::Time;
 
 namespace errors = extension_manifest_errors;
@@ -488,6 +492,10 @@ ExtensionService::ExtensionService(Profile* profile,
   omnibox_icon_manager_.set_monochrome(true);
   omnibox_icon_manager_.set_padding(gfx::Insets(0, kOmniboxIconPaddingLeft,
                                                 0, kOmniboxIconPaddingRight));
+
+  // How long is the path to the Extensions directory?
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ExtensionRootPathLength",
+                              install_directory_.value().length(), 0, 500, 100);
 }
 
 const ExtensionList* ExtensionService::extensions() const {
@@ -540,10 +548,16 @@ void ExtensionService::InitEventRouters() {
   ExtensionManagementEventRouter::GetInstance()->Init();
   ExtensionProcessesEventRouter::GetInstance()->ObserveProfile(profile_);
   ExtensionWebNavigationEventRouter::GetInstance()->Init();
+
 #if defined(OS_CHROMEOS)
   ExtensionFileBrowserEventRouter::GetInstance()->ObserveFileSystemEvents(
       profile_);
 #endif
+
+#if defined(OS_CHROMEOS) && defined(TOUCH_UI)
+  ExtensionInputUiEventRouter::GetInstance()->Init();
+#endif
+
   event_routers_initialized_ = true;
 }
 
@@ -610,6 +624,7 @@ void ExtensionService::UpdateExtension(const std::string& id,
     installer->set_install_source(extension->location());
   installer->set_delete_source(true);
   installer->set_original_url(download_url);
+  installer->set_install_cause(extension_misc::INSTALL_CAUSE_UPDATE);
   installer->InstallCrx(extension_path);
 }
 
@@ -1452,6 +1467,15 @@ bool ExtensionService::CanCrossIncognito(const Extension* extension) {
       !extension->incognito_split_mode();
 }
 
+bool ExtensionService::CanLoadInIncognito(const Extension* extension) const {
+  if (extension->is_hosted_app())
+    return true;
+  // Packaged apps and regular extensions need to be enabled specifically for
+  // incognito (and split mode should be set).
+  return extension->incognito_split_mode() &&
+         IsIncognitoEnabled(extension->id());
+}
+
 bool ExtensionService::AllowFileAccess(const Extension* extension) {
   return (CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kDisableExtensionsFileAccessCheck) ||
@@ -2018,7 +2042,8 @@ void ExtensionService::OnExternalExtensionFileFound(
   scoped_refptr<CrxInstaller> installer(MakeCrxInstaller(NULL));
   installer->set_install_source(location);
   installer->set_expected_id(id);
-  installer->set_expected_version(*version),
+  installer->set_expected_version(*version);
+  installer->set_install_cause(extension_misc::INSTALL_CAUSE_EXTERNAL_FILE);
   installer->InstallCrx(path);
 }
 

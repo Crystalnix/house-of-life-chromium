@@ -140,10 +140,6 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveSessionsSyncTest,
   GetClient(1)->service()->SetPassphrase(kValidPassphrase, true, true);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->WaitForTypeEncryption(syncable::SESSIONS));
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_blocking_conflicting_updates);
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_conflicting_updates);
 
   ASSERT_TRUE(IsEncrypted(0));
   ASSERT_TRUE(IsEncrypted(1));
@@ -188,10 +184,6 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveSessionsSyncTest,
   GetClient(1)->service()->SetPassphrase(kValidPassphrase, true, true);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->WaitForTypeEncryption(syncable::SESSIONS));
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_blocking_conflicting_updates);
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_conflicting_updates);
 
   ASSERT_TRUE(IsEncrypted(0));
   ASSERT_TRUE(IsEncrypted(1));
@@ -240,10 +232,6 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveSessionsSyncTest,
   GetClient(1)->service()->SetPassphrase(kValidPassphrase, true, true);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->WaitForTypeEncryption(syncable::SESSIONS));
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_blocking_conflicting_updates);
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_conflicting_updates);
 
   ASSERT_TRUE(IsEncrypted(0));
   ASSERT_TRUE(IsEncrypted(1));
@@ -286,10 +274,6 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveSessionsSyncTest,
   GetClient(1)->service()->SetPassphrase(kValidPassphrase, true, true);
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_TRUE(GetClient(1)->WaitForTypeEncryption(syncable::SESSIONS));
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_blocking_conflicting_updates);
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_conflicting_updates);
 
   ASSERT_TRUE(IsEncrypted(0));
   ASSERT_TRUE(IsEncrypted(1));
@@ -333,10 +317,6 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveSessionsSyncTest,
   ASSERT_TRUE(GetClient(1)->AwaitPassphraseAccepted());
   ASSERT_FALSE(GetClient(1)->service()->IsPassphraseRequired());
   ASSERT_TRUE(GetClient(1)->WaitForTypeEncryption(syncable::SESSIONS));
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_blocking_conflicting_updates);
-  ASSERT_EQ(0, GetClient(1)->GetLastSessionSnapshot()->
-      num_conflicting_updates);
 
   // Open windows on client 1, which should automatically be encrypted.
   std::vector<SessionWindow*>* client1_windows =

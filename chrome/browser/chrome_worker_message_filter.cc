@@ -6,14 +6,16 @@
 
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "content/browser/resource_context.h"
 #include "content/browser/worker_host/worker_process_host.h"
 #include "content/common/worker_messages.h"
 
 ChromeWorkerMessageFilter::ChromeWorkerMessageFilter(WorkerProcessHost* process)
     : process_(process) {
-  host_content_settings_map_ =
-      process->resource_context()->host_content_settings_map();
+  ProfileIOData* io_data = reinterpret_cast<ProfileIOData*>(
+      process->resource_context()->GetUserData(NULL));
+  host_content_settings_map_ = io_data->GetHostContentSettingsMap();
 }
 
 ChromeWorkerMessageFilter::~ChromeWorkerMessageFilter() {
@@ -23,6 +25,7 @@ bool ChromeWorkerMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChromeWorkerMessageFilter, message)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -64,4 +67,15 @@ void ChromeWorkerMessageFilter::OnAllowDatabase(int worker_route_id,
     }
     break;
   }
+}
+
+void ChromeWorkerMessageFilter::OnAllowFileSystem(int worker_route_id,
+                                                  const GURL& url,
+                                                  bool* result) {
+  // TODO(kinuko): Need to notify the UI thread to indicate that
+  // there's a blocked content.  See the above for inspiration.
+  ContentSetting content_setting =
+      host_content_settings_map_->GetContentSetting(
+          url, CONTENT_SETTINGS_TYPE_COOKIES, "");
+  *result = content_setting != CONTENT_SETTING_BLOCK;
 }

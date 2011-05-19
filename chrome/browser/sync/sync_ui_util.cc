@@ -239,8 +239,11 @@ MessageType GetStatus(ProfileSyncService* service) {
 }
 
 bool ShouldShowSyncErrorButton(ProfileSyncService* service) {
-  return service && !service->IsManaged() && service->HasSyncSetupCompleted() &&
-      (GetStatus(service) == sync_ui_util::SYNC_ERROR);
+  return service &&
+         ((!service->IsManaged() &&
+           service->HasSyncSetupCompleted()) &&
+         (GetStatus(service) == sync_ui_util::SYNC_ERROR ||
+          service->IsPassphraseRequired()));
 }
 
 string16 GetSyncMenuLabel(ProfileSyncService* service) {
@@ -344,6 +347,8 @@ void ConstructAboutInformation(ProfileSyncService* service,
 
     ListValue* details = new ListValue();
     strings->Set("details", details);
+    sync_ui_util::AddBoolSyncDetail(details, "Sync Initialized",
+                                    service->sync_initialized());
     sync_ui_util::AddBoolSyncDetail(details, "Sync Setup Has Completed",
                                     service->HasSyncSetupCompleted());
     sync_ui_util::AddBoolSyncDetail(details,
@@ -362,8 +367,8 @@ void ConstructAboutInformation(ProfileSyncService* service,
                                    "Notifications Received",
                                    full_status.notifications_received);
     sync_ui_util::AddIntSyncDetail(details,
-                                   "Notifications Sent",
-                                   full_status.notifications_sent);
+                                   "Notifiable Commits",
+                                   full_status.notifiable_commits);
     sync_ui_util::AddIntSyncDetail(details,
                                    "Unsynced Count",
                                    full_status.unsynced_count);
@@ -401,15 +406,15 @@ void ConstructAboutInformation(ProfileSyncService* service,
 
     if (service->unrecoverable_error_detected()) {
       strings->Set("unrecoverable_error_detected", new FundamentalValue(true));
-      strings->SetString("unrecoverable_error_message",
-                         service->unrecoverable_error_message());
       tracked_objects::Location loc(service->unrecoverable_error_location());
       std::string location_str;
       loc.Write(true, true, &location_str);
-      strings->SetString("unrecoverable_error_location", location_str);
-    } else if (!service->sync_initialized()) {
-      strings->SetString("summary", "Sync not yet initialized");
-    } else {
+      std::string unrecoverable_error_message =
+          "Unrecoverable error detected at " + location_str +
+          ": " + service->unrecoverable_error_message();
+      strings->SetString("unrecoverable_error_message",
+                         unrecoverable_error_message);
+    } else if (service->sync_initialized()) {
       browser_sync::ModelSafeRoutingInfo routes;
       service->GetModelSafeRoutingInfo(&routes);
       ListValue* routing_info = new ListValue();

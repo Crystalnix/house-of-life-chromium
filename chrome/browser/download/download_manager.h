@@ -42,6 +42,7 @@
 #include "base/scoped_ptr.h"
 #include "base/time.h"
 #include "chrome/browser/download/download_status_updater_delegate.h"
+#include "chrome/browser/download/download_process_handle.h"
 #include "chrome/browser/ui/shell_dialogs.h"
 #include "content/browser/browser_thread.h"
 
@@ -56,10 +57,6 @@ class ResourceDispatcherHost;
 class TabContents;
 struct DownloadCreateInfo;
 struct DownloadSaveInfo;
-
-namespace net {
-class URLRequestContextGetter;
-}
 
 // Browser's download manager: manages all downloads and destination view.
 class DownloadManager
@@ -162,8 +159,9 @@ class DownloadManager
   // deleted is returned back to the caller.
   int RemoveAllDownloads();
 
-  // Remove the download with id |download_id| from |active_downloads_|.
-  void RemoveFromActiveList(int32 download_id);
+  // Final download manager transition for download: Update the download
+  // history and remove the download from |active_downloads_|.
+  void DownloadCompleted(int32 download_id);
 
   // Called when a Save Page As download is started. Transfers ownership
   // of |download_item| to the DownloadManager.
@@ -197,7 +195,7 @@ class DownloadManager
       DownloadCreateInfo info, int64 db_handle);
 
   // Display a new download in the appropriate browser UI.
-  void ShowDownloadInBrowser(const DownloadCreateInfo& info,
+  void ShowDownloadInBrowser(DownloadProcessHandle* process_handle,
                              DownloadItem* download);
 
   // The number of in progress (including paused) downloads.
@@ -288,9 +286,10 @@ class DownloadManager
   void AttachDownloadItem(DownloadCreateInfo* info);
 
   // Download cancel helper function.
+  // |process_handle| is passed by value because it is ultimately passed to
+  // other threads, and this way we don't have to worry about object lifetimes.
   void DownloadCancelledInternal(int download_id,
-                                 int render_process_id,
-                                 int request_id);
+                                 DownloadProcessHandle process_handle);
 
   // All data has been downloaded.
   // |hash| is sha256 hash for the downloaded file. It is empty when the hash
@@ -305,9 +304,10 @@ class DownloadManager
 
   // Makes the ResourceDispatcherHost pause/un-pause a download request.
   // Called on the IO thread.
+  // |process_handle| is passed by value because this is called from other
+  // threads, and this way we don't have to worry about object lifetimes.
   void PauseDownloadRequest(ResourceDispatcherHost* rdh,
-                            int render_process_id,
-                            int request_id,
+                            DownloadProcessHandle process_handle,
                             bool pause);
 
   // Inform observers that the model has changed.
@@ -374,7 +374,6 @@ class DownloadManager
 
   // The current active profile.
   Profile* profile_;
-  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   scoped_ptr<DownloadHistory> download_history_;
 

@@ -18,9 +18,10 @@
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/local_file_system_file_util.h"
+#include "webkit/fileapi/quota_file_util.h"
+#include "webkit/quota/quota_manager.h"
 
-using namespace fileapi;
-
+namespace fileapi {
 namespace {
 
 class MockFileSystemPathManager : public FileSystemPathManager {
@@ -71,13 +72,15 @@ class LocalFileSystemFileUtilTest : public testing::Test {
 
  protected:
   FileSystemOperationContext* NewContext() {
-    return new FileSystemOperationContext(
+    FileSystemOperationContext* context = new FileSystemOperationContext(
         new FileSystemContext(base::MessageLoopProxy::CreateForCurrentThread(),
                               base::MessageLoopProxy::CreateForCurrentThread(),
-                              NULL, FilePath(), false /* is_incognito */,
+                              NULL, NULL, FilePath(), false /* is_incognito */,
                               true, true,
                               new MockFileSystemPathManager(filesystem_dir_)),
         FileUtil());
+    context->set_allowed_bytes_growth(QuotaFileUtil::kNoLimit);
+    return context;
   }
 
   LocalFileSystemFileUtil* FileUtil() {
@@ -301,3 +304,5 @@ TEST_F(LocalFileSystemFileUtilTest, MoveDirectory) {
   EXPECT_TRUE(FileExists(to_file));
   EXPECT_EQ(1020, GetSize(to_file));
 }
+
+}  // namespace fileapi

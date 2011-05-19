@@ -70,11 +70,16 @@ void ResumeRequestContext(
 
 }  // namespace
 
+
+bool ProfileManagerObserver::DeleteAfterCreation() {
+    return false;
+}
+
 // The NewProfileLauncher class is created when to wait for a multi-profile
 // to be created asynchronously. Upon completion of profile creation, the
 // NPL takes care of launching a new browser window and signing the user
 // in to their Google account.
-class NewProfileLauncher : public ProfileManager::Observer {
+class NewProfileLauncher : public ProfileManagerObserver {
  public:
   virtual void OnProfileCreated(Profile* profile) {
     Browser::NewWindowWithProfile(profile);
@@ -106,7 +111,7 @@ Profile* ProfileManager::GetDefaultProfile() {
 }
 
 ProfileManager::ProfileManager() : logged_in_(false) {
-  ui::SystemMonitor::Get()->AddObserver(this);
+  base::SystemMonitor::Get()->AddObserver(this);
   BrowserList::AddObserver(this);
 #if defined(OS_CHROMEOS)
   registrar_.Add(
@@ -117,7 +122,7 @@ ProfileManager::ProfileManager() : logged_in_(false) {
 }
 
 ProfileManager::~ProfileManager() {
-  ui::SystemMonitor* system_monitor = ui::SystemMonitor::Get();
+  base::SystemMonitor* system_monitor = base::SystemMonitor::Get();
   if (system_monitor)
     system_monitor->RemoveObserver(this);
   BrowserList::RemoveObserver(this);
@@ -275,7 +280,7 @@ Profile* ProfileManager::GetProfile(const FilePath& profile_dir) {
 }
 
 void ProfileManager::CreateProfileAsync(const FilePath& user_data_dir,
-                                        Observer* observer) {
+                                        ProfileManagerObserver* observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ProfilesInfoMap::iterator iter = profiles_info_.find(user_data_dir);
   if (iter != profiles_info_.end()) {
@@ -297,7 +302,8 @@ void ProfileManager::CreateProfileAsync(const FilePath& user_data_dir,
 }
 
 // static
-void ProfileManager::CreateDefaultProfileAsync(Observer* observer) {
+void ProfileManager::CreateDefaultProfileAsync(
+    ProfileManagerObserver* observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 
@@ -441,7 +447,7 @@ void ProfileManager::OnProfileCreated(Profile* profile, bool success) {
   DCHECK(iter != profiles_info_.end());
   ProfileInfo* info = iter->second.get();
 
-  std::vector<Observer*> observers;
+  std::vector<ProfileManagerObserver*> observers;
   info->observers.swap(observers);
 
   if (success) {
@@ -460,7 +466,7 @@ void ProfileManager::OnProfileCreated(Profile* profile, bool success) {
     profiles_info_.erase(iter);
   }
 
-  std::vector<Observer*> observers_to_delete;
+  std::vector<ProfileManagerObserver*> observers_to_delete;
 
   for (size_t i = 0; i < observers.size(); ++i) {
     observers[i]->OnProfileCreated(profile);

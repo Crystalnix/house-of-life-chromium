@@ -107,7 +107,10 @@ View::View()
       clip_y_(0.0),
       needs_layout_(true),
       flip_canvas_on_paint_for_rtl_ui_(false),
+#if !defined(COMPOSITOR_2)
       texture_id_(0),  // TODO(sadrul): 0 can be a valid texture id.
+#endif
+      texture_needs_updating_(true),
       accelerator_registration_delayed_(false),
       accelerator_focus_manager_(NULL),
       registered_accelerator_count_(0),
@@ -196,11 +199,9 @@ View* View::GetChildViewAt(int index) {
 }
 
 bool View::Contains(const View* view) const {
-  const View* child = view;
-  while (child) {
-    if (child == this)
+  for (const View* v = view; v; v = v->parent_) {
+    if (v == this)
       return true;
-    child = child->parent();
   }
   return false;
 }
@@ -214,7 +215,7 @@ int View::GetIndexOf(const View* view) const {
 // TODO(beng): remove
 const Window* View::GetWindow() const {
   const Widget* widget = GetWidget();
-  return widget ? widget->GetWindow() : NULL;
+  return widget ? widget->GetContainingWindow() : NULL;
 }
 
 // TODO(beng): remove
@@ -363,6 +364,8 @@ void View::SetVisible(bool flag) {
     // refresh parent
     if (IsVisible())
       SchedulePaint();
+    else
+      ResetTexture();
 
     is_visible_ = flag;
 
@@ -397,68 +400,29 @@ bool View::IsEnabled() const {
 // Transformations -------------------------------------------------------------
 
 const ui::Transform& View::GetTransform() const {
-  static const ui::Transform* no_op = ui::Transform::Create();
+  static const ui::Transform* no_op = new ui::Transform;
   if (transform_.get())
     return *transform_.get();
   return *no_op;
 }
 
-void View::SetRotation(float degree) {
-  InitTransform();
-  transform_->SetRotate(degree);
+void View::SetTransform(const ui::Transform& transform) {
+  if (!transform.HasChange()) {
+    if (!transform_.get())
+      return;
+    transform_.reset(NULL);
+#if !defined(COMPOSITOR_2)
+    canvas_.reset();
+#else
+    texture_.reset();
+#endif
+    SchedulePaint();
+  } else {
+    transform_.reset(new ui::Transform(transform));
+    // TODO: this needs to trigger a paint on the widget. It shouldn't use
+    // SchedulePaint as we don't want to mark the views dirty.
+  }
 }
-
-void View::SetScaleX(float x) {
-  InitTransform();
-  transform_->SetScaleX(x);
-}
-
-void View::SetScaleY(float y) {
-  InitTransform();
-  transform_->SetScaleY(y);
-}
-
-void View::SetScale(float x, float y) {
-  InitTransform();
-  transform_->SetScale(x, y);
-}
-
-void View::SetTranslateX(float x) {
-  InitTransform();
-  transform_->SetTranslateX(x);
-}
-
-void View::SetTranslateY(float y) {
-  InitTransform();
-  transform_->SetTranslateY(y);
-}
-
-void View::SetTranslate(float x, float y) {
-  InitTransform();
-  transform_->SetTranslate(x, y);
-}
-
-void View::ConcatRotation(float degree) {
-  InitTransform();
-  transform_->ConcatRotate(degree);
-}
-
-void View::ConcatScale(float x, float y) {
-  InitTransform();
-  transform_->ConcatScale(x, y);
-}
-
-void View::ConcatTranslate(float x, float y) {
-  InitTransform();
-  transform_->ConcatTranslate(x, y);
-}
-
-void View::ResetTransform() {
-  transform_.reset(NULL);
-  clip_x_ = clip_y_ = 0.0;
-  canvas_.reset();
-}
-
 
 // RTL positioning -------------------------------------------------------------
 
@@ -671,13 +635,45 @@ void View::Paint(gfx::Canvas* canvas) {
     return;
 
   ScopedCanvas scoped_canvas(NULL);
+  scoped_ptr<gfx::Canvas> texture_canvas;
+  gfx::Rect texture_rect;
+
+#if !defined(COMPOSITOR_2)
   if (use_acceleration_when_possible &&
       transform_.get() && transform_->HasChange()) {
     // This view has a transformation. So this maintains its own canvas.
     if (!canvas_.get())
       canvas_.reset(gfx::Canvas::CreateCanvas(width(), height(), false));
+#else
+  if (ShouldPaintToTexture()) {
+    gfx::Rect dirty_rect;
+    if (!texture_clip_rect_.IsEmpty()) {
+      dirty_rect = texture_clip_rect_;
+    } else {
+      // TODO: clip against dirty rect of canvas (if canvas is non-null).
+      dirty_rect = gfx::Rect(0, 0, width(), height());
+    }
+    if (dirty_rect.IsEmpty())
+      return;
 
-    canvas = canvas_.get();
+    if (!texture_.get())
+      texture_.reset(GetCompositor()->CreateTexture());
+
+    if (!texture_needs_updating_) {
+      // We don't need to be painted. Iterate over descendants in case one of
+      // them is dirty.
+      PaintToTexture(dirty_rect);
+      return;
+    }
+
+    texture_canvas.reset(gfx::Canvas::CreateCanvas(dirty_rect.width(),
+        dirty_rect.height(), false));
+    texture_canvas->AsCanvasSkia()->drawColor(
+        SK_ColorBLACK, SkXfermode::kClear_Mode);
+    texture_canvas->TranslateInt(-dirty_rect.x(), -dirty_rect.y());
+    canvas = texture_canvas.get();
+    // TODO: set texture_needs_updating_ to false.
+#endif
   } else {
     // We're going to modify the canvas, save its state first.
     scoped_canvas.SetCanvas(canvas);
@@ -690,8 +686,8 @@ void View::Paint(gfx::Canvas* canvas) {
     // consideration whether or not the view uses a right-to-left layout so that
     // we paint our view in its mirrored position if need be.
     if (!canvas->ClipRectInt(GetMirroredX(), y(),
-                            width() - static_cast<int>(clip_x_),
-                            height() - static_cast<int>(clip_y_))) {
+                             width() - static_cast<int>(clip_x_),
+                             height() - static_cast<int>(clip_y_))) {
       return;
     }
     // Non-empty clip, translate the graphics such that 0,0 corresponds to
@@ -720,22 +716,21 @@ void View::Paint(gfx::Canvas* canvas) {
 
   PaintChildren(canvas);
 
+#if !defined(COMPOSITOR_2)
   if (canvas == canvas_.get()) {
     texture_id_ = canvas->GetTextureID();
 
     // TODO(sadrul): Make sure the Widget's compositor tree updates itself?
   }
+#else
+  if (texture_canvas.get()) {
+    texture_->SetBitmap(
+        texture_canvas->AsCanvasSkia()->getDevice()->accessBitmap(false),
+        texture_rect.origin(),
+        size());
+  }
+#endif
 }
-
-void View::PaintNow() {
-  if (!IsVisible())
-    return;
-
-  if (parent())
-    parent()->PaintNow();
-}
-
-
 
 ThemeProvider* View::GetThemeProvider() const {
   const Widget* widget = GetWidget();
@@ -1143,6 +1138,7 @@ void View::OnPaintFocusBorder(gfx::Canvas* canvas) {
 
 // Accelerated Painting --------------------------------------------------------
 
+#if !defined(COMPOSITOR_2)
 void View::PaintComposite(ui::Compositor* compositor) {
   compositor->SaveTransform();
 
@@ -1156,6 +1152,56 @@ void View::PaintComposite(ui::Compositor* compositor) {
   }
 
   compositor->RestoreTransform();
+}
+#else
+void View::PaintComposite() {
+  if (!IsVisible())
+    return;
+
+  if (texture_.get()) {
+    // TODO: if dirty_region doesn't itersect bounds, return.
+    ui::Transform transform;
+    GetTransformRelativeTo(NULL, &transform);
+    texture_->Draw(transform);
+  }
+
+  for (int i = 0, count = child_count(); i < count; ++i)
+    GetChildViewAt(i)->PaintComposite();
+}
+
+void View::PaintToTexture(const gfx::Rect& dirty_region) {
+  if (!IsVisible())
+    return;
+
+  if (ShouldPaintToTexture() && texture_needs_updating_) {
+    texture_clip_rect_ = dirty_region;
+    Paint(NULL);
+    texture_clip_rect_.SetRect(0, 0, 0, 0);
+  } else {
+    // Forward to all children as a descendant may be dirty and have a texture.
+    for (int i = child_count() - 1; i >= 0; --i) {
+      View* child_view = GetChildViewAt(i);
+      gfx::Rect child_dirty_rect(child_view->bounds().Intersect(dirty_region));
+      if (!child_dirty_rect.IsEmpty()) {
+        child_dirty_rect.Offset(-child_view->x(), -child_view->y());
+        GetChildViewAt(i)->PaintToTexture(child_dirty_rect);
+      }
+    }
+  }
+}
+#endif
+
+bool View::ShouldPaintToTexture() const {
+  return use_acceleration_when_possible && transform_.get() &&
+      transform_->HasChange() && GetCompositor();
+}
+
+const ui::Compositor* View::GetCompositor() const {
+  return parent_ ? parent_->GetCompositor() : NULL;
+}
+
+ui::Compositor* View::GetCompositor() {
+  return parent_ ? parent_->GetCompositor() : NULL;
 }
 
 // Input -----------------------------------------------------------------------
@@ -1276,6 +1322,7 @@ void View::DoRemoveChildView(View* view,
 
     if (GetWidget())
       UnregisterChildrenForVisibleBoundsNotification(view);
+    view->ResetTexture();
     view->PropagateRemoveNotifications(this);
     view->SetParent(NULL);
 
@@ -1363,8 +1410,10 @@ void View::VisibilityChangedImpl(View* starting_from, bool is_visible) {
 }
 
 void View::BoundsChanged(const gfx::Rect& previous_bounds) {
+#if !defined(COMPOSITOR_2)
   if (canvas_.get())
     canvas_.reset(gfx::Canvas::CreateCanvas(width(), height(), false));
+#endif
 
   if (IsVisible()) {
     if (parent_) {
@@ -1466,9 +1515,21 @@ void View::RemoveDescendantToNotify(View* view) {
 
 // Transformations -------------------------------------------------------------
 
-void View::InitTransform() {
-  if (!transform_.get())
-    transform_.reset(ui::Transform::Create());
+bool View::GetTransformRelativeTo(const View* ancestor,
+                                  ui::Transform* transform) const {
+  if (this == ancestor)
+    return true;
+  bool ret_value = false;
+  if (parent_) {
+    ret_value = parent_->GetTransformRelativeTo(ancestor, transform);
+  } else if (transform_.get()) {
+    *transform = *transform_;
+  }
+  transform->ConcatTranslate(static_cast<float>(GetMirroredX()),
+                             static_cast<float>(y()));
+  if (transform_.get())
+    transform->ConcatTransform(*transform_);
+  return ret_value;
 }
 
 // Coordinate conversion -------------------------------------------------------
@@ -1503,46 +1564,29 @@ void View::ConvertPointToView(const View* src,
 
 bool View::ConvertPointForAncestor(const View* ancestor,
                                    gfx::Point* point) const {
-  scoped_ptr<ui::Transform> trans(ui::Transform::Create());
-
+  ui::Transform trans;
   // TODO(sad): Have some way of caching the transformation results.
-
-  const View* v = this;
-  for (; v && v != ancestor; v = v->parent()) {
-    if (v->GetTransform().HasChange()) {
-      if (!trans->ConcatTransform(v->GetTransform()))
-        return false;
-    }
-    trans->ConcatTranslate(static_cast<float>(v->GetMirroredX()),
-                           static_cast<float>(v->y()));
-  }
-
-  if (trans->HasChange()) {
-    trans->TransformPoint(point);
-  }
-
-  return v == ancestor;
+  bool result = GetTransformRelativeTo(ancestor, &trans);
+  trans.TransformPoint(point);
+  return result;
 }
 
 bool View::ConvertPointFromAncestor(const View* ancestor,
                                     gfx::Point* point) const {
-  scoped_ptr<ui::Transform> trans(ui::Transform::Create());
+  ui::Transform trans;
+  bool result = GetTransformRelativeTo(ancestor, &trans);
+  trans.TransformPointReverse(point);
+  return result;
+}
 
-  const View* v = this;
-  for (; v && v != ancestor; v = v->parent()) {
-    if (v->GetTransform().HasChange()) {
-      if (!trans->ConcatTransform(v->GetTransform()))
-        return false;
-    }
-    trans->ConcatTranslate(static_cast<float>(v->GetMirroredX()),
-                           static_cast<float>(v->y()));
-  }
+// Accelerated painting --------------------------------------------------------
 
-  if (trans->HasChange()) {
-    trans->TransformPointReverse(point);
-  }
-
-  return v == ancestor;
+void View::ResetTexture() {
+#if defined(COMPOSITOR_2)
+  texture_.reset();
+  for (int i = child_count() - 1; i >= 0; --i)
+    GetChildViewAt(i)->ResetTexture();
+#endif
 }
 
 // Input -----------------------------------------------------------------------

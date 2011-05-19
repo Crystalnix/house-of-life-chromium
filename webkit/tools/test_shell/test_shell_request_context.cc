@@ -11,17 +11,19 @@
 #include "net/base/cert_verifier.h"
 #include "net/base/cookie_monster.h"
 #include "net/base/host_resolver.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/static_cookie_policy.h"
+#include "net/base/ssl_config_service_defaults.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
+#include "net/url_request/url_request_job_factory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKitClient.h"
 #include "webkit/blob/blob_storage_controller.h"
+#include "webkit/blob/blob_url_request_job_factory.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_url_request_job_factory.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/tools/test_shell/simple_file_system.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
@@ -44,7 +46,6 @@ void TestShellRequestContext::Init(
     net::HttpCache::Mode cache_mode,
     bool no_proxy) {
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
-  storage_.set_cookie_policy(new net::StaticCookiePolicy());
 
   // hard-code A-L and A-C for test shells
   set_accept_language("en-us,en");
@@ -69,12 +70,13 @@ void TestShellRequestContext::Init(
 #endif
   storage_.set_host_resolver(
       net::CreateSystemHostResolver(net::HostResolver::kDefaultParallelism,
+                                    net::HostResolver::kDefaultRetryAttempts,
                                     NULL));
   storage_.set_cert_verifier(new net::CertVerifier);
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       proxy_config_service.release(), 0, NULL));
   storage_.set_ssl_config_service(
-      net::SSLConfigService::CreateSystemSSLConfigService());
+      new net::SSLConfigServiceDefaults);
 
   storage_.set_http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
@@ -97,6 +99,19 @@ void TestShellRequestContext::Init(
   blob_storage_controller_.reset(new webkit_blob::BlobStorageController());
   file_system_context_ = static_cast<SimpleFileSystem*>(
       WebKit::webKitClient()->fileSystem())->file_system_context();
+
+  net::URLRequestJobFactory* job_factory = new net::URLRequestJobFactory;
+  job_factory->SetProtocolHandler(
+      "blob",
+      new webkit_blob::BlobProtocolHandler(
+          blob_storage_controller_.get(),
+          SimpleResourceLoaderBridge::GetIoThread()));
+  job_factory->SetProtocolHandler(
+      "filesystem",
+      fileapi::CreateFileSystemProtocolHandler(
+          file_system_context_.get(),
+          SimpleResourceLoaderBridge::GetIoThread()));
+  storage_.set_job_factory(job_factory);
 }
 
 TestShellRequestContext::~TestShellRequestContext() {

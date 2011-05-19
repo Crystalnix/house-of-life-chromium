@@ -5,7 +5,8 @@
 #ifndef WEBKIT_QUOTA_QUOTA_DATABASE_H_
 #define WEBKIT_QUOTA_QUOTA_DATABASE_H_
 
-#include <map>
+#include <set>
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
@@ -27,6 +28,7 @@ namespace quota {
 // All the methods of this class must run on the DB thread.
 class QuotaDatabase {
  public:
+  // If 'path' is empty, an in memory database will be used.
   explicit QuotaDatabase(const FilePath& path);
   ~QuotaDatabase();
 
@@ -38,18 +40,30 @@ class QuotaDatabase {
   bool SetOriginLastAccessTime(const GURL& origin, StorageType type,
                                base::Time last_access_time);
 
+  // Register |origins| to Database with |used_count| = 0 and
+  // specified |last_access_time|.
+  bool RegisterOrigins(const std::set<GURL>& origins,
+                       StorageType type,
+                       base::Time last_access_time);
+
   bool DeleteHostQuota(const std::string& host, StorageType type);
   bool DeleteOriginLastAccessTime(const GURL& origin, StorageType type);
 
   bool GetGlobalQuota(StorageType type, int64* quota);
   bool SetGlobalQuota(StorageType type, int64 quota);
 
-  // Return least recently used origins whose used_count is <=
-  // |max_used_count| up to |num_origins_limit|.  If |max_used_count| is -1,
-  // it just returns LRU storages regardless of the used_count value.
-  // |num_origins_limit| must be > 0.
-  bool GetLRUOrigins(StorageType type, std::vector<GURL>* origins,
-                     int max_used_count, int num_origins_limit);
+  // Sets |origin| the least recently used origin of origins not included in
+  // |exceptions|.  It returns false when it failed in accessing the database.
+  // |origin| is set to empty when there is no matching origin.
+  bool GetLRUOrigin(StorageType type,
+                    const std::set<GURL>& exceptions,
+                    GURL* origin);
+
+  // Returns false if SetOriginDatabaseBootstrapped has never
+  // been called before, which means existing origins may not have been
+  // registered.
+  bool IsOriginDatabaseBootstrapped();
+  bool SetOriginDatabaseBootstrapped(bool bootstrap_flag);
 
  private:
   bool FindOriginUsedCount(const GURL& origin,
@@ -68,10 +82,7 @@ class QuotaDatabase {
   bool is_recreating_;
   bool is_disabled_;
 
-  FRIEND_TEST_ALL_PREFIXES(QuotaDatabaseTest, LazyOpen);
-  FRIEND_TEST_ALL_PREFIXES(QuotaDatabaseTest, HostQuota);
-  FRIEND_TEST_ALL_PREFIXES(QuotaDatabaseTest, GlobalQuota);
-  FRIEND_TEST_ALL_PREFIXES(QuotaDatabaseTest, OriginLastAccessTimeLRU);
+  friend class QuotaDatabaseTest;
 
   DISALLOW_COPY_AND_ASSIGN(QuotaDatabase);
 };

@@ -70,9 +70,10 @@ HostContentSettingsMap::HostContentSettingsMap(Profile* profile)
   default_content_settings_providers_.push_back(
       DefaultContentSettingsProviderPtr(
           new content_settings::PrefDefaultProvider(profile)));
+  content_settings::DefaultProviderInterface* policy_default_provider =
+      new content_settings::PolicyDefaultProvider(profile);
   default_content_settings_providers_.push_back(
-      DefaultContentSettingsProviderPtr(
-          new content_settings::PolicyDefaultProvider(profile)));
+      DefaultContentSettingsProviderPtr(policy_default_provider));
 
   PrefService* prefs = profile_->GetPrefs();
 
@@ -100,7 +101,8 @@ HostContentSettingsMap::HostContentSettingsMap(Profile* profile)
   // as providers that are further up in the list (i.e. added earlier) override
   // providers further down.
   content_settings_providers_.push_back(
-      make_linked_ptr(new content_settings::PolicyProvider(profile)));
+      make_linked_ptr(new content_settings::PolicyProvider(
+          profile, policy_default_provider)));
   content_settings_providers_.push_back(
       make_linked_ptr(new content_settings::PrefProvider(profile)));
 
@@ -113,13 +115,20 @@ HostContentSettingsMap::HostContentSettingsMap(Profile* profile)
 
 // static
 void HostContentSettingsMap::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kBlockThirdPartyCookies, false);
-  prefs->RegisterBooleanPref(prefs::kBlockNonsandboxedPlugins, false);
-  prefs->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex, 0);
+  prefs->RegisterBooleanPref(prefs::kBlockThirdPartyCookies,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kBlockNonsandboxedPlugins,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kContentSettingsWindowLastTabIndex,
+                             0,
+                             PrefService::UNSYNCABLE_PREF);
 
   // Obsolete prefs, for migration:
   prefs->RegisterIntegerPref(prefs::kCookieBehavior,
-                             net::StaticCookiePolicy::ALLOW_ALL_COOKIES);
+                             net::StaticCookiePolicy::ALLOW_ALL_COOKIES,
+                             PrefService::UNSYNCABLE_PREF);
 
   // Register the prefs for the content settings providers.
   content_settings::PrefDefaultProvider::RegisterUserPrefs(prefs);
@@ -173,8 +182,7 @@ ContentSetting HostContentSettingsMap::GetNonDefaultContentSetting(
        ++provider) {
     provided_setting = (*provider)->GetContentSetting(
         url, url, content_type, resource_identifier);
-    bool isManaged = (*provider)->ContentSettingsTypeIsManaged(content_type);
-    if (provided_setting != CONTENT_SETTING_DEFAULT || isManaged)
+    if (provided_setting != CONTENT_SETTING_DEFAULT)
       return provided_setting;
   }
   return provided_setting;

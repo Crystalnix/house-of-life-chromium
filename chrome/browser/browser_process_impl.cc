@@ -39,6 +39,7 @@
 #include "chrome/browser/net/predictor_api.h"
 #include "chrome/browser/net/sdch_dictionary_fetcher.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/plugin_data_remover.h"
 #include "chrome/browser/policy/browser_policy_connector.h"
 #include "chrome/browser/prefs/browser_prefs.h"
@@ -56,6 +57,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/default_plugin.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/json_pref_store.h"
@@ -66,7 +68,7 @@
 #include "content/browser/browser_child_process_host.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/child_process_security_policy.h"
-#include "content/browser/gpu_process_host_ui_shim.h"
+#include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/plugin_service.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
@@ -76,6 +78,7 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/database/database_tracker.h"
+#include "webkit/plugins/npapi/plugin_list.h"
 
 #if defined(OS_WIN)
 #include "views/focus/view_storage.h"
@@ -87,6 +90,7 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
+#include "chrome/browser/chromeos/web_socket_proxy_controller.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if (defined(OS_WIN) || defined(OS_LINUX)) && !defined(OS_CHROMEOS)
@@ -112,6 +116,9 @@ BrowserProcessImpl::BrowserProcessImpl(const CommandLine& command_line)
       created_cache_thread_(false),
       created_gpu_thread_(false),
       created_watchdog_thread_(false),
+#if defined(OS_CHROMEOS)
+      created_web_socket_proxy_thread_(false),
+#endif
       created_profile_manager_(false),
       created_local_state_(false),
       created_icon_manager_(false),
@@ -150,6 +157,12 @@ BrowserProcessImpl::~BrowserProcessImpl() {
 
   // Store the profile path for clearing local state data on exit.
   clear_local_state_on_exit = ShouldClearLocalState(&profile_path);
+
+#if defined(OS_CHROMEOS)
+  if (web_socket_proxy_thread_.get())
+    chromeos::WebSocketProxyController::Shutdown();
+  web_socket_proxy_thread_.reset();
+#endif
 
   // Delete the AutomationProviderList before NotificationService,
   // since it may try to unregister notifications
@@ -433,6 +446,16 @@ WatchDogThread* BrowserProcessImpl::watchdog_thread() {
   DCHECK(watchdog_thread_.get() != NULL);
   return watchdog_thread_.get();
 }
+
+#if defined(OS_CHROMEOS)
+base::Thread* BrowserProcessImpl::web_socket_proxy_thread() {
+  DCHECK(CalledOnValidThread());
+  if (!created_web_socket_proxy_thread_)
+    CreateWebSocketProxyThread();
+  DCHECK(web_socket_proxy_thread_.get() != NULL);
+  return web_socket_proxy_thread_.get();
+}
+#endif
 
 ProfileManager* BrowserProcessImpl::profile_manager() {
   DCHECK(CalledOnValidThread());
@@ -724,6 +747,17 @@ void BrowserProcessImpl::CreateIOThread() {
   // invoke the io_thread() accessor.
   PluginService::GetInstance();
 
+  // Add the Chrome specific plugins.
+  chrome::RegisterInternalDefaultPlugin();
+
+  // Register the internal Flash if available.
+  FilePath path;
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableInternalFlash) &&
+      PathService::Get(chrome::FILE_FLASH_PLUGIN, &path)) {
+    webkit::npapi::PluginList::Singleton()->AddExtraPluginPath(path);
+  }
+
 #if defined(USE_X11)
   // The lifetime of the BACKGROUND_X11 thread is a subset of the IO thread so
   // we start it now.
@@ -761,6 +795,22 @@ void BrowserProcessImpl::CreateFileThread() {
     return;
   file_thread_.swap(thread);
 }
+
+#if defined(OS_CHROMEOS)
+void BrowserProcessImpl::CreateWebSocketProxyThread() {
+  DCHECK(!created_web_socket_proxy_thread_);
+  DCHECK(web_socket_proxy_thread_.get() == NULL);
+  created_web_socket_proxy_thread_ = true;
+
+  scoped_ptr<base::Thread> thread(
+      new BrowserProcessSubThread(BrowserThread::WEB_SOCKET_PROXY));
+  base::Thread::Options options;
+  options.message_loop_type = MessageLoop::TYPE_IO;
+  if (!thread->StartWithOptions(options))
+    return;
+  web_socket_proxy_thread_.swap(thread);
+}
+#endif
 
 void BrowserProcessImpl::CreateDBThread() {
   DCHECK(!created_db_thread_ && db_thread_.get() == NULL);
@@ -844,7 +894,7 @@ void BrowserProcessImpl::CreateLocalState() {
   FilePath local_state_path;
   PathService::Get(chrome::FILE_LOCAL_STATE, &local_state_path);
   local_state_.reset(
-      PrefService::CreatePrefService(local_state_path, NULL, NULL));
+      PrefService::CreatePrefService(local_state_path, NULL, NULL, false));
 
   // Initialize the prefs of the local state.
   browser::RegisterLocalState(local_state_.get());
@@ -951,13 +1001,17 @@ void BrowserProcessImpl::CreateSafeBrowsingDetectionService() {
 bool BrowserProcessImpl::IsSafeBrowsingDetectionServiceEnabled() {
   // The safe browsing client-side detection is enabled only if the switch is
   // enabled and when safe browsing related stats is allowed to be collected.
+  // For now we only enable client-side detection on the canary, dev and beta
+  // channel.
 #ifdef OS_CHROMEOS
   return false;
 #else
+  std::string channel = platform_util::GetVersionStringModifier();
   return !CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableClientSidePhishingDetection) &&
       resource_dispatcher_host()->safe_browsing_service() &&
-      resource_dispatcher_host()->safe_browsing_service()->CanReportStats();
+      resource_dispatcher_host()->safe_browsing_service()->CanReportStats() &&
+      (channel == "beta" || channel == "dev" || channel == "canary");
 #endif
 }
 

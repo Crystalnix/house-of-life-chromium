@@ -257,8 +257,12 @@ Profile* Profile::CreateProfileAsync(const FilePath&path,
 
 // static
 void ProfileImpl::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled, false);
-  prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit, false);
+  prefs->RegisterBooleanPref(prefs::kSavingBrowserHistoryDisabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kClearSiteDataOnExit,
+                             false,
+                             PrefService::SYNCABLE_PREF);
 }
 
 ProfileImpl::ProfileImpl(const FilePath& path,
@@ -288,18 +292,23 @@ ProfileImpl::ProfileImpl(const FilePath& path,
       &ProfileImpl::EnsureSessionServiceCreated);
 
   if (delegate_) {
-    prefs_.reset(PrefService::CreatePrefServiceAsync(
+    prefs_.reset(PrefService::CreatePrefService(
         GetPrefFilePath(),
         new ExtensionPrefStore(GetExtensionPrefValueMap(), false),
         GetOriginalProfile(),
-        this));  // Ask to notify us in the end.
+        true));
+    // Wait for the notifcation that prefs has been loaded (successfully or
+    // not).
+    registrar_.Add(this, NotificationType::PREF_INITIALIZATION_COMPLETED,
+                   Source<PrefService>(prefs_.get()));
   } else {
     // Load prefs synchronously.
     prefs_.reset(PrefService::CreatePrefService(
         GetPrefFilePath(),
         new ExtensionPrefStore(GetExtensionPrefValueMap(), false),
-        GetOriginalProfile()));
-    OnPrefsLoaded(prefs_.get(), true);
+        GetOriginalProfile(),
+        false));
+    OnPrefsLoaded(true);
   }
 }
 
@@ -336,7 +345,7 @@ void ProfileImpl::DoFinalInit() {
 
   PrefService* local_state = g_browser_process->local_state();
   ssl_config_service_manager_.reset(
-      SSLConfigServiceManager::CreateDefaultManager(GetPrefs(), local_state));
+      SSLConfigServiceManager::CreateDefaultManager(local_state));
 
   PinnedTabServiceFactory::GetForProfile(this);
 
@@ -370,6 +379,12 @@ void ProfileImpl::DoFinalInit() {
 
   InstantController::RecordMetrics(this);
 
+  // Logs the spell-check enabled status.
+  // For simplicity, we check if spell-check is enabled only at start up
+  // time and don't track preferences change.
+  SpellCheckHost::RecordEnabledStats(
+      GetPrefs()->GetBoolean(prefs::kEnableSpellCheck));
+
   FilePath cookie_path = GetPath();
   cookie_path = cookie_path.Append(chrome::kCookieFilename);
   FilePath cache_path = base_cache_path_;
@@ -394,8 +409,6 @@ void ProfileImpl::DoFinalInit() {
                 media_cache_path, media_cache_max_size, extensions_cookie_path,
                 app_path);
 
-  // Initialize the ProfilePolicyConnector after |io_data_| since it requires
-  // the URLRequestContextGetter to be initialized.
   policy::ProfilePolicyConnector* policy_connector =
       policy::ProfilePolicyConnectorFactory::GetForProfile(this);
   policy_connector->Initialize();
@@ -507,10 +520,6 @@ void ProfileImpl::RegisterComponentExtensions() {
           FILE_PATH_LITERAL("/usr/share/chromeos-assets/helpapp"),
           IDR_HELP_MANIFEST));
     }
-
-    component_extensions.push_back(std::make_pair(
-        FILE_PATH_LITERAL("/usr/share/chromeos-assets/getstarted"),
-        IDR_GETSTARTED_MANIFEST));
 #endif
   }
 #endif
@@ -706,27 +715,12 @@ Profile* ProfileImpl::GetOriginalProfile() {
 }
 
 ChromeAppCacheService* ProfileImpl::GetAppCacheService() {
-  if (!appcache_service_) {
-    appcache_service_ = new ChromeAppCacheService;
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(
-            appcache_service_.get(),
-            &ChromeAppCacheService::InitializeOnIOThread,
-            IsOffTheRecord()
-                ? FilePath() : GetPath().Append(chrome::kAppCacheDirname),
-            make_scoped_refptr(GetHostContentSettingsMap()),
-            make_scoped_refptr(GetExtensionSpecialStoragePolicy()),
-            clear_local_state_on_exit_));
-  }
+  CreateQuotaManagerAndClients();
   return appcache_service_;
 }
 
 webkit_database::DatabaseTracker* ProfileImpl::GetDatabaseTracker() {
-  if (!db_tracker_) {
-    db_tracker_ = new webkit_database::DatabaseTracker(
-        GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy());
-  }
+  CreateQuotaManagerAndClients();
   return db_tracker_;
 }
 
@@ -802,9 +796,7 @@ net::TransportSecurityState*
   return transport_security_state_.get();
 }
 
-void ProfileImpl::OnPrefsLoaded(PrefService* prefs, bool success) {
-  DCHECK(prefs == prefs_.get());
-
+void ProfileImpl::OnPrefsLoaded(bool success) {
   if (!success) {
     DCHECK(delegate_);
     delegate_->OnProfileCreated(this, false);
@@ -873,7 +865,6 @@ net::URLRequestContextGetter* ProfileImpl::GetRequestContext() {
   // created first.
   if (!default_request_context_) {
     default_request_context_ = request_context;
-    request_context->set_is_main(true);
     // TODO(eroman): this isn't terribly useful anymore now that the
     // net::URLRequestContext is constructed by the IO thread...
     NotificationService::current()->Notify(
@@ -1166,21 +1157,12 @@ PersonalDataManager* ProfileImpl::GetPersonalDataManager() {
 }
 
 fileapi::FileSystemContext* ProfileImpl::GetFileSystemContext() {
-  if (!file_system_context_.get())
-    file_system_context_ = CreateFileSystemContext(
-        GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy());
-  DCHECK(file_system_context_.get());
+  CreateQuotaManagerAndClients();
   return file_system_context_.get();
 }
 
 quota::QuotaManager* ProfileImpl::GetQuotaManager() {
-  if (!quota_manager_.get()) {
-    quota_manager_ = new quota::QuotaManager(
-        IsOffTheRecord(),
-        GetPath(),
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
-  }
+  CreateQuotaManagerAndClients();
   return quota_manager_.get();
 }
 
@@ -1275,6 +1257,46 @@ ExtensionPrefValueMap* ProfileImpl::GetExtensionPrefValueMap() {
   return extension_pref_value_map_.get();
 }
 
+void ProfileImpl::CreateQuotaManagerAndClients() {
+  if (quota_manager_.get()) {
+    DCHECK(file_system_context_.get());
+    DCHECK(db_tracker_.get());
+    return;
+  }
+
+  // All of the clients have to be created and registered with the
+  // QuotaManager prior to the QuotaManger being used. So we do them
+  // all together here prior to handing out a reference to anything
+  // that utlizes the QuotaManager.
+  quota_manager_ = new quota::QuotaManager(
+      IsOffTheRecord(),
+      GetPath(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
+
+  // Each consumer is responsible for registering its QuotaClient during
+  // its construction.
+  file_system_context_ = CreateFileSystemContext(
+      GetPath(), IsOffTheRecord(),
+      GetExtensionSpecialStoragePolicy(),
+      quota_manager_->proxy());
+  db_tracker_ = new webkit_database::DatabaseTracker(
+      GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy(),
+      quota_manager_->proxy(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+  appcache_service_ = new ChromeAppCacheService(quota_manager_->proxy());
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      NewRunnableMethod(
+          appcache_service_.get(),
+          &ChromeAppCacheService::InitializeOnIOThread,
+          IsOffTheRecord()
+              ? FilePath() : GetPath().Append(chrome::kAppCacheDirname),
+          &GetResourceContext(),
+          make_scoped_refptr(GetExtensionSpecialStoragePolicy()),
+          clear_local_state_on_exit_));
+}
+
 WebKitContext* ProfileImpl::GetWebKitContext() {
   if (!webkit_context_.get()) {
     webkit_context_ = new WebKitContext(
@@ -1298,39 +1320,55 @@ void ProfileImpl::MarkAsCleanShutdown() {
 void ProfileImpl::Observe(NotificationType type,
                           const NotificationSource& source,
                           const NotificationDetails& details) {
-  if (NotificationType::PREF_CHANGED == type) {
-    std::string* pref_name_in = Details<std::string>(details).ptr();
-    PrefService* prefs = Source<PrefService>(source).ptr();
-    DCHECK(pref_name_in && prefs);
-    if (*pref_name_in == prefs::kSpellCheckDictionary ||
-        *pref_name_in == prefs::kEnableSpellCheck) {
-      ReinitializeSpellCheckHost(true);
-    } else if (*pref_name_in == prefs::kEnableAutoSpellCorrect) {
-      bool enabled = prefs->GetBoolean(prefs::kEnableAutoSpellCorrect);
-      for (RenderProcessHost::iterator i(RenderProcessHost::AllHostsIterator());
-           !i.IsAtEnd(); i.Advance()) {
-        RenderProcessHost* process = i.GetCurrentValue();
-        process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
-      }
-    } else if (*pref_name_in == prefs::kClearSiteDataOnExit) {
-      clear_local_state_on_exit_ =
-          prefs->GetBoolean(prefs::kClearSiteDataOnExit);
-      if (webkit_context_) {
-        webkit_context_->set_clear_local_state_on_exit(
-            clear_local_state_on_exit_);
-      }
-      if (appcache_service_) {
-        appcache_service_->SetClearLocalStateOnExit(
-            clear_local_state_on_exit_);
-      }
-    } else if (*pref_name_in == prefs::kGoogleServicesUsername) {
-      ProfileManager* profile_manager = g_browser_process->profile_manager();
-      profile_manager->RegisterProfileName(this);
+  switch (type.value) {
+    case NotificationType::PREF_INITIALIZATION_COMPLETED: {
+      bool* succeeded = Details<bool>(details).ptr();
+      PrefService *prefs = Source<PrefService>(source).ptr();
+      DCHECK(prefs == prefs_.get());
+      registrar_.Remove(this, NotificationType::PREF_INITIALIZATION_COMPLETED,
+                        Source<PrefService>(prefs));
+      OnPrefsLoaded(*succeeded);
+      break;
     }
-  } else if (NotificationType::BOOKMARK_MODEL_LOADED == type) {
-    GetProfileSyncService();  // Causes lazy-load if sync is enabled.
-    registrar_.Remove(this, NotificationType::BOOKMARK_MODEL_LOADED,
-                      Source<Profile>(this));
+    case NotificationType::PREF_CHANGED: {
+      std::string* pref_name_in = Details<std::string>(details).ptr();
+      PrefService* prefs = Source<PrefService>(source).ptr();
+      DCHECK(pref_name_in && prefs);
+      if (*pref_name_in == prefs::kSpellCheckDictionary ||
+          *pref_name_in == prefs::kEnableSpellCheck) {
+        ReinitializeSpellCheckHost(true);
+      } else if (*pref_name_in == prefs::kEnableAutoSpellCorrect) {
+        bool enabled = prefs->GetBoolean(prefs::kEnableAutoSpellCorrect);
+        for (RenderProcessHost::iterator
+             i(RenderProcessHost::AllHostsIterator());
+             !i.IsAtEnd(); i.Advance()) {
+          RenderProcessHost* process = i.GetCurrentValue();
+          process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
+        }
+      } else if (*pref_name_in == prefs::kClearSiteDataOnExit) {
+        clear_local_state_on_exit_ =
+            prefs->GetBoolean(prefs::kClearSiteDataOnExit);
+        if (webkit_context_) {
+          webkit_context_->set_clear_local_state_on_exit(
+              clear_local_state_on_exit_);
+        }
+        if (appcache_service_) {
+          appcache_service_->SetClearLocalStateOnExit(
+              clear_local_state_on_exit_);
+        }
+      } else if (*pref_name_in == prefs::kGoogleServicesUsername) {
+        ProfileManager* profile_manager = g_browser_process->profile_manager();
+        profile_manager->RegisterProfileName(this);
+      }
+      break;
+    }
+    case NotificationType::BOOKMARK_MODEL_LOADED:
+      GetProfileSyncService();  // Causes lazy-load if sync is enabled.
+      registrar_.Remove(this, NotificationType::BOOKMARK_MODEL_LOADED,
+                        Source<Profile>(this));
+      break;
+    default:
+      NOTREACHED();
   }
 }
 

@@ -20,6 +20,7 @@
       'ENABLE_DATABASE=1',
       'ENABLE_DATAGRID=0',
       'ENABLE_DATA_TRANSFER_ITEMS=1',
+      'ENABLE_DETAILS=1',
       'ENABLE_DEVICE_ORIENTATION=1',
       'ENABLE_DIRECTORY_UPLOAD=1',
       'ENABLE_DOM_STORAGE=1',
@@ -58,6 +59,7 @@
       'ENABLE_SVG_FOREIGN_OBJECT=<(enable_svg)',
       'ENABLE_SVG_USE=<(enable_svg)',
       'ENABLE_TOUCH_EVENTS=<(enable_touch_events)',
+      'ENABLE_TOUCH_ICON_LOADING=0',
       'ENABLE_V8_SCRIPT_DEBUG_SERVER=1',
       'ENABLE_VIDEO=1',
       'ENABLE_WEB_SOCKETS=1',
@@ -88,7 +90,7 @@
     'enable_svg%': '<(enable_svg)',
     'enable_touch_events%': '<(enable_touch_events)',
     'conditions': [
-      ['(OS=="win" or OS=="linux" or OS=="mac") and use_accelerated_compositing==1', {
+      ['use_accelerated_compositing==1', {
         'feature_defines': [
           'WTF_USE_ACCELERATED_COMPOSITING=1',
           'ENABLE_3D_RENDERING=1',

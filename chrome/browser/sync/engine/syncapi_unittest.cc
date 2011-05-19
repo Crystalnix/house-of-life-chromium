@@ -13,8 +13,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/sync/engine/http_post_provider_factory.h"
@@ -44,6 +44,7 @@
 
 using browser_sync::Cryptographer;
 using browser_sync::HasArgsAsList;
+using browser_sync::HasDetailsAsDictionary;
 using browser_sync::KeyParams;
 using browser_sync::JsArgList;
 using browser_sync::MockJsEventHandler;
@@ -58,6 +59,7 @@ using test::ExpectDictDictionaryValue;
 using test::ExpectDictStringValue;
 using testing::_;
 using testing::AtLeast;
+using testing::InSequence;
 using testing::Invoke;
 using testing::SaveArg;
 using testing::StrictMock;
@@ -974,19 +976,20 @@ TEST_F(SyncManagerTest, ProcessMessageGetNodeByIdFailure) {
 }
 
 TEST_F(SyncManagerTest, OnNotificationStateChange) {
+  InSequence dummy;
   StrictMock<MockJsEventRouter> event_router;
 
-  ListValue true_args;
-  true_args.Append(Value::CreateBooleanValue(true));
-  ListValue false_args;
-  false_args.Append(Value::CreateBooleanValue(false));
+  DictionaryValue true_details;
+  true_details.SetBoolean("enabled", true);
+  DictionaryValue false_details;
+  false_details.SetBoolean("enabled", false);
 
   EXPECT_CALL(event_router,
-              RouteJsEvent("onSyncNotificationStateChange",
-                           HasArgsAsList(true_args)));
+              RouteJsEvent("onNotificationStateChange",
+                           HasDetailsAsDictionary(true_details)));
   EXPECT_CALL(event_router,
-              RouteJsEvent("onSyncNotificationStateChange",
-                           HasArgsAsList(false_args)));
+              RouteJsEvent("onNotificationStateChange",
+                           HasDetailsAsDictionary(false_details)));
 
   browser_sync::JsBackend* js_backend = sync_manager_.GetJsBackend();
 
@@ -1012,10 +1015,10 @@ TEST_F(SyncManagerTest, OnIncomingNotification) {
 
   // Build expected_args to have a single argument with the string
   // equivalents of model_types.
-  ListValue expected_args;
+  DictionaryValue expected_details;
   {
     ListValue* model_type_list = new ListValue();
-    expected_args.Append(model_type_list);
+    expected_details.Set("changedTypes", model_type_list);
     for (int i = syncable::FIRST_REAL_MODEL_TYPE;
          i < syncable::MODEL_TYPE_COUNT; ++i) {
       if (model_types[i]) {
@@ -1028,8 +1031,8 @@ TEST_F(SyncManagerTest, OnIncomingNotification) {
   }
 
   EXPECT_CALL(event_router,
-              RouteJsEvent("onSyncIncomingNotification",
-                           HasArgsAsList(expected_args)));
+              RouteJsEvent("onIncomingNotification",
+                           HasDetailsAsDictionary(expected_details)));
 
   browser_sync::JsBackend* js_backend = sync_manager_.GetJsBackend();
 
@@ -1056,7 +1059,7 @@ TEST_F(SyncManagerTest, EncryptDataTypesWithNoData) {
   sync_manager_.EncryptDataTypes(encrypted_types);
   {
     ReadTransaction trans(sync_manager_.GetUserShare());
-    EXPECT_EQ(encrypted_types,
+    EXPECT_EQ(expected_types,
               GetEncryptedDataTypes(trans.GetWrappedTrans()));
   }
 }
@@ -1074,18 +1077,18 @@ TEST_F(SyncManagerTest, EncryptDataTypesWithData) {
   size_t i;
   for (i = 0; i < batch_size; ++i) {
     MakeNodeWithParent(sync_manager_.GetUserShare(), syncable::BOOKMARKS,
-                       StringPrintf("%"PRIuS"", i), folder);
+                       base::StringPrintf("%"PRIuS"", i), folder);
   }
   // Next batch_size nodes are a different type and on their own.
   for (; i < 2*batch_size; ++i) {
     MakeNodeWithParent(sync_manager_.GetUserShare(), syncable::SESSIONS,
-                       StringPrintf("%"PRIuS"", i),
+                       base::StringPrintf("%"PRIuS"", i),
                        GetIdForDataType(syncable::SESSIONS));
   }
   // Last batch_size nodes are a third type that will not need encryption.
   for (; i < 3*batch_size; ++i) {
     MakeNodeWithParent(sync_manager_.GetUserShare(), syncable::THEMES,
-                       StringPrintf("%"PRIuS"", i),
+                       base::StringPrintf("%"PRIuS"", i),
                        GetIdForDataType(syncable::THEMES));
   }
 
@@ -1111,7 +1114,6 @@ TEST_F(SyncManagerTest, EncryptDataTypesWithData) {
 
   {
     ReadTransaction trans(sync_manager_.GetUserShare());
-    encrypted_types.erase(syncable::PASSWORDS);  // Not stored in nigori node.
     EXPECT_EQ(encrypted_types,
               GetEncryptedDataTypes(trans.GetWrappedTrans()));
     EXPECT_TRUE(syncable::VerifyDataTypeEncryption(trans.GetWrappedTrans(),

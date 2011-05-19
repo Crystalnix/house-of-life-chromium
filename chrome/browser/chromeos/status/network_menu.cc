@@ -92,7 +92,20 @@ class MainMenuModel : public NetworkMenuModel {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkMenuModel::NetworkInfo
+
+NetworkMenuModel::NetworkInfo::NetworkInfo()
+    : need_passphrase(false), remembered(true), auto_connect(true) {
+}
+
+NetworkMenuModel::NetworkInfo::~NetworkInfo() {}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkMenuModel, public methods:
+
+NetworkMenuModel::NetworkMenuModel(NetworkMenu* owner) : owner_(owner) {}
+
+NetworkMenuModel::~NetworkMenuModel() {}
 
 bool NetworkMenuModel::ConnectToNetworkAt(int index,
                                           const std::string& passphrase,
@@ -191,6 +204,10 @@ bool NetworkMenuModel::ConnectToNetworkAt(int index,
 ////////////////////////////////////////////////////////////////////////////////
 // NetworkMenuModel, ui::MenuModel implementation:
 
+bool NetworkMenuModel::HasIcons() const {
+  return true;
+}
+
 int NetworkMenuModel::GetItemCount() const {
   return static_cast<int>(menu_items_.size());
 }
@@ -199,8 +216,16 @@ ui::MenuModel::ItemType NetworkMenuModel::GetTypeAt(int index) const {
   return menu_items_[index].type;
 }
 
+int NetworkMenuModel::GetCommandIdAt(int index) const {
+  return index;
+}
+
 string16 NetworkMenuModel::GetLabelAt(int index) const {
   return menu_items_[index].label;
+}
+
+bool NetworkMenuModel::IsItemDynamicAt(int index) const {
+  return true;
 }
 
 const gfx::Font* NetworkMenuModel::GetLabelFontAt(int index) const {
@@ -209,9 +234,18 @@ const gfx::Font* NetworkMenuModel::GetLabelFontAt(int index) const {
       NULL;
 }
 
+bool NetworkMenuModel::GetAcceleratorAt(
+    int index, ui::Accelerator* accelerator) const {
+  return false;
+}
+
 bool NetworkMenuModel::IsItemCheckedAt(int index) const {
   // All ui::MenuModel::TYPE_CHECK menu items are checked.
   return true;
+}
+
+int NetworkMenuModel::GetGroupIdAt(int index) const {
+  return 0;
 }
 
 bool NetworkMenuModel::GetIconAt(int index, SkBitmap* icon) {
@@ -222,6 +256,11 @@ bool NetworkMenuModel::GetIconAt(int index, SkBitmap* icon) {
   return false;
 }
 
+ui::ButtonMenuItemModel* NetworkMenuModel::GetButtonMenuItemAt(
+    int index) const {
+  return NULL;
+}
+
 bool NetworkMenuModel::IsEnabledAt(int index) const {
   return !(menu_items_[index].flags & FLAG_DISABLED);
 }
@@ -229,6 +268,8 @@ bool NetworkMenuModel::IsEnabledAt(int index) const {
 ui::MenuModel* NetworkMenuModel::GetSubmenuModelAt(int index) const {
   return menu_items_[index].sub_menu_model;
 }
+
+void NetworkMenuModel::HighlightChangedTo(int index) {}
 
 void NetworkMenuModel::ActivatedAt(int index) {
   // When we are refreshing the menu, ignore menu item activation.
@@ -277,6 +318,10 @@ void NetworkMenuModel::ActivatedAt(int index) {
       browser->ShowSingletonTab(GURL(top_up_url_));
   }
 }
+
+void NetworkMenuModel::MenuWillShow() {}
+
+void NetworkMenuModel::SetMenuModelDelegate(ui::MenuModelDelegate* delegate) {}
 
 ////////////////////////////////////////////////////////////////////////////////
 // NetworkMenuModel, private methods:
@@ -380,10 +425,10 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
       if (wifi_networks[i]->connecting()) {
         label = l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_DEVICE_STATUS,
-            ASCIIToUTF16(wifi_name),
+            UTF8ToUTF16(wifi_name),
             l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING));
       } else {
-        label = ASCIIToUTF16(wifi_name);
+        label = UTF8ToUTF16(wifi_name);
       }
 
       // First add a separator if necessary.
@@ -444,19 +489,19 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
           activation_state == ACTIVATION_STATE_PARTIALLY_ACTIVATED) {
         label = l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_DEVICE_ACTIVATE,
-            ASCIIToUTF16(network_name));
+            UTF8ToUTF16(network_name));
       } else if (activation_state == ACTIVATION_STATE_ACTIVATING) {
         label = l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_DEVICE_STATUS,
-            ASCIIToUTF16(network_name),
+            UTF8ToUTF16(network_name),
             l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ACTIVATING));
       } else if (cell_networks[i]->connecting()) {
         label = l10n_util::GetStringFUTF16(
             IDS_STATUSBAR_NETWORK_DEVICE_STATUS,
-            ASCIIToUTF16(network_name),
+            UTF8ToUTF16(network_name),
             l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING));
       } else {
-        label = ASCIIToUTF16(network_name);
+        label = UTF8ToUTF16(network_name);
       }
 
       // First add a separator if necessary.
@@ -477,6 +522,8 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
       bool isActive = active_cellular &&
           cell_networks[i]->service_path() == active_cellular->service_path() &&
           (cell_networks[i]->connecting() || cell_networks[i]->connected());
+      bool supports_data_plan =
+          active_cellular && active_cellular->SupportsDataPlan();
       if (isActive)
         flag |= FLAG_ASSOCIATED;
       menu_items_.push_back(
@@ -484,7 +531,7 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
                    NetworkMenu::IconForDisplay(icon, badge, roaming_badge,
                                                NULL),
                    cell_networks[i]->service_path(), flag));
-      if (isActive) {
+      if (isActive && supports_data_plan) {
         label.clear();
         if (active_cellular->needs_new_plan()) {
           label = l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_NO_PLAN_LABEL);
@@ -529,9 +576,7 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         }
       }
 
-      // TODO(dpolukhin): replace imsi check with more specific
-      // supportNetworkScan.
-      if (!cellular_device->imsi().empty()) {
+      if (cellular_device->support_network_scan()) {
         // For GSM add mobile network scan.
         if (!separator_added && !menu_items_.empty())
           menu_items_.push_back(MenuItem());
@@ -606,8 +651,13 @@ void MainMenuModel::InitMenuItems(bool is_browser_mode,
         id = IDS_STATUSBAR_NETWORK_DEVICE_ENABLE;
       label = l10n_util::GetStringFUTF16(id,
           l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR));
+      SkBitmap icon;
+      if (is_locked) {
+        icon = NetworkMenu::IconForDisplay(
+            rb.GetBitmapNamed(IDR_STATUSBAR_NETWORK_SECURE), NULL);
+      }
       menu_items_.push_back(MenuItem(ui::MenuModel::TYPE_COMMAND, label,
-          SkBitmap(), std::string(), FLAG_TOGGLE_CELLULAR));
+          icon, std::string(), FLAG_TOGGLE_CELLULAR));
     }
   }
 
@@ -672,10 +722,10 @@ void VPNMenuModel::InitMenuItems(bool is_browser_mode,
     if (vpn->connecting()) {
       label = l10n_util::GetStringFUTF16(
           IDS_STATUSBAR_NETWORK_DEVICE_STATUS,
-          ASCIIToUTF16(vpn->name()),
+          UTF8ToUTF16(vpn->name()),
           l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_CONNECTING));
     } else {
-      label = ASCIIToUTF16(vpn->name());
+      label = UTF8ToUTF16(vpn->name());
     }
 
     // First add a separator if necessary.

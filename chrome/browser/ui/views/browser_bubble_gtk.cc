@@ -22,10 +22,12 @@ namespace {
 
 class BubbleWidget : public views::WidgetGtk {
  public:
-  explicit BubbleWidget(BrowserBubble* bubble)
-      : bubble_(bubble),
+  BubbleWidget(BrowserBubble* bubble, const gfx::Insets& content_margins)
+      : views::WidgetGtk(new views::Widget),
+        bubble_(bubble),
         border_contents_(new BorderContents) {
     border_contents_->Init();
+    border_contents_->set_content_margins(content_margins);
   }
 
   void ShowAndActivate(bool activate) {
@@ -46,7 +48,7 @@ class BubbleWidget : public views::WidgetGtk {
   }
 
   virtual void Hide() {
-    if (IsActive()&& bubble_) {
+    if (IsActive() && bubble_) {
       BrowserBubble::Delegate* delegate = bubble_->delegate();
       if (delegate)
         delegate->BubbleLostFocus(bubble_, false);
@@ -89,20 +91,21 @@ class BubbleWidget : public views::WidgetGtk {
 
 }  // namespace
 
-void BrowserBubble::InitPopup() {
+void BrowserBubble::InitPopup(const gfx::Insets& content_margins) {
   // TODO(port)
-  BubbleWidget* pop = new BubbleWidget(this);
-  pop->MakeTransparent();
-  pop->make_transient_to_parent();
+  BubbleWidget* bubble_widget = new BubbleWidget(this, content_margins);
+  popup_ = bubble_widget->GetWidget();
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  params.transparent = true;
   params.parent = frame_->GetNativeView();
-  pop->Init(params);
+  params.native_widget = bubble_widget;
+  popup_->Init(params);
 #if defined(OS_CHROMEOS)
   {
     vector<int> params;
     params.push_back(0);  // don't show while screen is locked
     chromeos::WmIpc::instance()->SetWindowType(
-        pop->GetNativeView(),
+        popup_->GetNativeView(),
         chromeos::WM_IPC_WINDOW_CHROME_INFO_BUBBLE,
         &params);
   }
@@ -114,42 +117,32 @@ void BrowserBubble::InitPopup() {
   // that when |contents| gets added, it will already have a widget, and thus
   // any NativeButtons it creates in ViewHierarchyChanged() will be functional
   // (e.g. calling SetChecked() on checkboxes is safe).
-  pop->SetContentsView(contents_view);
+  popup_->SetContentsView(contents_view);
 
   // Added border_contents before |view_| so it will paint under it.
-  contents_view->AddChildView(pop->border_contents());
+  contents_view->AddChildView(bubble_widget->border_contents());
   contents_view->AddChildView(view_);
-
-  popup_ = pop;
 
   ResizeToView();
   Reposition();
   AttachToBrowser();
 }
 
-void BrowserBubble::MovePopup(int x, int y, int w, int h) {
-  views::WidgetGtk* pop = static_cast<views::WidgetGtk*>(popup_);
-  pop->SetBounds(gfx::Rect(x, y, w, h));
-}
-
 void BrowserBubble::Show(bool activate) {
-  if (visible_)
-    return;
-  static_cast<BubbleWidget*>(popup_)->ShowAndActivate(activate);
-  visible_ = true;
+  if (!popup_->IsVisible()) {
+    static_cast<BubbleWidget*>(popup_->native_widget())->ShowAndActivate(
+        activate);
+  }
 }
 
 void BrowserBubble::Hide() {
-  if (!visible_)
-    return;
-  views::WidgetGtk* pop = static_cast<views::WidgetGtk*>(popup_);
-  pop->Hide();
-  visible_ = false;
+  if (popup_->IsVisible())
+    static_cast<BubbleWidget*>(popup_->native_widget())->Hide();
 }
 
 void BrowserBubble::ResizeToView() {
   BorderContents* border_contents =
-      static_cast<BubbleWidget*>(popup_)->border_contents();
+      static_cast<BubbleWidget*>(popup_->native_widget())->border_contents();
 
   // Calculate and set the bounds for all windows and views.
   gfx::Rect window_bounds;

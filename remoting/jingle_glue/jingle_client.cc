@@ -167,21 +167,6 @@ JavascriptIqRequest* JavascriptSignalStrategy::CreateIqRequest() {
 
 JingleClient::JingleClient(JingleThread* thread,
                            SignalStrategy* signal_strategy,
-                           PortAllocatorSessionFactory* session_factory,
-                           Callback* callback)
-    : enable_nat_traversing_(false),
-      thread_(thread),
-      state_(START),
-      initialized_(false),
-      closed_(false),
-      initialized_finished_(false),
-      callback_(callback),
-      signal_strategy_(signal_strategy),
-      port_allocator_session_factory_(session_factory) {
-}
-
-JingleClient::JingleClient(JingleThread* thread,
-                           SignalStrategy* signal_strategy,
                            talk_base::NetworkManager* network_manager,
                            talk_base::PacketSocketFactory* socket_factory,
                            PortAllocatorSessionFactory* session_factory,
@@ -236,6 +221,10 @@ void JingleClient::DoInitialize() {
     port_allocator_->set_flags(cricket::PORTALLOCATOR_DISABLE_STUN |
                                cricket::PORTALLOCATOR_DISABLE_RELAY);
   }
+
+  // TODO(sergeyu): Reenable TCP when 80245 is fixed.
+  port_allocator_->set_flags(
+      port_allocator_->flags() | cricket::PORTALLOCATOR_DISABLE_TCP);
 
   // TODO(ajwong): The strategy needs a "start" command or something.  Right
   // now, Init() implicitly starts processing events.  Thus, we must have the

@@ -69,11 +69,15 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
  public:
   // Factory methods that must be used to create ChromotingHost instances.
   // Default capturer and input stub are used if it is not specified.
-  static ChromotingHost* Create(ChromotingHostContext* context,
-                                MutableHostConfig* config);
+  // Returned instance takes ownership of |access_verifier| and |environment|,
+  // and adds a reference to |config|. It does NOT take ownership of |context|.
   static ChromotingHost* Create(ChromotingHostContext* context,
                                 MutableHostConfig* config,
-                                DesktopEnvironment* environment);
+                                AccessVerifier* access_verifier);
+  static ChromotingHost* Create(ChromotingHostContext* context,
+                                MutableHostConfig* config,
+                                DesktopEnvironment* environment,
+                                AccessVerifier* access_verifier);
 
   // Asynchronously start the host process.
   //
@@ -126,8 +130,12 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   typedef std::vector<scoped_refptr<HostStatusObserver> > StatusObserverList;
   typedef std::vector<scoped_refptr<ClientSession> > ClientList;
 
-  ChromotingHost(ChromotingHostContext* context, MutableHostConfig* config,
-                 DesktopEnvironment* environment);
+  // Takes ownership of |access_verifier| and |environment|, and adds a
+  // reference to |config|. Does NOT take ownership of |context|.
+  ChromotingHost(ChromotingHostContext* context,
+                 MutableHostConfig* config,
+                 DesktopEnvironment* environment,
+                 AccessVerifier* access_verifier);
   virtual ~ChromotingHost();
 
   enum State {
@@ -168,7 +176,7 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   StatusObserverList status_observers_;
 
-  AccessVerifier access_verifier_;
+  scoped_ptr<AccessVerifier> access_verifier_;
 
   // The connections to remote clients.
   ClientList clients_;

@@ -225,13 +225,7 @@ INSTANTIATE_TEST_CASE_P(
         TypeAndName(kPolicyEditBookmarksEnabled,
                     prefs::kEditBookmarksEnabled),
         TypeAndName(kPolicyAllowFileSelectionDialogs,
-                    prefs::kAllowFileSelectionDialogs),
-        TypeAndName(kPolicyChromotingEnabled,
-                    prefs::kChromotingEnabled),
-        TypeAndName(kPolicyChromotingHostEnabled,
-                    prefs::kChromotingHostEnabled),
-        TypeAndName(kPolicyChromotingHostFirewallTraversal,
-                    prefs::kChromotingHostFirewallTraversal)));
+                    prefs::kAllowFileSelectionDialogs)));
 
 #if defined(OS_CHROMEOS)
 INSTANTIATE_TEST_CASE_P(
@@ -344,6 +338,19 @@ TEST_F(ConfigurationPolicyPrefStoreProxyTest, ManualOptionsReversedApplyOrder) {
       ProxyPrefs::MODE_FIXED_SERVERS);
 }
 
+TEST_F(ConfigurationPolicyPrefStoreProxyTest, ManualOptionsInvalid) {
+  MockConfigurationPolicyProvider provider;
+  provider.AddPolicy(kPolicyProxyServerMode,
+                     Value::CreateIntegerValue(
+                         kPolicyManuallyConfiguredProxyServerMode));
+
+  scoped_refptr<ConfigurationPolicyPrefStore> store(
+      new ConfigurationPolicyPrefStore(&provider));
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_NO_VALUE, store->GetValue(prefs::kProxy, &value));
+}
+
+
 TEST_F(ConfigurationPolicyPrefStoreProxyTest, NoProxyServerMode) {
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyProxyServerMode,
@@ -399,6 +406,18 @@ TEST_F(ConfigurationPolicyPrefStoreProxyTest, PacScriptProxyMode) {
       new ConfigurationPolicyPrefStore(&provider));
   VerifyProxyPrefs(*store, "", "http://short.org/proxy.pac", "",
                    ProxyPrefs::MODE_PAC_SCRIPT);
+}
+
+TEST_F(ConfigurationPolicyPrefStoreProxyTest, PacScriptProxyModeInvalid) {
+  MockConfigurationPolicyProvider provider;
+  provider.AddPolicy(
+      kPolicyProxyMode,
+      Value::CreateStringValue(ProxyPrefs::kPacScriptProxyModeName));
+
+  scoped_refptr<ConfigurationPolicyPrefStore> store(
+      new ConfigurationPolicyPrefStore(&provider));
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_NO_VALUE, store->GetValue(prefs::kProxy, &value));
 }
 
 // Regression test for http://crbug.com/78016, CPanel returns empty strings
@@ -825,7 +844,7 @@ TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Refresh) {
 TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Initialization) {
   EXPECT_FALSE(store_->IsInitializationComplete());
 
-  EXPECT_CALL(observer_, OnInitializationCompleted()).Times(1);
+  EXPECT_CALL(observer_, OnInitializationCompleted(true)).Times(1);
 
   provider_.SetInitializationComplete(true);
   EXPECT_FALSE(store_->IsInitializationComplete());

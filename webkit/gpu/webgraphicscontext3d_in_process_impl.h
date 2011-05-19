@@ -94,6 +94,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   virtual void waitLatchCHROMIUM(WGC3Duint latch_id);
   virtual void setLatchCHROMIUM(WGC3Duint latch_id);
 
+  virtual void rateLimitOffscreenContextCHROMIUM() { }
+
   virtual WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
 
@@ -477,4 +479,3 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 }  // namespace webkit
 
 #endif  // WEBKIT_GPU_WEBGRAPHICSCONTEXT3D_IN_PROCESS_IMPL_H_
-

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #if defined(OS_WIN)
 #include <windows.h>
@@ -20,6 +21,10 @@
 #if defined(OS_WIN)
 #include "ui/gfx/native_theme.h"
 #endif
+
+namespace gfx {
+class Font;
+}
 
 namespace ui {
 class MenuModel;
@@ -127,7 +132,20 @@ class MenuItemView : public View {
   // Hides and cancels the menu. This does nothing if the menu is not open.
   void Cancel();
 
-  // Adds an item to this menu.
+  // Add an item to the menu at a specified index.  ChildrenChanged() should
+  // called after adding menu items if the menu may be active.
+  MenuItemView* AddMenuItemAt(int index,
+                              int item_id,
+                              const std::wstring& label,
+                              const SkBitmap& icon,
+                              Type type);
+
+  // Remove an item from the menu at a specified index.
+  // ChildrenChanged() should be called after removing menu items (whether
+  // the menu may be active or not).
+  void RemoveMenuItemAt(int index);
+
+  // Appends an item to this menu.
   // item_id    The id of the item, used to identify it in delegate callbacks
   //            or (if delegate is NULL) to identify the command associated
   //            with this item with the controller specified in the ctor. Note
@@ -261,7 +279,7 @@ class MenuItemView : public View {
 
   // Returns the mnemonic for this MenuItemView, or 0 if this MenuItemView
   // doesn't have a mnemonic.
-  wchar_t GetMnemonic();
+  char16 GetMnemonic();
 
   // Do we have icons? This only has effect on the top menu. Turning this on
   // makes the menus slightly wider and taller.
@@ -315,6 +333,9 @@ class MenuItemView : public View {
 
   // Returns the flags passed to DrawStringInt.
   int GetDrawStringFlags();
+
+  // Returns the font to use for menu text.
+  const gfx::Font& GetFont();
 
   // If this menu item has no children a child is added showing it has no
   // children. Otherwise AddEmtpyMenus is recursively invoked on child menu
@@ -422,6 +443,9 @@ class MenuItemView : public View {
   // Previously calculated preferred size to reduce GetStringWidth calls in
   // GetPreferredSize.
   gfx::Size pref_size_;
+
+  // Removed items to be deleted in ChildrenChanged().
+  std::vector<View*> removed_items_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuItemView);
 };

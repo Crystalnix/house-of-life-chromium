@@ -27,11 +27,13 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/media_format.h"
+#include "media/base/pipeline_status.h"
 #include "media/base/video_frame.h"
 
 struct AVStream;
@@ -61,6 +63,12 @@ enum Preload {
 
 // Used for completing asynchronous methods.
 typedef Callback0::Type FilterCallback;
+typedef base::Callback<void(PipelineStatus)> FilterStatusCB;
+
+// This function copies |cb|, calls Reset() on |cb|, and then calls Run()
+// on the copy. This is used in the common case where you need to clear
+// a callback member variable before running the callback.
+void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status);
 
 // Used for updating pipeline statistics.
 typedef Callback1<const PipelineStatistics&>::Type StatisticsCallback;
@@ -103,7 +111,7 @@ class Filter : public base::RefCountedThreadSafe<Filter> {
 
   // Carry out any actions required to seek to the given time, executing the
   // callback upon completion.
-  virtual void Seek(base::TimeDelta time, FilterCallback* callback);
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& callback);
 
   // This method is called from the pipeline when the audio renderer
   // is disabled. Filters can ignore the notification if they do not
@@ -150,6 +158,8 @@ class DataSource : public Filter {
 
 class DemuxerStream : public base::RefCountedThreadSafe<DemuxerStream> {
  public:
+  typedef base::Callback<void(Buffer*)> ReadCallback;
+
   enum Type {
     UNKNOWN,
     AUDIO,
@@ -159,9 +169,7 @@ class DemuxerStream : public base::RefCountedThreadSafe<DemuxerStream> {
 
   // Schedules a read.  When the |read_callback| is called, the downstream
   // filter takes ownership of the buffer by AddRef()'ing the buffer.
-  //
-  // TODO(scherkus): switch Read() callback to scoped_refptr<>.
-  virtual void Read(Callback1<Buffer*>::Type* read_callback) = 0;
+  virtual void Read(const ReadCallback& read_callback) = 0;
 
   // Returns an |AVStream*| if supported, or NULL.
   virtual AVStream* GetAVStream();

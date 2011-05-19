@@ -165,15 +165,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveThemesSyncTest, CustomCustomRace) {
 }
 
 // TCM ID - 3723272.
-IN_PROC_BROWSER_TEST_F(TwoClientLiveThemesSyncTest,
-                       DisableThemes) {
+IN_PROC_BROWSER_TEST_F(TwoClientLiveThemesSyncTest, DisableThemes) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_FALSE(UsingCustomTheme(GetProfile(0)));
   ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
   ASSERT_FALSE(UsingCustomTheme(verifier()));
 
-  GetClient(1)->DisableSyncForDatatype(syncable::THEMES);
+  ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncable::THEMES));
   UseCustomTheme(GetProfile(0), 0);
   UseCustomTheme(verifier(), 0);
   ASSERT_TRUE(AwaitQuiescence());
@@ -182,11 +181,38 @@ IN_PROC_BROWSER_TEST_F(TwoClientLiveThemesSyncTest,
   ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
 
-  GetClient(1)->EnableSyncForDatatype(syncable::THEMES);
+  ASSERT_TRUE(GetClient(1)->EnableSyncForDatatype(syncable::THEMES));
   ASSERT_TRUE(AwaitQuiescence());
 
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
   ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
   ASSERT_TRUE(ThemeIsPendingInstall(GetProfile(1), GetCustomTheme(0)));
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
+}
+
+// TCM ID - 3687288.
+IN_PROC_BROWSER_TEST_F(TwoClientLiveThemesSyncTest, DisableSync) {
+  ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
+
+  ASSERT_FALSE(UsingCustomTheme(GetProfile(0)));
+  ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
+  ASSERT_FALSE(UsingCustomTheme(verifier()));
+
+  ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
+  UseCustomTheme(GetProfile(0), 0);
+  UseCustomTheme(verifier(), 0);
+  ASSERT_TRUE(
+      GetClient(0)->AwaitSyncCycleCompletion("Installed a custom theme."));
+
+  ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
+  ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
+  ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
+
+  ASSERT_TRUE(GetClient(1)->EnableSyncForAllDatatypes());
+  ASSERT_TRUE(AwaitQuiescence());
+
+  ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
+  ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
+  ASSERT_FALSE(UsingCustomTheme(GetProfile(1)));
+  ASSERT_TRUE(ThemeIsPendingInstall(GetProfile(1), GetCustomTheme(0)));
 }

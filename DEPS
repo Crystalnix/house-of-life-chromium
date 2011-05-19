@@ -4,19 +4,20 @@ vars = {
   "googlecode_url": "http://%s.googlecode.com/svn",
   "webkit_trunk": "http://svn.webkit.org/repository/webkit/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "86018",
+  "webkit_revision": "86819",
   "chromium_git": "http://git.chromium.org/git",
   "swig_revision": "69281",
   # These hashes need to be updated when nacl_revision is changed.
-  "nacl_irt_hash_x86_32": "e72ddc4bc568d6804dc595c8a136550ecaf6b5aa",
-  "nacl_irt_hash_x86_64": "694c864d7c50a902abf627771021abe658f519b3",
-  "nacl_revision": "5188",
-  "nacl_tools_revision": "5025",
-  "libjingle_revision": "55",
+  # After changing nacl_revision, run gclient sync to get the new values.
+  "nacl_irt_hash_x86_32": "d390ccb8de25456b30249047247d82ad255e1035",
+  "nacl_irt_hash_x86_64": "6117b638d97a3a93c32163862f83c2be6ee6751b",
+  "nacl_revision": "5344",
+  "nacl_tools_revision": "5308",
+  "libjingle_revision": "59",
   "libvpx_revision": "81610",
   "ffmpeg_revision": "83815",
-  "skia_revision": "1258",
-  "v8_revision": "7779",
+  "skia_revision": "1365",
+  "v8_revision": "7928",
 }
 
 deps = {
@@ -42,7 +43,7 @@ deps = {
     (Var("googlecode_url") % "googlemock") + "/trunk@374",
 
   "src/third_party/angle":
-    (Var("googlecode_url") % "angleproject") + "/trunk@633",
+    (Var("googlecode_url") % "angleproject") + "/trunk@647",
 
   # Note that this is *not* where we check out WebKit -- this just
   # puts some extra files into place for the real WebKit checkout to
@@ -52,7 +53,7 @@ deps = {
     "/trunk/deps/third_party/WebKit@76115",
 
   "src/third_party/icu":
-    "/trunk/deps/third_party/icu46@83674",
+    "/trunk/deps/third_party/icu46@85319",
 
   "src/third_party/hunspell":
    "/trunk/deps/third_party/hunspell@65351",
@@ -209,9 +210,6 @@ deps = {
   "src/third_party/speex":
     "/trunk/deps/third_party/speex@83190",
 
-  "src/third_party/libsrtp/src":
-    "/trunk/deps/third_party/libsrtp@60080",
-
   "src/third_party/yasm/source/patched-yasm":
     "/trunk/deps/third_party/yasm/patched-yasm@73761",
 
@@ -308,7 +306,7 @@ deps_os = {
       "/trunk/deps/reference_builds/chrome_linux@70120",
 
     "src/third_party/xdg-utils":
-      "/trunk/deps/third_party/xdg-utils@84156",
+      "/trunk/deps/third_party/xdg-utils@84895",
 
     "src/third_party/swig/linux":
       "/trunk/deps/third_party/swig/linux@" + Var("swig_revision"),

@@ -870,8 +870,7 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
       base::TimeTicks::Now() - entry_lock_waiting_since_;
   UMA_HISTOGRAM_TIMES("HttpCache.EntryLockWait", entry_lock_wait);
   static const bool prefetching_fieldtrial =
-      base::FieldTrialList::Find("Prefetch") &&
-      !base::FieldTrialList::Find("Prefetch")->group_name().empty();
+      base::FieldTrialList::TrialExists("Prefetch");
   if (prefetching_fieldtrial) {
     UMA_HISTOGRAM_TIMES(
         base::FieldTrial::MakeName("HttpCache.EntryLockWait", "Prefetch"),
@@ -1694,6 +1693,9 @@ bool HttpCache::Transaction::ConditionalizeRequest() {
   std::string last_modified_value;
   response_.headers->EnumerateHeader(NULL, "last-modified",
                                      &last_modified_value);
+
+  if (response_.headers->GetHttpVersion() < HttpVersion(1, 1))
+    etag_value.clear();
 
   if (etag_value.empty() && last_modified_value.empty())
     return false;

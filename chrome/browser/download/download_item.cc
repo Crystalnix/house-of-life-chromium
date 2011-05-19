@@ -105,10 +105,9 @@ DownloadItem::DangerType GetDangerType(bool dangerous_file,
   if (dangerous_url) {
     // dangerous URL overweights dangerous file. We check dangerous URL first.
     return DownloadItem::DANGEROUS_URL;
-  } else if (dangerous_file) {
-    return DownloadItem::DANGEROUS_FILE;
   }
-  return DownloadItem::NOT_DANGEROUS;
+  return dangerous_file ?
+      DownloadItem::DANGEROUS_FILE : DownloadItem::NOT_DANGEROUS;
 }
 
 }  // namespace
@@ -136,8 +135,6 @@ DownloadItem::DownloadItem(DownloadManager* download_manager,
       danger_type_(NOT_DANGEROUS),
       auto_opened_(false),
       target_name_(info.original_name),
-      render_process_id_(-1),
-      request_id_(-1),
       save_as_(false),
       is_otr_(false),
       is_extension_install_(info.is_extension_install),
@@ -178,8 +175,7 @@ DownloadItem::DownloadItem(DownloadManager* download_manager,
                                  info.is_dangerous_url)),
       auto_opened_(false),
       target_name_(info.original_name),
-      render_process_id_(info.child_id),
-      request_id_(info.request_id),
+      process_handle_(info.process_handle),
       save_as_(info.prompt_user_for_save_location),
       is_otr_(is_otr),
       is_extension_install_(info.is_extension_install),
@@ -214,8 +210,6 @@ DownloadItem::DownloadItem(DownloadManager* download_manager,
       safety_state_(SAFE),
       danger_type_(NOT_DANGEROUS),
       auto_opened_(false),
-      render_process_id_(-1),
-      request_id_(-1),
       save_as_(false),
       is_otr_(is_otr),
       is_extension_install_(false),
@@ -333,7 +327,7 @@ void DownloadItem::Update(int64 bytes_so_far) {
 
 // Triggered by a user action.
 void DownloadItem::Cancel(bool update_history) {
-  VLOG(20) << __FUNCTION__ << "()" << " download = " << DebugString(true);
+  VLOG(20) << __FUNCTION__ << "() download = " << DebugString(true);
   if (!IsPartialDownload()) {
     // Small downloads might be complete before this method has
     // a chance to run.
@@ -363,8 +357,7 @@ void DownloadItem::OnAllDataSaved(int64 size) {
 }
 
 void DownloadItem::Completed() {
-  VLOG(20) << " " << __FUNCTION__ << "() "
-           << DebugString(false);
+  VLOG(20) << __FUNCTION__ << "() " << DebugString(false);
 
   download_util::RecordDownloadCount(download_util::COMPLETED_COUNT);
 
@@ -389,7 +382,7 @@ void DownloadItem::Completed() {
   DCHECK(all_data_saved_);
   state_ = COMPLETE;
   UpdateObservers();
-  download_manager_->RemoveFromActiveList(id());
+  download_manager_->DownloadCompleted(id());
 }
 
 void DownloadItem::Interrupted(int64 size, int os_error) {
@@ -405,21 +398,18 @@ void DownloadItem::Interrupted(int64 size, int os_error) {
 void DownloadItem::Delete(DeleteReason reason) {
   switch (reason) {
     case DELETE_DUE_TO_USER_DISCARD:
-      UMA_HISTOGRAM_ENUMERATION("Download.UserDiscard",
-                                danger_type_,
+      UMA_HISTOGRAM_ENUMERATION("Download.UserDiscard", danger_type_,
                                 DANGEROUS_TYPE_MAX);
       break;
     case DELETE_DUE_TO_BROWSER_SHUTDOWN:
-      UMA_HISTOGRAM_ENUMERATION("Download.Discard",
-                                danger_type_,
+      UMA_HISTOGRAM_ENUMERATION("Download.Discard", danger_type_,
                                 DANGEROUS_TYPE_MAX);
       break;
     default:
       NOTREACHED();
   }
 
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       NewRunnableFunction(&DeleteDownloadedFile, full_path_));
   Remove();
   // We have now been deleted.
@@ -454,16 +444,14 @@ int64 DownloadItem::CurrentSpeed() const {
 }
 
 int DownloadItem::PercentComplete() const {
-  int percent = -1;
-  if (total_bytes_ > 0)
-    percent = static_cast<int>(received_bytes_ * 100.0 / total_bytes_);
-  return percent;
+  return (total_bytes_ > 0) ?
+      static_cast<int>(received_bytes_ * 100.0 / total_bytes_) : -1;
 }
 
 void DownloadItem::Rename(const FilePath& full_path) {
-  VLOG(20) << " " << __FUNCTION__ << "()"
+  VLOG(20) << __FUNCTION__ << "()"
            << " full_path = \"" << full_path.value() << "\""
-           << DebugString(true);
+           << " " << DebugString(true);
   DCHECK(!full_path.empty());
   full_path_ = full_path;
 }
@@ -476,31 +464,29 @@ void DownloadItem::TogglePause() {
 }
 
 void DownloadItem::OnDownloadCompleting(DownloadFileManager* file_manager) {
-  VLOG(20) << " " << __FUNCTION__ << "() "
+  VLOG(20) << __FUNCTION__ << "()"
            << " needs rename = " << NeedsRename()
            << " " << DebugString(true);
   DCHECK_NE(DANGEROUS, safety_state());
   DCHECK(file_manager);
 
   if (NeedsRename()) {
-    BrowserThread::PostTask(
-        BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(
-            file_manager, &DownloadFileManager::RenameCompletingDownloadFile,
-            id(), GetTargetFilePath(), safety_state() == SAFE));
+    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+        NewRunnableMethod(file_manager,
+            &DownloadFileManager::RenameCompletingDownloadFile, id(),
+            GetTargetFilePath(), safety_state() == SAFE));
     return;
   }
 
   Completed();
 
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(
-          file_manager, &DownloadFileManager::CompleteDownload, id()));
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+      NewRunnableMethod(file_manager, &DownloadFileManager::CompleteDownload,
+                        id()));
 }
 
 void DownloadItem::OnDownloadRenamedToFinalName(const FilePath& full_path) {
-  VLOG(20) << " " << __FUNCTION__ << "()"
+  VLOG(20) << __FUNCTION__ << "()"
            << " full_path = " << full_path.value()
            << " needed rename = " << NeedsRename()
            << " " << DebugString(false);
@@ -537,10 +523,7 @@ bool DownloadItem::MatchesQuery(const string16& query) const {
   // due to normalization and we have a fancier search-query system
   // used elsewhere.
   // http://code.google.com/p/chromium/issues/detail?id=71982
-  if (path.find(query) != string16::npos)
-    return true;
-
-  return false;
+  return (path.find(query) != string16::npos);
 }
 
 void DownloadItem::SetFileCheckResults(const FilePath& path,
@@ -590,9 +573,8 @@ FilePath DownloadItem::GetFileNameToReportUser() const {
 }
 
 FilePath DownloadItem::GetUserVerifiedFilePath() const {
-  if (safety_state_ == DownloadItem::SAFE)
-    return GetTargetFilePath();
-  return full_path_;
+  return (safety_state_ == DownloadItem::SAFE) ?
+      GetTargetFilePath() : full_path_;
 }
 
 void DownloadItem::Init(bool start_timer) {
@@ -600,7 +582,7 @@ void DownloadItem::Init(bool start_timer) {
     target_name_ = full_path_.BaseName();
   if (start_timer)
     StartProgressTimer();
-  VLOG(20) << " " << __FUNCTION__ << "() " << DebugString(true);
+  VLOG(20) << __FUNCTION__ << "() " << DebugString(true);
 }
 
 // TODO(ahendrickson) -- Move |INTERRUPTED| from |IsCancelled()| to
@@ -622,15 +604,26 @@ bool DownloadItem::IsInterrupted() const {
 }
 
 bool DownloadItem::IsComplete() const {
-  return state() == COMPLETE;
+  return (state_ == COMPLETE);
 }
 
 std::string DownloadItem::DebugString(bool verbose) const {
-  std::string description =
-      base::StringPrintf("{ id_ = %d"
-                         " state = %s",
-                         id_,
-                         DebugDownloadStateString(state()));
+  std::string description = base::StringPrintf(
+      "{ id_ = %d state = %s", id_, DebugDownloadStateString(state()));
+
+  // Construct a string of the URL chain.
+  std::string url_list("<none>");
+  if (!url_chain_.empty()) {
+    std::vector<GURL>::const_iterator iter = url_chain_.begin();
+    std::vector<GURL>::const_iterator last = url_chain_.end();
+    url_list = (*iter).spec();
+    ++iter;
+    for ( ; verbose && (iter != last); ++iter) {
+      url_list += " -> ";
+      const GURL& next_url = *iter;
+      url_list += next_url.spec();
+    }
+  }
 
   if (verbose) {
     description += base::StringPrintf(
@@ -640,7 +633,7 @@ std::string DownloadItem::DebugString(bool verbose) const {
         " is_extension_install = " "%c"
         " is_otr = " "%c"
         " safety_state = " "%s"
-        " url = " "\"%s\""
+        " url_chain = " "\"%s\""
         " target_name_ = \"%" PRFilePath "\""
         " full_path = \"%" PRFilePath "\"",
         db_handle(),
@@ -649,14 +642,11 @@ std::string DownloadItem::DebugString(bool verbose) const {
         is_extension_install() ? 'T' : 'F',
         is_otr() ? 'T' : 'F',
         DebugSafetyStateString(safety_state()),
-        url().spec().c_str(),
+        url_list.c_str(),
         target_name_.value().c_str(),
         full_path().value().c_str());
   } else {
-    description += base::StringPrintf(" url = \"%s\"", url().spec().c_str());
+    description += base::StringPrintf(" url = \"%s\"", url_list.c_str());
   }
-
-  description += " }";
-
   return description;
 }

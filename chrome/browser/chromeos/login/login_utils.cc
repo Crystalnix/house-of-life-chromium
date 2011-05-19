@@ -30,7 +30,6 @@
 #include "chrome/browser/chromeos/login/login_display_host.h"
 #include "chrome/browser/chromeos/login/ownership_service.h"
 #include "chrome/browser/chromeos/login/parallel_authenticator.h"
-#include "chrome/browser/chromeos/login/user_image_downloader.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/proxy_config_service.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -105,7 +104,7 @@ class ResetDefaultProxyConfigServiceTask : public Task {
 }  // namespace
 
 class LoginUtilsImpl : public LoginUtils,
-                       public ProfileManager::Observer {
+                       public ProfileManagerObserver {
  public:
   LoginUtilsImpl()
       : background_view_(NULL) {
@@ -150,7 +149,7 @@ class LoginUtilsImpl : public LoginUtils,
   // Gets the current background view.
   virtual chromeos::BackgroundView* GetBackgroundView();
 
-  // ProfileManager::Observer implementation:
+  // ProfileManagerObserver implementation:
   virtual void OnProfileCreated(Profile* profile);
 
  protected:
@@ -582,10 +581,6 @@ void LoginUtils::Set(LoginUtils* mock) {
 void LoginUtils::DoBrowserLaunch(Profile* profile,
                                  LoginDisplayHost* login_host) {
   BootTimesLoader::Get()->AddLoginTimeMarker("BrowserLaunched", false);
-
-  // Update command line in case loose values were added.
-  CommandLine::ForCurrentProcess()->InitFromArgv(
-      CommandLine::ForCurrentProcess()->argv());
 
   VLOG(1) << "Launching browser...";
   BrowserInit browser_init;

@@ -58,10 +58,18 @@ InstantController::~InstantController() {
 
 // static
 void InstantController::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kInstantConfirmDialogShown, false);
-  prefs->RegisterBooleanPref(prefs::kInstantEnabled, false);
-  prefs->RegisterBooleanPref(prefs::kInstantEnabledOnce, false);
-  prefs->RegisterInt64Pref(prefs::kInstantEnabledTime, false);
+  prefs->RegisterBooleanPref(prefs::kInstantConfirmDialogShown,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kInstantEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kInstantEnabledOnce,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterInt64Pref(prefs::kInstantEnabledTime,
+                           false,
+                           PrefService::UNSYNCABLE_PREF);
   PromoCounter::RegisterUserPrefs(prefs, prefs::kInstantPromo);
 }
 
@@ -536,14 +544,14 @@ bool InstantController::ShouldUpdateNow(TemplateURLID instant_id,
   if (url.SchemeIsFile())
     return true;  // File urls should load quickly, so don't delay loading them.
 
-  if (loader_manager_->WillUpateChangeActiveLoader(instant_id)) {
+  if (loader_manager_->WillUpdateChangeActiveLoader(instant_id)) {
     // If Update would change loaders, update now. This indicates transitioning
     // from an instant to non-instant loader.
     return true;
   }
 
   InstantLoader* active_loader = loader_manager_->active_loader();
-  // WillUpateChangeActiveLoader should return true if no active loader, so
+  // WillUpdateChangeActiveLoader should return true if no active loader, so
   // we know there will be an active loader if we get here.
   DCHECK(active_loader);
   // Immediately update if the url is the same (which should result in nothing
@@ -649,7 +657,8 @@ bool InstantController::ShouldShowPreviewFor(const AutocompleteMatch& match,
   if (cl->HasSwitch(switches::kRestrictInstantToSearch) &&
       match.type != AutocompleteMatch::SEARCH_WHAT_YOU_TYPED &&
       match.type != AutocompleteMatch::SEARCH_HISTORY &&
-      match.type != AutocompleteMatch::SEARCH_SUGGEST) {
+      match.type != AutocompleteMatch::SEARCH_SUGGEST &&
+      match.type != AutocompleteMatch::SEARCH_OTHER_ENGINE) {
     return false;
   }
 

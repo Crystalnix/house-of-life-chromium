@@ -22,6 +22,7 @@
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/common/id_allocator.h"
+#include "gpu/command_buffer/common/trace_event.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/context_group.h"
@@ -34,7 +35,6 @@
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/shader_translator.h"
 #include "gpu/command_buffer/service/texture_manager.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "gpu/GLES2/gles2_command_buffer.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_implementation.h"
@@ -1478,6 +1478,8 @@ class GLES2DecoderImpl : public base::SupportsWeakPtr<GLES2DecoderImpl>,
   // failed texImage2D call should be ignored.
   bool tex_image_2d_failed_;
 
+  int frame_number_;
+
   DISALLOW_COPY_AND_ASSIGN(GLES2DecoderImpl);
 };
 
@@ -1803,7 +1805,8 @@ GLES2DecoderImpl::GLES2DecoderImpl(ContextGroup* group)
       use_shader_translator_(true),
       validators_(group_->feature_info()->validators()),
       feature_info_(group_->feature_info()),
-      tex_image_2d_failed_(false) {
+      tex_image_2d_failed_(false),
+      frame_number_(0) {
   attrib_0_value_.v[0] = 0.0f;
   attrib_0_value_.v[1] = 0.0f;
   attrib_0_value_.v[2] = 0.0f;
@@ -3720,11 +3723,15 @@ void GLES2DecoderImpl::DoTexParameterf(
   TextureManager::TextureInfo* info = GetTextureInfoForTarget(target);
   if (!info) {
     SetGLError(GL_INVALID_VALUE, "glTexParameterf: unknown texture");
-  } else {
-    texture_manager()->SetParameter(
-        feature_info_, info, pname, static_cast<GLint>(param));
-    glTexParameterf(target, pname, param);
+    return;
   }
+
+  if (!texture_manager()->SetParameter(
+      feature_info_, info, pname, static_cast<GLint>(param))) {
+    SetGLError(GL_INVALID_ENUM, "glTexParameterf: param GL_INVALID_ENUM");
+    return;
+  }
+  glTexParameterf(target, pname, param);
 }
 
 void GLES2DecoderImpl::DoTexParameteri(
@@ -3732,10 +3739,14 @@ void GLES2DecoderImpl::DoTexParameteri(
   TextureManager::TextureInfo* info = GetTextureInfoForTarget(target);
   if (!info) {
     SetGLError(GL_INVALID_VALUE, "glTexParameteri: unknown texture");
-  } else {
-    texture_manager()->SetParameter(feature_info_, info, pname, param);
-    glTexParameteri(target, pname, param);
+    return;
   }
+
+  if (!texture_manager()->SetParameter(feature_info_, info, pname, param)) {
+    SetGLError(GL_INVALID_ENUM, "glTexParameteri: param GL_INVALID_ENUM");
+    return;
+  }
+  glTexParameteri(target, pname, param);
 }
 
 void GLES2DecoderImpl::DoTexParameterfv(
@@ -3743,11 +3754,15 @@ void GLES2DecoderImpl::DoTexParameterfv(
   TextureManager::TextureInfo* info = GetTextureInfoForTarget(target);
   if (!info) {
     SetGLError(GL_INVALID_VALUE, "glTexParameterfv: unknown texture");
-  } else {
-    texture_manager()->SetParameter(
-        feature_info_, info, pname, *reinterpret_cast<const GLint*>(params));
-    glTexParameterfv(target, pname, params);
+    return;
   }
+
+  if (!texture_manager()->SetParameter(
+      feature_info_, info, pname, static_cast<GLint>(params[0]))) {
+    SetGLError(GL_INVALID_ENUM, "glTexParameterfv: param GL_INVALID_ENUM");
+    return;
+  }
+  glTexParameterfv(target, pname, params);
 }
 
 void GLES2DecoderImpl::DoTexParameteriv(
@@ -3755,10 +3770,14 @@ void GLES2DecoderImpl::DoTexParameteriv(
   TextureManager::TextureInfo* info = GetTextureInfoForTarget(target);
   if (!info) {
     SetGLError(GL_INVALID_VALUE, "glTexParameteriv: unknown texture");
-  } else {
-    texture_manager()->SetParameter(feature_info_, info, pname, *params);
-    glTexParameteriv(target, pname, params);
+    return;
   }
+
+  if (!texture_manager()->SetParameter(feature_info_, info, pname, *params)) {
+    SetGLError(GL_INVALID_ENUM, "glTexParameteriv: param GL_INVALID_ENUM");
+    return;
+  }
+  glTexParameteriv(target, pname, params);
 }
 
 bool GLES2DecoderImpl::CheckCurrentProgram(const char* function_name) {
@@ -5576,7 +5595,7 @@ error::Error GLES2DecoderImpl::DoTexImage2D(
 
 error::Error GLES2DecoderImpl::HandleTexImage2D(
     uint32 immediate_data_size, const gles2::TexImage2D& c) {
-  GPU_TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexImage2D");
+  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexImage2D");
   tex_image_2d_failed_ = true;
   GLenum target = static_cast<GLenum>(c.target);
   GLint level = static_cast<GLint>(c.level);
@@ -5890,7 +5909,7 @@ void GLES2DecoderImpl::DoTexSubImage2D(
 
 error::Error GLES2DecoderImpl::HandleTexSubImage2D(
     uint32 immediate_data_size, const gles2::TexSubImage2D& c) {
-  GPU_TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexSubImage2D");
+  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleTexSubImage2D");
   GLboolean internal = static_cast<GLboolean>(c.internal);
   if (internal == GL_TRUE && tex_image_2d_failed_)
     return error::kNoError;
@@ -6314,7 +6333,7 @@ error::Error GLES2DecoderImpl::HandleShaderBinary(
 
 error::Error GLES2DecoderImpl::HandleSwapBuffers(
     uint32 immediate_data_size, const gles2::SwapBuffers& c) {
-  GPU_TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleSwapBuffers");
+  TRACE_EVENT0("gpu", "GLES2DecoderImpl::HandleSwapBuffers");
   // If offscreen then don't actually SwapBuffers to the display. Just copy
   // the rendered frame to another frame buffer.
   if (offscreen_target_frame_buffer_.get()) {
@@ -6360,7 +6379,8 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
       return error::kNoError;
     }
   } else {
-    GPU_TRACE_EVENT0("gpu", "GLContext::SwapBuffers");
+    TRACE_EVENT1("gpu", "GLContext::SwapBuffers", "frame", frame_number_);
+    frame_number_++;
     if (!context_->SwapBuffers()) {
       LOG(ERROR) << "Context lost because SwapBuffers failed.";
       return error::kLostContext;
@@ -6376,7 +6396,7 @@ error::Error GLES2DecoderImpl::HandleSwapBuffers(
 
 error::Error GLES2DecoderImpl::HandleSetLatchCHROMIUM(
     uint32 immediate_data_size, const gles2::SetLatchCHROMIUM& c) {
-  GPU_TRACE_EVENT0("gpu", "SetLatch");
+  TRACE_EVENT0("gpu", "SetLatch");
   // Ensure the side effects of previous commands are visible to other contexts.
   // There is no need to do this for ANGLE because it uses a
   // single D3D device for all contexts.
@@ -6403,7 +6423,7 @@ error::Error GLES2DecoderImpl::HandleSetLatchCHROMIUM(
 
 error::Error GLES2DecoderImpl::HandleWaitLatchCHROMIUM(
     uint32 immediate_data_size, const gles2::WaitLatchCHROMIUM& c) {
-  GPU_TRACE_EVENT0("gpu", "WaitLatch");
+  TRACE_EVENT0("gpu", "WaitLatch");
   int32 shm_id = gpu::kLatchSharedMemoryId;
   uint32 latch_id = c.latch_id;
   uint32 shm_offset = 0;

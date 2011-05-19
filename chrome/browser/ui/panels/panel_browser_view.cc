@@ -6,14 +6,17 @@
 
 #include "base/logging.h"
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/panels/panel_browser_frame_view.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
+#include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "views/window/window.h"
 
 BrowserWindow* Panel::CreateNativePanel(Browser* browser, Panel* panel) {
   BrowserView* view = new PanelBrowserView(browser, panel);
-  BrowserFrame::Create(view, browser->profile());
+  (new BrowserFrame(view))->InitBrowserFrame();
+  view->GetWidget()->SetAlwaysOnTop(true);
   view->GetWindow()->non_client_view()->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
   return view;
@@ -32,13 +35,34 @@ PanelBrowserView::~PanelBrowserView() {
 void PanelBrowserView::Close() {
   if (!panel_)
     return;
+
+  // Check if the panel is in the closing process, i.e. Panel::Close() is
+  // called.
+#ifndef NDEBUG
+  DCHECK(panel_->closing());
+#endif
+
   ::BrowserView::Close();
   panel_ = NULL;
+}
+
+void PanelBrowserView::UpdateTitleBar() {
+  ::BrowserView::UpdateTitleBar();
+  GetFrameView()->UpdateTitleBar();
 }
 
 bool PanelBrowserView::GetSavedWindowBounds(gfx::Rect* bounds) const {
   *bounds = panel_->GetRestoredBounds();
   return true;
+}
+
+void PanelBrowserView::OnWindowActivationChanged(bool active) {
+  ::BrowserView::OnWindowActivationChanged(active);
+  GetFrameView()->OnActivationChanged(active);
+}
+
+PanelBrowserFrameView* PanelBrowserView::GetFrameView() const {
+  return static_cast<PanelBrowserFrameView*>(frame()->GetFrameView());
 }
 
 bool PanelBrowserView::OnTitleBarMousePressed(const views::MouseEvent& event) {
@@ -73,6 +97,8 @@ bool PanelBrowserView::OnTitleBarMouseReleased(const views::MouseEvent& event) {
   if (mouse_dragging_) {
     mouse_dragging_ = false;
     panel_->manager()->EndDragging(false);
+  } else {
+    panel_->manager()->EndDragging(true);
   }
   return true;
 }

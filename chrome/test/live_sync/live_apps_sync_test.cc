@@ -9,6 +9,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
 
+namespace {
+
+std::string CreateFakeAppName(int index) {
+  return "fakeapp" + base::IntToString(index);
+}
+
+}  // namespace
+
 LiveAppsSyncTest::LiveAppsSyncTest(TestType test_type)
     : LiveSyncTest(test_type) {}
 
@@ -22,16 +30,23 @@ bool LiveAppsSyncTest::SetupClients() {
   return true;
 }
 
-bool LiveAppsSyncTest::AllProfilesHaveSameAppsAsVerifier() {
+bool LiveAppsSyncTest::HasSameAppsAsVerifier(int index) {
   // TODO(akalin): We may want to filter out non-apps for some tests.
   LiveSyncExtensionHelper::ExtensionStateMap
       verifier_extension_state_map(
           extension_helper_.GetExtensionStates(verifier()));
+  LiveSyncExtensionHelper::ExtensionStateMap
+      extension_state_map(
+          extension_helper_.GetExtensionStates(GetProfile(index)));
+  return (extension_state_map == verifier_extension_state_map);
+}
+
+
+bool LiveAppsSyncTest::AllProfilesHaveSameAppsAsVerifier() {
   for (int i = 0; i < num_clients(); ++i) {
-    LiveSyncExtensionHelper::ExtensionStateMap
-        extension_state_map(
-            extension_helper_.GetExtensionStates(GetProfile(i)));
-    if (extension_state_map != verifier_extension_state_map) {
+    if (!HasSameAppsAsVerifier(i)) {
+      LOG(ERROR) << "Profile " << i << " doesn't have the same apps as the"
+                                       " verifier profile.";
       return false;
     }
   }
@@ -39,9 +54,14 @@ bool LiveAppsSyncTest::AllProfilesHaveSameAppsAsVerifier() {
 }
 
 void LiveAppsSyncTest::InstallApp(Profile* profile, int index) {
-  std::string name = "fakeapp" + base::IntToString(index);
-  return extension_helper_.InstallExtension(
-      profile, name, Extension::TYPE_HOSTED_APP);
+  return extension_helper_.InstallExtension(profile,
+                                            CreateFakeAppName(index),
+                                            Extension::TYPE_HOSTED_APP);
+}
+
+void LiveAppsSyncTest::UninstallApp(Profile* profile, int index) {
+  return extension_helper_.UninstallExtension(profile,
+                                              CreateFakeAppName(index));
 }
 
 void LiveAppsSyncTest::InstallAppsPendingForSync(

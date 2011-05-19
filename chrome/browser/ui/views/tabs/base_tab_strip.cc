@@ -94,15 +94,14 @@ class BaseTabStrip::RemoveTabDelegate
     // This can be null during shutdown. See http://crbug.com/42737.
     if (!widget)
       return;
+
+    widget->ResetLastMouseMoveFlag();
+
     // Force the close button (that slides under the mouse) to highlight by
     // saying the mouse just moved, but sending the same coordinates.
     DWORD pos = GetMessagePos();
     POINT cursor_point = {GET_X_LPARAM(pos), GET_Y_LPARAM(pos)};
     MapWindowPoints(NULL, widget->GetNativeView(), &cursor_point, 1);
-
-    static_cast<views::WidgetWin*>(widget)->ResetLastMouseMoveFlag();
-    // Return to message loop - otherwise we may disrupt some operation that's
-    // in progress.
     SendMessage(widget->GetNativeView(), WM_MOUSEMOVE, 0,
                 MAKELPARAM(cursor_point.x, cursor_point.y));
 #else
@@ -373,6 +372,13 @@ BaseTab* BaseTabStrip::GetTabAt(BaseTab* tab,
   gfx::Point local_point = tab_in_tab_coordinates;
   ConvertPointToView(tab, this, &local_point);
   return GetTabAtLocal(local_point);
+}
+
+void BaseTabStrip::ClickActiveTab(const BaseTab* tab) const {
+  DCHECK(IsActiveTab(tab));
+  int index = GetModelIndexOfBaseTab(tab);
+  if (controller() && IsValidModelIndex(index))
+    controller()->ClickActiveTab(index);
 }
 
 void BaseTabStrip::Layout() {

@@ -119,6 +119,12 @@ def DownloadFileWithRetry(dest_path, url):
       time.sleep(1)
 
 
+def EvalDepsFile(path):
+  scope = {'Var': lambda name: scope['vars'][name]}
+  execfile(path, {}, scope)
+  return scope
+
+
 def Main():
   parser = optparse.OptionParser()
   parser.add_option(
@@ -143,6 +149,18 @@ def Main():
   if len(args) != 0:
     parser.error('Unexpected arguments: %r' % args)
 
+  if options.nacl_revision is None and len(options.file_hashes) == 0:
+    # The script must have been invoked directly with no arguments,
+    # rather than being invoked by gclient.  In this case, read the
+    # DEPS file ourselves rather than having gclient pass us values
+    # from DEPS.
+    deps_data = EvalDepsFile(os.path.join('src', 'DEPS'))
+    options.nacl_revision = deps_data['vars']['nacl_revision']
+    options.file_hashes = [
+        ('x86_32', deps_data['vars']['nacl_irt_hash_x86_32']),
+        ('x86_64', deps_data['vars']['nacl_irt_hash_x86_64']),
+        ]
+
   nacl_dir = os.path.join('src', 'native_client')
   if not os.path.exists(nacl_dir):
     # If "native_client" is not present, this might be because the
@@ -153,7 +171,7 @@ def Main():
     # later.
     sys.stdout.write(
         'The directory %r does not exist: skipping downloading binaries '
-        'for Native Client\'s IRT library\n')
+        'for Native Client\'s IRT library\n' % nacl_dir)
     return
   if len(options.file_hashes) == 0:
     sys.stdout.write('No --file_hash arguments given: nothing to update\n')

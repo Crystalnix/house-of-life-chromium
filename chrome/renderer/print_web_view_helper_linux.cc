@@ -7,6 +7,7 @@
 #include "base/file_descriptor_posix.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "chrome/common/print_messages.h"
 #include "content/common/view_messages.h"
 #include "printing/metafile.h"
@@ -31,17 +32,26 @@ bool PrintWebViewHelper::CreatePreviewDocument(
   if (!metafile.Init())
     return false;
 
+  // Record the begin time.
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+
   if (!RenderPages(params, frame, node, false, &page_count, &metafile))
     return false;
+
+  // Calculate the time taken to render the requested page for preview and add
+  // the net time in the histogram.
+  UMA_HISTOGRAM_TIMES("PrintPreview.RenderTime",
+                      base::TimeTicks::Now() - begin_time);
 
   // Get the size of the resulting metafile.
   uint32 buf_size = metafile.GetDataSize();
   DCHECK_GT(buf_size, 0u);
 
   PrintHostMsg_DidPreviewDocument_Params preview_params;
+  preview_params.data_size = buf_size;
   preview_params.document_cookie = params.params.document_cookie;
   preview_params.expected_pages_count = page_count;
-  preview_params.data_size = buf_size;
+  preview_params.modifiable = IsModifiable(frame, node);
 
   if (!CopyMetafileDataToSharedMem(&metafile,
                                    &(preview_params.metafile_data_handle))) {

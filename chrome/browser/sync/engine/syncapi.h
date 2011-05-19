@@ -43,7 +43,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/tracked.h"
@@ -710,7 +710,7 @@ class SyncManager {
 
     // Notifications counters updated by the actions in synapi.
     int notifications_received;
-    int notifications_sent;
+    int notifiable_commits;
 
     // The max number of consecutive errors from any component.
     int max_consecutive_errors;
@@ -961,12 +961,12 @@ class SyncManager {
   // manager).  Never returns NULL.  The following events are sent by
   // the returned backend:
   //
-  // onSyncNotificationStateChange(boolean notificationsEnabled):
+  // onNotificationStateChange({ enabled: (boolean) }):
   //   Sent when notifications are enabled or disabled.
   //
-  // onSyncIncomingNotification(array changedTypes):
+  // onIncomingNotification({ changedTypes: (array) }):
   //   Sent when an incoming notification arrives.  |changedTypes|
-  //   contains a list of sync types (strings) which have changed.
+  //   is a list of sync types (strings) which have changed.
   //
   // The following messages are processed by the returned backend:
   //

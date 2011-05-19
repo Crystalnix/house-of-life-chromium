@@ -19,6 +19,7 @@
 #include "googleurl/src/gurl.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/fileapi/file_system_operation_context.h"
+#include "webkit/quota/quota_manager.h"
 
 namespace base {
 class Time;
@@ -99,8 +100,23 @@ class FileSystemOperation {
   FileSystemOperationContext* file_system_operation_context() {
     return &file_system_operation_context_;
   }
+
   friend class FileSystemOperationTest;
   friend class FileSystemOperationWriteTest;
+  friend class FileWriterDelegateTest;
+
+  bool GetUsageAndQuotaThenCallback(
+      const GURL& origin_url,
+      quota::QuotaManager::GetUsageAndQuotaCallback* callback);
+
+  void DelayedCopyForQuota(quota::QuotaStatusCode status,
+                           int64 usage, int64 quota);
+  void DelayedMoveForQuota(quota::QuotaStatusCode status,
+                           int64 usage, int64 quota);
+  void DelayedWriteForQuota(quota::QuotaStatusCode status,
+                            int64 usage, int64 quota);
+  void DelayedTruncateForQuota(quota::QuotaStatusCode status,
+                               int64 usage, int64 quota);
 
   // A callback used for OpenFileSystem.
   void DidGetRootPath(bool success,
@@ -148,8 +164,9 @@ class FileSystemOperation {
       base::PassPlatformFile file,
       bool created);
 
-  // Checks the validity of a given |path| for reading, and cracks the path into
-  // root URL and virtual path components.
+  // Checks the validity of a given |path| for reading, cracks the path into
+  // root URL and virtual path components, and returns the correct
+  // FileSystemFileUtil subclass for this type.
   // Returns true if the given |path| is a valid FileSystem path.
   // Otherwise it calls dispatcher's DidFail method with
   // PLATFORM_FILE_ERROR_SECURITY and returns false.
@@ -158,10 +175,12 @@ class FileSystemOperation {
   bool VerifyFileSystemPathForRead(const GURL& path,
                                    GURL* root_url,
                                    FileSystemType* type,
-                                   FilePath* virtual_path);
+                                   FilePath* virtual_path,
+                                   FileSystemFileUtil** file_system_file_util);
 
-  // Checks the validity of a given |path| for writing, and cracks the path into
-  // root URL and virtual path components.
+  // Checks the validity of a given |path| for writing, cracks the path into
+  // root URL and virtual path components, and returns the correct
+  // FileSystemFileUtil subclass for this type.
   // Returns true if the given |path| is a valid FileSystem path, and
   // its origin embedded in the path has the right to write.
   // Otherwise it fires dispatcher's DidFail method with
@@ -178,7 +197,8 @@ class FileSystemOperation {
                                     bool create,
                                     GURL* root_url,
                                     FileSystemType* type,
-                                    FilePath* virtual_path);
+                                    FilePath* virtual_path,
+                                    FileSystemFileUtil** file_system_file_util);
 
 #ifndef NDEBUG
   enum OperationType {
@@ -223,6 +243,9 @@ class FileSystemOperation {
   // Used only by OpenFile, in order to clone the file handle back to the
   // requesting process.
   base::ProcessHandle peer_handle_;
+
+  // Length to be truncated.
+  int64 length_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemOperation);
 };

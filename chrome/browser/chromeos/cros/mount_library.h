@@ -47,20 +47,9 @@ class MountLibrary {
          bool is_parent,
          bool is_read_only,
          bool has_media,
-         bool on_boot_device)
-        : device_path_(device_path),
-          mount_path_(mount_path),
-          system_path_(system_path),
-          file_path_(file_path),
-          device_label_(device_label),
-          drive_label_(drive_label),
-          parent_path_(parent_path),
-          device_type_(device_type),
-          total_size_(total_size),
-          is_parent_(is_parent),
-          is_read_only_(is_read_only),
-          has_media_(has_media),
-          on_boot_device_(on_boot_device) {}
+         bool on_boot_device);
+    ~Disk();
+
     // The path of the device, used by devicekit-disks.
     const std::string& device_path() const { return device_path_; }
     // The path to the mount point of this device. Will be empty if not mounted.
@@ -90,6 +79,7 @@ class MountLibrary {
 
     void set_mount_path(const char* mount_path) { mount_path_ = mount_path; }
     void clear_mount_path() { mount_path_.clear(); }
+
    private:
     std::string device_path_;
     std::string mount_path_;
@@ -106,6 +96,8 @@ class MountLibrary {
     bool on_boot_device_;
   };
   typedef std::map<std::string, Disk*> DiskMap;
+
+  typedef void(*UnmountDeviceRecursiveCallbackType)(void*, bool);
 
   class Observer {
    public:
@@ -125,6 +117,10 @@ class MountLibrary {
   virtual void RequestMountInfoRefresh() = 0;
   virtual void MountPath(const char* device_path) = 0;
   virtual void UnmountPath(const char* device_path) = 0;
+
+  // Unmounts device_poath and all of its known children.
+  virtual void UnmountDeviceRecursive(const char* device_path,
+      UnmountDeviceRecursiveCallbackType callback, void* user_data) = 0;
 
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via CrosLibrary::Get().

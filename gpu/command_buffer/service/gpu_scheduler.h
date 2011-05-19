@@ -69,6 +69,13 @@ class GpuScheduler : public CommandBufferEngine {
   // false must eventually be paired by a call with true.
   void SetScheduled(bool is_scheduled);
 
+  // Returns whether the scheduler is currently scheduled to process commands.
+  bool IsScheduled();
+
+  // Sets a callback that is invoked just before scheduler is rescheduled.
+  // Takes ownership of callback object.
+  void SetScheduledCallback(Callback0::Type* scheduled_callback);
+
   // Implementation of CommandBufferEngine.
   virtual Buffer GetSharedMemoryBuffer(int32 shm_id);
   virtual void set_token(int32 token);
@@ -100,6 +107,7 @@ class GpuScheduler : public CommandBufferEngine {
   // is also predicated on a flow control mechanism between the
   // renderer and GPU processes.
   uint64 swap_buffers_count() const;
+  uint64 acknowledged_swap_buffers_count() const;
   void set_acknowledged_swap_buffers_count(
       uint64 acknowledged_swap_buffers_count);
 
@@ -160,6 +168,8 @@ class GpuScheduler : public CommandBufferEngine {
 
   // Greater than zero if this is waiting to be rescheduled before continuing.
   int unscheduled_count_;
+
+  scoped_ptr<Callback0::Type> scheduled_callback_;
 
 #if defined(OS_MACOSX)
   scoped_ptr<AcceleratedSurface> surface_;

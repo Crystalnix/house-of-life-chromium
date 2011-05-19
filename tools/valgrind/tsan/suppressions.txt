@@ -125,6 +125,13 @@
   fun:sync_api::SyncManager::SyncInternal::*
 }
 
+{
+  bug_82279
+  ThreadSanitizer:Race
+  fun:ObserverListBase::Iterator::Iterator
+  fun:syncable::BaseTransaction::NotifyTransactionChangingAndEnding
+}
+
 ############################
 # Benign races in Chromium
 {
@@ -315,7 +322,7 @@
 {
    ThreadSanitizer sanity test (ToolsSanityTest.DataRace).
    ThreadSanitizer:Race
-   fun:*TOOLS_SANITY_TEST_CONCURRENT_THREAD*ThreadMain*
+   fun:*TOOLS_SANITY_TEST_CONCURRENT_THREAD::ThreadMain
 }
 
 {
@@ -338,6 +345,14 @@
   Two writes, same value (ICU gHeapInUse)
   ThreadSanitizer:Race
   fun:uprv_malloc_46
+}
+
+{
+  Two writes, same value (ICU gLibCleanupFunctions[UCLN_UPLUG])
+  ThreadSanitizer:Race
+  fun:ucln_registerCleanup_46
+  fun:uplug_init_46
+  fun:u_init_46
 }
 
 # Reading a pointer to a mutex being initialized in a concurrent thread.
@@ -369,6 +384,25 @@
   ThreadSanitizer:Race
   fun:sqlite3_initialize
   fun:openDatabase
+}
+
+{
+  bug_82894 Missing libsqlite3 symbol
+  ThreadSanitizer:Race
+  ...
+  obj:*libsqlite3.so*
+  obj:*libsqlite3.so*
+  obj:*libsqlite3.so*
+  obj:*libsqlite3.so*
+  ...
+  fun:sdb_*
+  ...
+  fun:NSC_*
+  ...
+  fun:PK11_*
+  ...
+  fun:crypto::::NSSInitSingleton::OpenUserDB
+  fun:crypto::::NSSInitSingleton::OpenTestNSSDB
 }
 
 ############################
@@ -472,31 +506,4 @@
   tsanbug_62b
   ThreadSanitizer:Race
   fun:__GI_memcpy
-}
-
-{
-  bug_70085a
-  ThreadSanitizer:Race
-  fun:WebCore::ResourceResponseBase::~ResourceResponseBase*
-  fun:WebCore::ResourceResponse::~ResourceResponse*
-  ...
-  fun:WebCore::DocumentLoader::~DocumentLoader*
-  fun:WebKit::WebDataSourceImpl::~WebDataSourceImpl*
-}
-
-{
-  bug_70085b
-  ThreadSanitizer:Race
-  ...
-  fun:WTF::ThreadSafeRefCounted*::deref*
-}
-
-{
-  bug_70085c
-  ThreadSanitizer:Race
-  fun:WebCore::WorkerScriptController::forbidExecution*
-  fun:WebCore::WorkerThread::stop*
-  fun:WebKit::WebWorkerBase::stopWorkerThread*
-  fun:WebKit::WebWorkerImpl::terminateWorkerContext*
-  fun:WebWorkerStub::OnTerminateWorkerContext*
 }

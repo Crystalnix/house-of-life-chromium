@@ -32,7 +32,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/automation/automation_json_requests.h"
-#include "chrome/test/test_launcher_utils.h"
 #include "chrome/test/webdriver/session_manager.h"
 #include "chrome/test/webdriver/utility_functions.h"
 #include "chrome/test/webdriver/webdriver_key_converter.h"
@@ -62,7 +61,8 @@ Session::Session()
       async_script_timeout_(0),
       implicit_wait_(0),
       screenshot_on_error_(false),
-      use_native_events_(false) {
+      use_native_events_(false),
+      has_alert_prompt_text_(false) {
   SessionManager::GetInstance()->Add(this);
 }
 
@@ -70,7 +70,8 @@ Session::~Session() {
   SessionManager::GetInstance()->Remove(id_);
 }
 
-ErrorCode Session::Init(const FilePath& browser_dir) {
+ErrorCode Session::Init(const FilePath& browser_exe,
+                        const CommandLine& options) {
   if (!thread_.Start()) {
     LOG(ERROR) << "Cannot start session thread";
     delete this;
@@ -81,7 +82,8 @@ ErrorCode Session::Init(const FilePath& browser_dir) {
   RunSessionTask(NewRunnableMethod(
       this,
       &Session::InitOnSessionThread,
-      browser_dir,
+      browser_exe,
+      options,
       &code));
   if (code != kSuccess)
     Terminate();
@@ -642,6 +644,46 @@ bool Session::CloseWindow() {
   return success;
 }
 
+ErrorCode Session::GetAlertMessage(std::string* text) {
+  bool success = false;
+  RunSessionTask(NewRunnableMethod(
+      automation_.get(),
+      &Automation::GetAppModalDialogMessage,
+      text,
+      &success));
+  return success ? kSuccess : kUnknownError;
+}
+
+ErrorCode Session::SetAlertPromptText(const std::string& alert_prompt_text) {
+  std::string message_text;
+  // Only set the alert prompt text if an alert is actually active.
+  ErrorCode code = GetAlertMessage(&message_text);
+  if (code == kSuccess) {
+    has_alert_prompt_text_ = true;
+    alert_prompt_text_ = alert_prompt_text;
+  }
+  return code;
+}
+
+ErrorCode Session::AcceptOrDismissAlert(bool accept) {
+  bool success = false;
+  if (accept && has_alert_prompt_text_) {
+    RunSessionTask(NewRunnableMethod(
+        automation_.get(),
+        &Automation::AcceptPromptAppModalDialog,
+        alert_prompt_text_,
+        &success));
+  } else {
+    RunSessionTask(NewRunnableMethod(
+        automation_.get(),
+        &Automation::AcceptOrDismissAppModalDialog,
+        accept,
+        &success));
+  }
+  has_alert_prompt_text_ = false;
+  return success ? kSuccess : kUnknownError;
+}
+
 std::string Session::GetBrowserVersion() {
   std::string version;
   RunSessionTask(NewRunnableMethod(
@@ -934,10 +976,14 @@ void Session::RunSessionTaskOnSessionThread(Task* task,
   done_event->Signal();
 }
 
-void Session::InitOnSessionThread(const FilePath& browser_dir,
+void Session::InitOnSessionThread(const FilePath& browser_exe,
+                                  const CommandLine& options,
                                   ErrorCode* code) {
   automation_.reset(new Automation());
-  automation_->Init(browser_dir, code);
+  if (browser_exe.empty())
+    automation_->Init(options, code);
+  else
+    automation_->InitWithBrowserPath(browser_exe, options, code);
   if (*code != kSuccess)
     return;
 

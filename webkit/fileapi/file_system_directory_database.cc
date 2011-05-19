@@ -4,6 +4,8 @@
 
 #include "webkit/fileapi/file_system_directory_database.h"
 
+#include <math.h>
+
 #include "base/pickle.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
@@ -18,15 +20,22 @@ bool PickleFromFileInfo(
     Pickle* pickle) {
   DCHECK(pickle);
   std::string data_path;
+  // Round off here to match the behavior of the filesystem on real files.
+  base::Time time =
+      base::Time::FromDoubleT(floor(info.modification_time.ToDoubleT()));
+  std::string name;
+
 #if defined(OS_POSIX)
   data_path = info.data_path.value();
+  name = info.name;
 #elif defined(OS_WIN)
   data_path = base::SysWideToUTF8(info.data_path.value());
+  name = base::SysWideToUTF8(info.name);
 #endif
   if (pickle->WriteInt64(info.parent_id) &&
       pickle->WriteString(data_path) &&
-      pickle->WriteString(info.name) &&
-      pickle->WriteInt64(info.modification_time.ToInternalValue()))
+      pickle->WriteString(name) &&
+      pickle->WriteInt64(time.ToInternalValue()))
     return true;
 
   NOTREACHED();
@@ -38,16 +47,19 @@ bool FileInfoFromPickle(
     fileapi::FileSystemDirectoryDatabase::FileInfo* info) {
   void* iter = NULL;
   std::string data_path;
+  std::string name;
   int64 internal_time;
 
   if (pickle.ReadInt64(&iter, &info->parent_id) &&
       pickle.ReadString(&iter, &data_path) &&
-      pickle.ReadString(&iter, &info->name) &&
+      pickle.ReadString(&iter, &name) &&
       pickle.ReadInt64(&iter, &internal_time)) {
 #if defined(OS_POSIX)
     info->data_path = FilePath(data_path);
+    info->name = name;
 #elif defined(OS_WIN)
     info->data_path = FilePath(base::SysUTF8ToWide(data_path));
+    info->name = base::SysUTF8ToWide(name);
 #endif
     info->modification_time = base::Time::FromInternalValue(internal_time);
     return true;
@@ -63,11 +75,17 @@ const char kLastIntegerKey[] = "LAST_INTEGER";
 
 std::string GetChildLookupKey(
     fileapi::FileSystemDirectoryDatabase::FileId parent_id,
-    const std::string& child_name) {
+    const FilePath::StringType& child_name) {
   // TODO(ericu): child_name may need to be case-folded, pending discussion on
   // public-webapps.
+  std::string name;
+#if defined(OS_POSIX)
+  name = child_name;
+#elif defined(OS_WIN)
+  name = base::SysWideToUTF8(child_name);
+#endif
   return std::string(kChildLookupPrefix) + base::Int64ToString(parent_id) +
-      std::string(kChildLookupSeparator) + child_name;
+      std::string(kChildLookupSeparator) + name;
 }
 
 std::string GetChildListingKeyPrefix(
@@ -111,7 +129,7 @@ FileSystemDirectoryDatabase::~FileSystemDirectoryDatabase() {
 }
 
 bool FileSystemDirectoryDatabase::GetChildWithName(
-    FileId parent_id, const std::string& name, FileId* child_id) {
+    FileId parent_id, const FilePath::StringType& name, FileId* child_id) {
   if (!Init())
     return false;
   DCHECK(child_id);
@@ -132,9 +150,27 @@ bool FileSystemDirectoryDatabase::GetChildWithName(
   return false;
 }
 
+bool FileSystemDirectoryDatabase::GetFileWithPath(
+    const FilePath& path, FileId* file_id) {
+  std::vector<FilePath::StringType> components;
+  path.GetComponents(&components);
+  FileId local_id = 0;
+  std::vector<FilePath::StringType>::iterator iter;
+  for (iter = components.begin(); iter != components.end(); ++iter) {
+    FilePath::StringType name;
+    name = *iter;
+    if (name == FILE_PATH_LITERAL("/"))
+      continue;
+    if (!GetChildWithName(local_id, name, &local_id))
+      return false;
+  }
+  *file_id = local_id;
+  return true;
+}
+
 bool FileSystemDirectoryDatabase::ListChildren(
     FileId parent_id, std::vector<FileId>* children) {
-  // Check to add later: fail if parent is a file, in debug builds.
+  // Check to add later: fail if parent is a file, at least in debug builds.
   if (!Init())
     return false;
   DCHECK(children);
@@ -287,6 +323,38 @@ bool FileSystemDirectoryDatabase::UpdateModificationTime(
   return true;
 }
 
+bool FileSystemDirectoryDatabase::OverwritingMoveFile(
+    FileId src_file_id, FileId dest_file_id) {
+  FileInfo src_file_info;
+  FileInfo dest_file_info;
+
+  if (!GetFileInfo(src_file_id, &src_file_info))
+    return false;
+  if (!GetFileInfo(dest_file_id, &dest_file_info))
+    return false;
+  if (src_file_info.is_directory() || dest_file_info.is_directory())
+    return false;
+  leveldb::WriteBatch batch;
+  // This is the only field that really gets moved over; if you add fields to
+  // FileInfo, e.g. ctime, they might need to be copied here.
+  dest_file_info.data_path = src_file_info.data_path;
+  if (!RemoveFileInfoHelper(src_file_id, &batch))
+    return false;
+  Pickle pickle;
+  if (!PickleFromFileInfo(dest_file_info, &pickle))
+    return false;
+  batch.Put(
+      GetFileLookupKey(dest_file_id),
+      leveldb::Slice(reinterpret_cast<const char *>(pickle.data()),
+                     pickle.size()));
+  leveldb::Status status = db_->Write(leveldb::WriteOptions(), &batch);
+  if (!status.ok()) {
+    HandleError(status);
+    return false;
+  }
+  return true;
+}
+
 bool FileSystemDirectoryDatabase::GetNextInteger(int64* next) {
   if (!Init())
     return false;
@@ -394,7 +462,7 @@ bool FileSystemDirectoryDatabase::VerifyIsDirectory(FileId file_id) {
     return true;  // The root is a directory.
   if (!GetFileInfo(file_id, &info))
     return false;
-  if (!info.data_path.empty()) {
+  if (!info.is_directory()) {
     LOG(ERROR) << "New parent directory is a file!";
     return false;
   }
@@ -432,6 +500,7 @@ bool FileSystemDirectoryDatabase::RemoveFileInfoHelper(
     return false;
   if (info.data_path.empty()) {  // It's a directory
     std::vector<FileId> children;
+    // TODO(ericu): Make a faster is-the-directory-empty check.
     if (!ListChildren(file_id, &children))
       return false;
     if(children.size()) {

@@ -33,6 +33,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrameClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebViewClient.h"
@@ -71,7 +72,7 @@ class WebUIBindings;
 struct ContextMenuMediaParams;
 struct PP_Flash_NetAddress;
 struct ViewHostMsg_RunFileChooser_Params;
-struct ViewMsg_ClosePage_Params;
+struct ViewMsg_SwapOut_Params;
 struct ViewMsg_Navigate_Params;
 struct ViewMsg_StopFinding_Params;
 struct WebDropData;
@@ -122,6 +123,7 @@ class WebDragData;
 class WebFrame;
 class WebGeolocationClient;
 class WebGeolocationServiceInterface;
+class WebIconURL;
 class WebImage;
 class WebInputElement;
 class WebKeyboardEvent;
@@ -197,6 +199,11 @@ class RenderView : public RenderWidget,
 
   // May return NULL when the view is closing.
   WebKit::WebView* webview() const;
+
+  // Called by a GraphicsContext associated with this view when swapbuffers
+  // completes or is aborted.
+  void OnViewContextSwapBuffersComplete();
+  void OnViewContextSwapBuffersAborted();
 
   int page_id() const { return page_id_; }
   PepperPluginDelegateImpl* pepper_delegate() { return &pepper_delegate_; }
@@ -491,7 +498,8 @@ class RenderView : public RenderWidget,
   virtual void didReceiveTitle(WebKit::WebFrame* frame,
                                const WebKit::WebString& title,
                                WebKit::WebTextDirection direction);
-  virtual void didChangeIcons(WebKit::WebFrame*);
+  virtual void didChangeIcon(WebKit::WebFrame*,
+                             WebKit::WebIconURL::Type) OVERRIDE;
   virtual void didFinishDocumentLoad(WebKit::WebFrame* frame);
   virtual void didHandleOnloadEvents(WebKit::WebFrame* frame);
   virtual void didFailLoad(WebKit::WebFrame* frame,
@@ -576,7 +584,6 @@ class RenderView : public RenderWidget,
   // Please do not add your stuff randomly to the end here. If there is an
   // appropriate section, add it there. If not, there are some random functions
   // nearer to the top you can add it to.
-
   virtual void DidFlushPaint();
 
   // Cannot use std::set unfortunately since linked_ptr<> does not support
@@ -601,6 +608,7 @@ class RenderView : public RenderWidget,
   virtual void OnSetFocus(bool enable);
   virtual void OnWasHidden();
   virtual void OnWasRestored(bool needs_repainting);
+  virtual bool SupportsAsynchronousSwapBuffers() OVERRIDE;
 
  private:
   // For unit tests.
@@ -710,7 +718,7 @@ class RenderView : public RenderWidget,
                                    IPC::ChannelHandle handle);
   void OnCancelDownload(int32 download_id);
   void OnClearFocusedNode();
-  void OnClosePage(const ViewMsg_ClosePage_Params& params);
+  void OnClosePage();
 #if defined(ENABLE_FLAPPER_HACKS)
   void OnConnectTcpACK(int request_id,
                        IPC::PlatformFileForTransit socket_for_transit,
@@ -796,6 +804,7 @@ class RenderView : public RenderWidget,
   void OnShouldClose();
   void OnStop();
   void OnStopFinding(const ViewMsg_StopFinding_Params& params);
+  void OnSwapOut(const ViewMsg_SwapOut_Params& params);
   void OnThemeChanged();
   void OnUndo();
   void OnUpdateTargetURLAck();

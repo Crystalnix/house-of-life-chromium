@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
@@ -55,7 +56,7 @@ DemuxerStream* AdaptiveDemuxerStream::current_stream() {
   return streams_[current_stream_index_];
 }
 
-void AdaptiveDemuxerStream::Read(Callback1<Buffer*>::Type* read_callback) {
+void AdaptiveDemuxerStream::Read(const ReadCallback& read_callback) {
   current_stream()->Read(read_callback);
 }
 
@@ -134,7 +135,6 @@ void AdaptiveDemuxer::ChangeCurrentDemuxer(int audio_index, int video_index) {
   // TODO(fischman): this is currently broken because when a new Demuxer is to
   // be used we need to set_host(host()) it, and we need to set_host(NULL) the
   // current Demuxer if it's no longer being used.
-  // TODO(fischman): remember to Stop active demuxers that are being abandoned.
   base::AutoLock auto_lock(lock_);
   current_audio_demuxer_index_ = audio_index;
   current_video_demuxer_index_ = video_index;
@@ -161,6 +161,8 @@ Demuxer* AdaptiveDemuxer::current_demuxer(DemuxerStream::Type type) {
 
 // Helper class that wraps a FilterCallback and expects to get called a set
 // number of times, after which the wrapped callback is fired (and deleted).
+//
+// TODO: Remove this class once Stop() is converted to FilterStatusCB.
 class CountingCallback {
  public:
   CountingCallback(int count, FilterCallback* orig_cb)
@@ -192,22 +194,69 @@ class CountingCallback {
   scoped_ptr<FilterCallback> orig_cb_;
 };
 
+// Helper class that wraps FilterStatusCB and expects to get called a set
+// number of times, after which the wrapped callback is fired. If an error
+// is reported in any of the callbacks, only the first error code is passed
+// to the wrapped callback.
+class CountingStatusCB : public base::RefCountedThreadSafe<CountingStatusCB> {
+ public:
+  CountingStatusCB(int count, const FilterStatusCB& orig_cb)
+      : remaining_count_(count), orig_cb_(orig_cb),
+        overall_status_(PIPELINE_OK) {
+    DCHECK_GT(remaining_count_, 0);
+    DCHECK(!orig_cb.is_null());
+  }
+
+  FilterStatusCB GetACallback() {
+    return base::Bind(&CountingStatusCB::OnChildCallbackDone, this);
+  }
+
+ private:
+  void OnChildCallbackDone(PipelineStatus status) {
+    bool fire_orig_cb = false;
+    PipelineStatus overall_status = PIPELINE_OK;
+
+    {
+      base::AutoLock auto_lock(lock_);
+
+      if (overall_status_ == PIPELINE_OK && status != PIPELINE_OK)
+        overall_status_ = status;
+
+      if (--remaining_count_ == 0) {
+        fire_orig_cb = true;
+        overall_status = overall_status_;
+      }
+    }
+
+    if (fire_orig_cb)
+      orig_cb_.Run(overall_status);
+  }
+
+  base::Lock lock_;
+  int remaining_count_;
+  FilterStatusCB orig_cb_;
+  PipelineStatus overall_status_;
+
+  DISALLOW_COPY_AND_ASSIGN(CountingStatusCB);
+};
+
 void AdaptiveDemuxer::Stop(FilterCallback* callback) {
-  Demuxer* audio = current_demuxer(DemuxerStream::AUDIO);
-  Demuxer* video = current_demuxer(DemuxerStream::VIDEO);
-  int count = (audio ? 1 : 0) + (video && audio != video ? 1 : 0);
-  CountingCallback* wrapper = new CountingCallback(count, callback);
-  if (audio)
-    audio->Stop(wrapper->GetACallback());
-  if (video && audio != video)
-    video->Stop(wrapper->GetACallback());
+  // Stop() must be called on all of the demuxers even though only one demuxer
+  // is  actively delivering audio and another one is delivering video. This
+  // just satisfies the contract that all demuxers must have Stop() called on
+  // them before they are destroyed.
+  //
+  // TODO: Remove CountingCallback once Stop() is converted to FilterStatusCB.
+  CountingCallback* wrapper = new CountingCallback(demuxers_.size(), callback);
+  for (size_t i = 0; i < demuxers_.size(); ++i)
+    demuxers_[i]->Stop(wrapper->GetACallback());
 }
 
-void AdaptiveDemuxer::Seek(base::TimeDelta time, FilterCallback* callback) {
+void AdaptiveDemuxer::Seek(base::TimeDelta time, const FilterStatusCB& cb) {
   Demuxer* audio = current_demuxer(DemuxerStream::AUDIO);
   Demuxer* video = current_demuxer(DemuxerStream::VIDEO);
   int count = (audio ? 1 : 0) + (video && audio != video ? 1 : 0);
-  CountingCallback* wrapper = new CountingCallback(count, callback);
+  CountingStatusCB* wrapper = new CountingStatusCB(count, cb);
   if (audio)
     audio->Seek(time, wrapper->GetACallback());
   if (video && audio != video)
@@ -215,11 +264,8 @@ void AdaptiveDemuxer::Seek(base::TimeDelta time, FilterCallback* callback) {
 }
 
 void AdaptiveDemuxer::OnAudioRendererDisabled() {
-  Demuxer* audio = current_demuxer(DemuxerStream::AUDIO);
-  Demuxer* video = current_demuxer(DemuxerStream::VIDEO);
-  if (audio) audio->OnAudioRendererDisabled();
-  if (video && audio != video) video->OnAudioRendererDisabled();
-  // TODO(fischman): propagate to other demuxers if/when they're selected.
+  for (size_t i = 0; i < demuxers_.size(); ++i)
+    demuxers_[i]->OnAudioRendererDisabled();
 }
 
 void AdaptiveDemuxer::set_host(FilterHost* filter_host) {
@@ -229,7 +275,17 @@ void AdaptiveDemuxer::set_host(FilterHost* filter_host) {
   if (video && audio != video) video->set_host(filter_host);
 }
 
-void AdaptiveDemuxer::SetPreload(Preload preload) {}
+void AdaptiveDemuxer::SetPlaybackRate(float playback_rate) {
+  Demuxer* audio = current_demuxer(DemuxerStream::AUDIO);
+  Demuxer* video = current_demuxer(DemuxerStream::VIDEO);
+  if (audio) audio->SetPlaybackRate(playback_rate);
+  if (video && audio != video) video->SetPlaybackRate(playback_rate);
+}
+
+void AdaptiveDemuxer::SetPreload(Preload preload) {
+  for (size_t i = 0; i < demuxers_.size(); ++i)
+    demuxers_[i]->SetPreload(preload);
+}
 
 scoped_refptr<DemuxerStream> AdaptiveDemuxer::GetStream(
     DemuxerStream::Type type) {
@@ -348,26 +404,65 @@ class DemuxerAccumulator {
       DoneAccumulating();
   }
 
+  // Called when all of the demuxers have been built.
   void DoneAccumulating() {
-    PipelineStatus overall_status = PIPELINE_OK;
-    for (size_t i = 0; i < statuses_.size(); ++i) {
-      if (statuses_[i] != PIPELINE_OK) {
-        overall_status = statuses_[i];
-        break;
-      }
-    }
+    PipelineStatus overall_status = GetOverallStatus();
     if (overall_status == PIPELINE_OK) {
-      orig_cb_->Run(
-          PIPELINE_OK,
-          new AdaptiveDemuxer(demuxers_, audio_index_, video_index_));
-    } else {
-      orig_cb_->Run(overall_status, static_cast<Demuxer*>(NULL));
+      CallOriginalCallback(PIPELINE_OK,
+                           new AdaptiveDemuxer(demuxers_, audio_index_,
+                                               video_index_));
+      return;
     }
+
+    // An error occurred. Call Stop() on all of the demuxers that were
+    // successfully built.
+    AdaptiveDemuxer::DemuxerVector demuxers_to_stop;
+
+    for (size_t i = 0; i < demuxers_.size(); ++i) {
+      if (demuxers_[i].get())
+        demuxers_to_stop.push_back(demuxers_[i]);
+    }
+
+    if (demuxers_to_stop.empty()) {
+      CallOriginalCallback(overall_status, NULL);
+      return;
+    }
+
+    CountingCallback* wrapper = new CountingCallback(
+        demuxers_to_stop.size(),
+        NewCallback(this, &DemuxerAccumulator::StopOnErrorDone));
+    for (size_t i = 0; i < demuxers_to_stop.size(); ++i)
+      demuxers_to_stop[i]->Stop(wrapper->GetACallback());
+  }
+
+  // Called after Stop() has been called on all of the demuxers that were
+  // successfully built.
+  void StopOnErrorDone() {
+    CallOriginalCallback(GetOverallStatus(), NULL);
+  }
+
+  void CallOriginalCallback(PipelineStatus status, Demuxer* demuxer) {
+    orig_cb_->Run(status, demuxer);
 
     delete this;
   }
 
-  // Self-delete in DoneAccumulating() only.
+  // Gets the overall status of the demuxer factory builds. If all build
+  // operations are successful then this will return PIPELINE_OK. If there
+  // are any errors then this function will return the first error that
+  // it encounters. Multiple builds may have failed, but we only care about
+  // the first error since only one error can be reported to the higher level
+  // code.
+  PipelineStatus GetOverallStatus() const {
+    for (size_t i = 0; i < statuses_.size(); ++i) {
+      if (statuses_[i] != PIPELINE_OK)
+        return statuses_[i];
+    }
+
+    return PIPELINE_OK;
+  }
+
+  // Self-delete in CallOriginalCallback() only.
   ~DemuxerAccumulator() {}
 
   int audio_index_;

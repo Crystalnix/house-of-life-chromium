@@ -28,9 +28,10 @@ int NetworkDelegate::NotifyBeforeSendHeaders(uint64 request_id,
 
 void NetworkDelegate::NotifyRequestSent(
     uint64 request_id,
-    const HostPortPair& socket_address) {
+    const HostPortPair& socket_address,
+    const HttpRequestHeaders& headers) {
   DCHECK(CalledOnValidThread());
-  OnRequestSent(request_id, socket_address);
+  OnRequestSent(request_id, socket_address, headers);
 }
 
 void NetworkDelegate::NotifyResponseStarted(URLRequest* request) {
@@ -61,12 +62,6 @@ void NetworkDelegate::NotifyURLRequestDestroyed(URLRequest* request) {
 void NetworkDelegate::NotifyHttpTransactionDestroyed(uint64 request_id) {
   DCHECK(CalledOnValidThread());
   OnHttpTransactionDestroyed(request_id);
-}
-
-URLRequestJob* NetworkDelegate::MaybeCreateURLRequestJob(URLRequest* request) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(request);
-  return OnMaybeCreateURLRequestJob(request);
 }
 
 void NetworkDelegate::NotifyPACScriptError(int line_number,

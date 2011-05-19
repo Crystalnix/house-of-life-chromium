@@ -142,6 +142,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
       ID_HOSTS_4_OR_MORE,
       ID_HOSTS_ALL,
       ID_FULL_ACCESS,
+      ID_CLIPBOARD,
       ID_ENUM_BOUNDARY
     };
 
@@ -282,7 +283,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static const char kContentSettingsPermission[];
   static const char kContextMenusPermission[];
   static const char kCookiePermission[];
-  static const char kChromeosInfoPrivatePermissions[];
+  static const char kChromeosInfoPrivatePermission[];
   static const char kDebuggerPermission[];
   static const char kExperimentalPermission[];
   static const char kFileBrowserHandlerPermission[];
@@ -296,6 +297,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   static const char kTabPermission[];
   static const char kUnlimitedStoragePermission[];
   static const char kWebstorePrivatePermission[];
+  static const char kWebSocketProxyPrivatePermission[];
 
   static const Permission kPermissions[];
   static const size_t kNumPermissions;

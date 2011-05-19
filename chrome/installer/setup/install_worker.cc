@@ -97,14 +97,16 @@ void AddInstallerCopyTasks(const InstallerState& installer_state,
   FilePath exe_dst(installer_dir.Append(setup_path.BaseName()));
   FilePath archive_dst(installer_dir.Append(archive_path.BaseName()));
 
+  install_list->AddCopyTreeWorkItem(setup_path.value(), exe_dst.value(),
+                                    temp_path.value(), WorkItem::ALWAYS);
+
   // In the past, we copied rather than moved for system level installs so that
   // the permissions of %ProgramFiles% would be picked up.  Now that |temp_path|
   // is in %ProgramFiles% for system level installs (and in %LOCALAPPDATA%
-  // otherwise), there is no need to do this.
-  install_list->AddMoveTreeWorkItem(setup_path.value(), exe_dst.value(),
-                                    temp_path.value());
+  // otherwise), there is no need to do this for the archive.  Setup.exe, on
+  // the other hand, is created elsewhere so it must always be copied.
   install_list->AddMoveTreeWorkItem(archive_path.value(), archive_dst.value(),
-                                    temp_path.value());
+                                    temp_path.value(), WorkItem::ALWAYS_MOVE);
 }
 
 // This method adds work items to create (or update) Chrome uninstall entry in
@@ -144,7 +146,7 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
     for (size_t i = 0; i < products.size(); ++i) {
       const Product& p = *products[i];
       if (!p.is_chrome() && !p.ShouldCreateUninstallEntry())
-        p.AppendProductFlags(&uninstall_arguments);
+        p.AppendUninstallFlags(&uninstall_arguments);
     }
   }
 
@@ -440,11 +442,11 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
 
       // Adding this registry entry for all products is overkill.
       // However, as it stands, we don't have a way to know which distribution
-      // will check the key and run the command, so we add it for all.
-      // After the first run, the subsequent runs should just be noops.
-      // (see upgrade_utils::SwapNewChromeExeIfPresent).
+      // will check the key and run the command, so we add it for all.  The
+      // first to run it will perform the operation and clean up the other
+      // values.
       CommandLine product_rename_cmd(rename);
-      products[i]->AppendProductFlags(&product_rename_cmd);
+      products[i]->AppendRenameFlags(&product_rename_cmd);
       in_use_update_work_items->AddSetRegValueWorkItem(
           root,
           version_key,
@@ -564,17 +566,25 @@ void AddInstallWorkItems(const InstallationState& original_state,
     install_list->AddMoveTreeWorkItem(
         src_path.Append(installer::kWowHelperExe).value(),
         target_path.Append(installer::kWowHelperExe).value(),
-        temp_path.value());
+        temp_path.value(),
+        WorkItem::ALWAYS_MOVE);
   }
 
   // In the past, we copied rather than moved for system level installs so that
   // the permissions of %ProgramFiles% would be picked up.  Now that |temp_path|
   // is in %ProgramFiles% for system level installs (and in %LOCALAPPDATA%
   // otherwise), there is no need to do this.
+  // Note that we pass true for check_duplicates to avoid failing on in-use
+  // repair runs if the current_version is the same as the new_version.
+  bool check_for_duplicates =
+      (current_version != NULL && current_version->get() != NULL &&
+       current_version->get()->Equals(new_version));
   install_list->AddMoveTreeWorkItem(
       src_path.AppendASCII(new_version.GetString()).value(),
       target_path.AppendASCII(new_version.GetString()).value(),
-      temp_path.value());
+      temp_path.value(),
+      check_for_duplicates ? WorkItem::CHECK_DUPLICATES :
+                             WorkItem::ALWAYS_MOVE);
 
   // Copy the default Dictionaries only if the folder doesn't exist already.
   // TODO(grt): Use AddMoveTreeWorkItem in a conditional WorkItemList, which
@@ -873,7 +883,7 @@ void AppendUninstallCommandLineFlags(const InstallerState& installer_state,
   uninstall_cmd->AppendSwitch(installer::switches::kUninstall);
 
   // Append the product-specific uninstall flags.
-  product.AppendProductFlags(uninstall_cmd);
+  product.AppendUninstallFlags(uninstall_cmd);
   if (installer_state.is_msi()) {
     uninstall_cmd->AppendSwitch(installer::switches::kMsi);
     // See comment in uninstall.cc where we check for the kDeleteProfile switch.

@@ -33,13 +33,13 @@ class SystemAccess;
 // Base class for OEM customization document classes.
 class CustomizationDocument {
  public:
-  virtual ~CustomizationDocument() {}
+  virtual ~CustomizationDocument();
 
   // Return true if the document was successfully fetched and parsed.
   bool IsReady() const { return root_.get(); }
 
  protected:
-  CustomizationDocument() {}
+  CustomizationDocument();
 
   virtual bool LoadManifestFromFile(const FilePath& manifest_path);
   virtual bool LoadManifestFromString(const std::string& manifest);
@@ -82,6 +82,8 @@ class StartupCustomizationDocument : public CustomizationDocument {
   // C-tor for test construction.
   StartupCustomizationDocument(SystemAccess* system_access,
                                const std::string& manifest);
+
+  ~StartupCustomizationDocument();
 
   void Init(SystemAccess* system_access);
 
@@ -166,6 +168,8 @@ class ServicesCustomizationDocument : public CustomizationDocument,
   // C-tor for test construction.
   ServicesCustomizationDocument(const std::string& manifest,
                                 const std::string& initial_locale);
+
+  ~ServicesCustomizationDocument();
 
   // Save applied state in machine settings.
   static void SetApplied(bool val);

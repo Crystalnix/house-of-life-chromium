@@ -103,12 +103,10 @@ void ThrobberHostView::StartThrobber() {
   views::SmoothedThrobber* throbber = CreateDefaultSmoothedThrobber();
   throbber->set_stop_delay_ms(0);
   gfx::Rect throbber_bounds = CalculateThrobberBounds(throbber);
-
-  throbber_widget_ = views::Widget::CreateWidget();
-  static_cast<views::WidgetGtk*>(throbber_widget_->native_widget())->
-      make_transient_to_parent();
-
   throbber_bounds.Offset(host_view_->GetScreenBounds().origin());
+
+  throbber_widget_ = new views::Widget;
+
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   params.bounds = throbber_bounds;
@@ -206,15 +204,15 @@ string16 GetCurrentNetworkName(NetworkLibrary* network_library) {
   if (network_library->ethernet_connected()) {
     return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
   } else if (network_library->wifi_connected()) {
-    return ASCIIToUTF16(network_library->wifi_network()->name());
+    return UTF8ToUTF16(network_library->wifi_network()->name());
   } else if (network_library->cellular_connected()) {
-    return ASCIIToUTF16(network_library->cellular_network()->name());
+    return UTF8ToUTF16(network_library->cellular_network()->name());
   } else if (network_library->ethernet_connecting()) {
     return l10n_util::GetStringUTF16(IDS_STATUSBAR_NETWORK_DEVICE_ETHERNET);
   } else if (network_library->wifi_connecting()) {
-    return ASCIIToUTF16(network_library->wifi_network()->name());
+    return UTF8ToUTF16(network_library->wifi_network()->name());
   } else if (network_library->cellular_connecting()) {
-    return ASCIIToUTF16(network_library->cellular_network()->name());
+    return UTF8ToUTF16(network_library->cellular_network()->name());
   } else {
     return string16();
   }

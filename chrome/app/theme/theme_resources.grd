@@ -38,6 +38,12 @@
         <include name="IDR_BOOKMARK_BAR_FOLDER" file="bookmark_bar_folder_mac.png" type="BINDATA" />
       </if>
       <include name="IDR_CLOSE_BUTTON_MASK" file="close_button_mask.png" type="BINDATA" />
+      <include name="IDR_CNAV_DIALOG_LEFT" file="cnav_dialog_left.png" type="BINDATA" />
+      <include name="IDR_CNAV_DIALOG_MIDDLE" file="cnav_dialog_middle.png" type="BINDATA" />
+      <include name="IDR_CNAV_DIALOG_RIGHT" file="cnav_dialog_right.png" type="BINDATA" />
+      <include name="IDR_COMPACTNAV_BACK" file="compactnav_back.png" type="BINDATA" />
+      <include name="IDR_COMPACTNAV_FORWARD" file="compactnav_forward.png" type="BINDATA" />
+      <include name="IDR_COMPACTNAV_SEPARATOR" file="compactnav_separator.png" type="BINDATA" />
       <if expr="os.find('win') != -1">
         <include name="IDR_CONFLICT_BADGE" file="conflict_badge.png" type="BINDATA" />
         <include name="IDR_CONFLICT_MENU" file="conflict_menu.png" type="BINDATA" />
@@ -438,6 +444,7 @@
         <include name="IDR_DROPDOWN_TOP_P" file="textbutton_dropdown_t_p.png" type="BINDATA" />
         <include name="IDR_DROPDOWN_TOP_RIGHT_H" file="textbutton_dropdown_tr_h.png" type="BINDATA" />
         <include name="IDR_DROPDOWN_TOP_RIGHT_P" file="textbutton_dropdown_tr_p.png" type="BINDATA" />
+        <include name="IDR_HELP_MENU" file="help_16.png" type="BINDATA" />
         <include name="IDR_INCOGNITO_GUY" file="incognito_guy.png" type="BINDATA" />
         <include name="IDR_LOGIN_DEFAULT_USER" file="avatar_beaker.png" type="BINDATA" />
         <include name="IDR_LOGIN_DEFAULT_USER_1" file="avatar_bee.png" type="BINDATA" />
@@ -456,6 +463,8 @@
         <include name="IDR_LOGIN_DEFAULT_USER_14" file="avatar_robot_body.png" type="BINDATA" />
         <include name="IDR_LOGIN_DEFAULT_USER_15" file="avatar_robot_head.png" type="BINDATA" />
         <include name="IDR_LOGIN_DEFAULT_USER_16" file="avatar_toolbox.png" type="BINDATA" />
+        <include name="IDR_LOGIN_DEFAULT_USER_17" file="avatar_user_color.png" type="BINDATA" />
+        <include name="IDR_LOGIN_DEFAULT_USER_18" file="avatar_user_enterprise.png" type="BINDATA" />
         <include name="IDR_LOGIN_GUEST" file="login_guest.png" type="BINDATA" />
         <include name="IDR_LOGIN_ADD_USER" file="login_add_user.png" type="BINDATA" />
         <include name="IDR_LOGIN_ADD_USER_HOVER" file="login_add_user_hover.png" type="BINDATA" />

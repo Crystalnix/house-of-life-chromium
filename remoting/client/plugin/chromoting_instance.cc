@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/task.h"
 #include "base/threading/thread.h"
 // TODO(sergeyu): We should not depend on renderer here. Instead P2P
@@ -112,8 +112,9 @@ bool ChromotingInstance::Init(uint32_t argc,
 void ChromotingInstance::Connect(const ClientConfig& config) {
   DCHECK(CurrentlyOnPluginThread());
 
-  LogDebugInfo(StringPrintf("Connecting to %s as %s", config.host_jid.c_str(),
-                            config.username.c_str()).c_str());
+  LogDebugInfo(base::StringPrintf("Connecting to %s as %s",
+                                  config.host_jid.c_str(),
+                                  config.username.c_str()).c_str());
   client_.reset(new ChromotingClient(config,
                                      &context_,
                                      host_connection_.get(),
@@ -130,7 +131,8 @@ void ChromotingInstance::Connect(const ClientConfig& config) {
 }
 
 void ChromotingInstance::ConnectSandboxed(const std::string& your_jid,
-                                          const std::string& host_jid) {
+                                          const std::string& host_jid,
+                                          const std::string& nonce) {
   // TODO(ajwong): your_jid and host_jid should be moved into ClientConfig. In
   // fact, this whole function should go away, and Connect() should just look at
   // ClientConfig.
@@ -145,7 +147,9 @@ void ChromotingInstance::ConnectSandboxed(const std::string& your_jid,
                           context_.jingle_thread()->message_loop());
   scriptable_object->AttachXmppProxy(xmpp_proxy);
 
-  client_.reset(new ChromotingClient(ClientConfig(),
+  ClientConfig config_;
+  config_.nonce = nonce;
+  client_.reset(new ChromotingClient(config_,
                                      &context_,
                                      host_connection_.get(),
                                      view_proxy_,

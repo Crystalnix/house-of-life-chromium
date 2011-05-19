@@ -18,8 +18,6 @@
 #include "ui/gfx/gtk_util.h"
 #include "ui/gfx/image.h"
 
-extern const int InfoBar::kInfoBarHeight = 37;
-
 namespace {
 
 // Pixels between infobar elements.
@@ -29,12 +27,10 @@ const int kElementPadding = 5;
 const int kLeftPadding = 5;
 const int kRightPadding = 5;
 
-// The horizontal space allotted for the icon.
-const int kIconSizePixels = 26;
-
 }  // namespace
 
 // static
+const int InfoBar::kInfoBarHeight = 37;
 const int InfoBar::kEndOfLabelSpacing = 6;
 const int InfoBar::kButtonButtonSpacing = 3;
 
@@ -66,10 +62,6 @@ InfoBar::InfoBar(InfoBarDelegate* delegate)
   if (icon) {
     GtkWidget* image = gtk_image_new_from_pixbuf(*icon);
 
-    // All icons should be 26x26, but some are larger with transparent padding
-    // pixels around the edges. (And some are smaller). Thus we hardcode the
-    // width and center the image.
-    gtk_widget_set_size_request(image, kIconSizePixels, 0);
     gtk_misc_set_alignment(GTK_MISC(image), 0.5, 0.5);
 
     gtk_box_pack_start(GTK_BOX(hbox_), image, FALSE, FALSE, 0);
@@ -106,16 +98,16 @@ void InfoBar::Show(bool animate) {
     gdk_window_lower(bg_box_->window);
 }
 
-void InfoBar::AnimateClose() {
-  slide_widget_->Close();
-}
-
-void InfoBar::Close() {
-  if (delegate_) {
-    delegate_->InfoBarClosed();
-    delegate_ = NULL;
+void InfoBar::Hide(bool animate) {
+  if (animate) {
+    slide_widget_->Close();
+  } else {
+    if (delegate_) {
+      delegate_->InfoBarClosed();
+      delegate_ = NULL;
+    }
+    delete this;
   }
-  delete this;
 }
 
 bool InfoBar::IsAnimating() {
@@ -139,7 +131,7 @@ void InfoBar::RemoveInfoBar() const {
 }
 
 void InfoBar::Closed() {
-  Close();
+  Hide(false);
 }
 
 void InfoBar::SetThemeProvider(GtkThemeService* theme_service) {

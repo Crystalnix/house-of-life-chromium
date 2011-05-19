@@ -25,11 +25,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using chromeos::input_method::ModifierKey;
 
 namespace {
 
 struct ModifierToLabel {
-  const chromeos::input_method::ModifierKey modifier;
+  const ModifierKey modifier;
   const char* label;
 } kModifierToLabels[] = {
   {chromeos::input_method::kSearchKey, "search"},
@@ -39,7 +40,7 @@ struct ModifierToLabel {
   {chromeos::input_method::kCapsLockKey, "caps lock"},
 };
 
-std::string ModifierKeyToLabel(chromeos::input_method::ModifierKey modifier) {
+std::string ModifierKeyToLabel(ModifierKey modifier) {
   for (size_t i = 0; i < arraysize(kModifierToLabels); ++i) {
     if (modifier == kModifierToLabels[i].modifier) {
       return kModifierToLabels[i].label;
@@ -49,7 +50,6 @@ std::string ModifierKeyToLabel(chromeos::input_method::ModifierKey modifier) {
 }
 
 }  // namespace
-
 
 class KeyboardOverlayUIHTMLSource : public ChromeURLDataManager::DataSource {
  public:
@@ -240,8 +240,6 @@ void KeyboardOverlayUIHTMLSource::StartDataRequest(const std::string& path,
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_PAGE_DOWN));
   localized_strings.SetString("keyboardOverlayPreviousWindow",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_PREVIOUS_WINDOW));
-  localized_strings.SetString("keyboardOverlayUseExternalMonitor",
-      l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_USE_EXTERNAL_MONITOR));
   localized_strings.SetString("keyboardOverlayReloadIgnoringCache",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_RELOAD_IGNORING_CACHE));
   localized_strings.SetString("keyboardOverlaySave",
@@ -278,6 +276,8 @@ void KeyboardOverlayUIHTMLSource::StartDataRequest(const std::string& path,
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_HELP));
   localized_strings.SetString("keyboardOverlayLockScreenOrPowerOff",
       l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_LOCK_SCREEN_OR_POWER_OFF));
+  localized_strings.SetString("keyboardOverlayInputUnicodeCharacters",
+      l10n_util::GetStringUTF16(IDS_KEYBOARD_OVERLAY_INPUT_UNICODE_CHARACTERS));
 
   static const base::StringPiece keyboard_overlay_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
@@ -328,17 +328,16 @@ void KeyboardOverlayHandler::GetKeyboardOverlayId(const ListValue* args) {
 }
 
 void KeyboardOverlayHandler::GetLabelMap(const ListValue* args) {
-  using namespace chromeos::input_method;
   DCHECK(profile_);
-
   PrefService* pref_service = profile_->GetPrefs();
   typedef std::map<ModifierKey, ModifierKey> ModifierMap;
   ModifierMap modifier_map;
-  modifier_map[kSearchKey] = static_cast<ModifierKey>(
+  modifier_map[chromeos::input_method::kSearchKey] = static_cast<ModifierKey>(
       pref_service->GetInteger(prefs::kLanguageXkbRemapSearchKeyTo));
-  modifier_map[kLeftControlKey] = static_cast<ModifierKey>(
-      pref_service->GetInteger(prefs::kLanguageXkbRemapControlKeyTo));
-  modifier_map[kLeftAltKey] = static_cast<ModifierKey>(
+  modifier_map[chromeos::input_method::kLeftControlKey] =
+      static_cast<ModifierKey>(
+          pref_service->GetInteger(prefs::kLanguageXkbRemapControlKeyTo));
+  modifier_map[chromeos::input_method::kLeftAltKey] = static_cast<ModifierKey>(
       pref_service->GetInteger(prefs::kLanguageXkbRemapAltKeyTo));
 
   DictionaryValue dict;

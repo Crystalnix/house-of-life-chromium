@@ -202,7 +202,8 @@ PrerenderManager::PrerenderManager(Profile* profile)
       max_elements_(kDefaultMaxPrerenderElements),
       prerender_contents_factory_(PrerenderContents::CreateFactory()),
       last_prerender_start_time_(GetCurrentTimeTicks() -
-          base::TimeDelta::FromMilliseconds(kMinTimeBetweenPrerendersMs)) {
+          base::TimeDelta::FromMilliseconds(kMinTimeBetweenPrerendersMs)),
+      runnable_method_factory_(this) {
   // There are some assumptions that the PrerenderManager is on the UI thread.
   // Any other checks simply make sure that the PrerenderManager is accessed on
   // the same thread that it was created on.
@@ -214,8 +215,7 @@ PrerenderManager::~PrerenderManager() {
   while (!prerender_list_.empty()) {
     PrerenderContentsData data = prerender_list_.front();
     prerender_list_.pop_front();
-    data.contents_->set_final_status(FINAL_STATUS_MANAGER_SHUTDOWN);
-    delete data.contents_;
+    data.contents_->Destroy(FINAL_STATUS_MANAGER_SHUTDOWN);
   }
   DeletePendingDeleteEntries();
 }
@@ -300,8 +300,7 @@ bool PrerenderManager::AddPreload(
   while (prerender_list_.size() > max_elements_) {
     data = prerender_list_.front();
     prerender_list_.pop_front();
-    data.contents_->set_final_status(FINAL_STATUS_EVICTED);
-    delete data.contents_;
+    data.contents_->Destroy(FINAL_STATUS_EVICTED);
   }
   StartSchedulingPeriodicCleanups();
   return true;
@@ -369,9 +368,7 @@ void PrerenderManager::DestroyPreloadForChildRouteIdPair(
       FindPrerenderContentsForChildRouteIdPair(child_route_id_pair);
   if (it != prerender_list_.end()) {
     PrerenderContents* prerender_contents = it->contents_;
-    prerender_contents->set_final_status(final_status);
-    prerender_contents->OnDestroy();
-    MoveEntryToPendingDelete(prerender_contents);
+    prerender_contents->Destroy(final_status);
   }
 }
 
@@ -445,10 +442,11 @@ bool PrerenderManager::MaybeUsePreloadedPageOld(TabContents* tab_contents,
 
   RenderViewHost* render_view_host =
       prerender_contents->render_view_host_mutable();
+  prerender_contents->set_render_view_host(NULL);
+
   // RenderViewHosts in PrerenderContents start out hidden.
   // Since we are actually using it now, restore it.
   render_view_host->WasRestored();
-  prerender_contents->set_render_view_host(NULL);
   render_view_host->Send(
       new ViewMsg_SetIsPrerendering(render_view_host->routing_id(), false));
   tab_contents->SwapInRenderViewHost(render_view_host);
@@ -547,15 +545,14 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
   DCHECK(new_tab_contents);
   DCHECK(old_tab_contents);
 
+  MarkTabContentsAsPrerendered(new_tab_contents->tab_contents());
+
   // Merge the browsing history.
   new_tab_contents->controller().CopyStateFromAndPrune(
       &old_tab_contents->controller(),
       false);
-
   old_tab_contents->delegate()->SwapTabContents(old_tab_contents,
                                                 new_tab_contents);
-
-  MarkTabContentsAsPrerendered(tab_contents);
 
   // See if we have any pending prerender requests for this routing id and start
   // the preload if we do.
@@ -571,6 +568,9 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
     pending_prerender_list_.erase(pending_it);
   }
 
+  old_tab_contents_list_.push_back(old_tab_contents);
+  // Destroy the old TabContents relatively promptly to reduce resource usage.
+  PostCleanupTask();
   return true;
 }
 
@@ -581,23 +581,25 @@ void PrerenderManager::MoveEntryToPendingDelete(PrerenderContents* entry) {
        it != prerender_list_.end();
        ++it) {
     if (it->contents_ == entry) {
-      pending_delete_list_.push_back(*it);
       RemovePendingPreload(entry);
       prerender_list_.erase(it);
       break;
     }
   }
-  DeleteOldEntries();
-  StartSchedulingPeriodicCleanups();
+  pending_delete_list_.push_back(entry);
+
+  // Destroy the old TabContents relatively promptly to reduce resource usage,
+  // and in the case of HTML5 media, reduce the change of playing any sound.
+  PostCleanupTask();
 }
 
 bool PrerenderManager::IsPendingDelete(PrerenderContents* entry) const {
   DCHECK(CalledOnValidThread());
-  for (std::list<PrerenderContentsData>::const_iterator it =
+  for (std::list<PrerenderContents*>::const_iterator it =
           pending_delete_list_.begin();
        it != pending_delete_list_.end();
        ++it) {
-    if (it->contents_ == entry)
+    if (*it == entry)
       return true;
   }
 
@@ -628,9 +630,9 @@ PrerenderContents* PrerenderManager::CreatePrerenderContents(
 
 void PrerenderManager::DeletePendingDeleteEntries() {
   while (!pending_delete_list_.empty()) {
-    PrerenderContentsData data = pending_delete_list_.front();
+    PrerenderContents* contents = pending_delete_list_.front();
     pending_delete_list_.pop_front();
-    delete data.contents_;
+    delete contents;
   }
 }
 
@@ -809,9 +811,7 @@ void PrerenderManager::StartSchedulingPeriodicCleanups() {
 }
 
 void PrerenderManager::MaybeStopSchedulingPeriodicCleanups() {
-  if (!old_tab_contents_list_.empty() ||
-      !prerender_list_.empty() ||
-      !pending_delete_list_.empty())
+  if (!prerender_list_.empty())
     return;
 
   DCHECK(CalledOnValidThread());
@@ -822,16 +822,15 @@ void PrerenderManager::DeleteOldTabContents() {
   while (!old_tab_contents_list_.empty()) {
     TabContentsWrapper* tab_contents = old_tab_contents_list_.front();
     old_tab_contents_list_.pop_front();
+    // TODO(dominich): should we use Instant Unload Handler here?
     delete tab_contents;
   }
-  MaybeStopSchedulingPeriodicCleanups();
 }
 
 void PrerenderManager::PeriodicCleanup() {
   DCHECK(CalledOnValidThread());
   DeleteOldTabContents();
   DeleteOldEntries();
-  DeletePendingDeleteEntries();
 
   // Grab a copy of the current PrerenderContents pointers, so that we
   // will not interfere with potential deletions of the list.
@@ -847,6 +846,16 @@ void PrerenderManager::PeriodicCleanup() {
        ++it) {
     (*it)->DestroyWhenUsingTooManyResources();
   }
+
+  DeletePendingDeleteEntries();
+}
+
+void PrerenderManager::PostCleanupTask() {
+  DCHECK(CalledOnValidThread());
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      runnable_method_factory_.NewRunnableMethod(
+          &PrerenderManager::PeriodicCleanup));
 }
 
 bool PrerenderManager::IsTabContentsPrerendering(
@@ -859,9 +868,23 @@ bool PrerenderManager::IsTabContentsPrerendering(
     TabContentsWrapper* prerender_tab_contents_wrapper =
         it->contents_->prerender_contents();
     if (prerender_tab_contents_wrapper &&
+        prerender_tab_contents_wrapper->tab_contents() == tab_contents) {
+      return true;
+    }
+  }
+
+  // Also look through the pending-deletion list.
+  for (std::list<PrerenderContents*>::const_iterator it =
+           pending_delete_list_.begin();
+       it != pending_delete_list_.end();
+       ++it) {
+    TabContentsWrapper* prerender_tab_contents_wrapper =
+        (*it)->prerender_contents();
+    if (prerender_tab_contents_wrapper &&
         prerender_tab_contents_wrapper->tab_contents() == tab_contents)
       return true;
   }
+
   return false;
 }
 

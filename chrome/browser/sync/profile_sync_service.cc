@@ -33,6 +33,7 @@
 #include "chrome/browser/sync/glue/data_type_manager.h"
 #include "chrome/browser/sync/glue/session_data_type_controller.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/profile_sync_factory.h"
 #include "chrome/browser/sync/signin_manager.h"
 #include "chrome/browser/ui/browser.h"
@@ -69,7 +70,6 @@ ProfileSyncService::ProfileSyncService(ProfileSyncFactory* factory,
                                        const std::string& cros_user)
     : last_auth_error_(AuthError::None()),
       passphrase_required_reason_(sync_api::REASON_PASSPHRASE_NOT_REQUIRED),
-      passphrase_migration_in_progress_(false),
       factory_(factory),
       profile_(profile),
       cros_user_(cros_user),
@@ -81,10 +81,6 @@ ProfileSyncService::ProfileSyncService(ProfileSyncFactory* factory,
       scoped_runnable_method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
       expect_sync_configuration_aborted_(false),
       clear_server_data_state_(CLEAR_NOT_STARTED) {
-  registrar_.Add(this,
-                 NotificationType::SYNC_DATA_TYPES_UPDATED,
-                 Source<Profile>(profile));
-
   // By default, dev, canary, and unbranded Chromium users will go to the
   // development servers. Development servers have more features than standard
   // sync servers. Users with officially-branded Chrome stable and beta builds
@@ -242,9 +238,15 @@ void ProfileSyncService::RegisterPreferences() {
   PrefService* pref_service = profile_->GetPrefs();
   if (pref_service->FindPreference(prefs::kSyncLastSyncedTime))
     return;
-  pref_service->RegisterInt64Pref(prefs::kSyncLastSyncedTime, 0);
-  pref_service->RegisterBooleanPref(prefs::kSyncHasSetupCompleted, false);
-  pref_service->RegisterBooleanPref(prefs::kSyncSuppressStart, false);
+  pref_service->RegisterInt64Pref(prefs::kSyncLastSyncedTime,
+                                  0,
+                                  PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncHasSetupCompleted,
+                                    false,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncSuppressStart,
+                                    false,
+                                    PrefService::UNSYNCABLE_PREF);
 
   // If you've never synced before, or if you're using Chrome OS, all datatypes
   // are on by default.
@@ -257,22 +259,46 @@ void ProfileSyncService::RegisterPreferences() {
       !pref_service->HasPrefPath(prefs::kSyncHasSetupCompleted);
 #endif
 
-  pref_service->RegisterBooleanPref(prefs::kSyncBookmarks, true);
-  pref_service->RegisterBooleanPref(prefs::kSyncPasswords, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncPreferences, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncAutofill, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncThemes, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncTypedUrls, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncExtensions, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncApps, enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncSessions, enable_by_default);
+  pref_service->RegisterBooleanPref(prefs::kSyncBookmarks,
+                                    true,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncPasswords,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncPreferences,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncAutofill,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncThemes,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncTypedUrls,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncExtensions,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncApps,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncSessions,
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
   pref_service->RegisterBooleanPref(prefs::kKeepEverythingSynced,
-      enable_by_default);
-  pref_service->RegisterBooleanPref(prefs::kSyncManaged, false);
-  pref_service->RegisterStringPref(prefs::kEncryptionBootstrapToken, "");
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterBooleanPref(prefs::kSyncManaged,
+                                    false,
+                                    PrefService::UNSYNCABLE_PREF);
+  pref_service->RegisterStringPref(prefs::kEncryptionBootstrapToken,
+                                   "",
+                                   PrefService::UNSYNCABLE_PREF);
 
   pref_service->RegisterBooleanPref(prefs::kSyncAutofillProfile,
-      enable_by_default);
+                                    enable_by_default,
+                                    PrefService::UNSYNCABLE_PREF);
 }
 
 void ProfileSyncService::ClearPreferences() {
@@ -325,7 +351,14 @@ void ProfileSyncService::CreateBackend() {
 }
 
 bool ProfileSyncService::IsEncryptedDatatypeEnabled() const {
-  return !encrypted_types_.empty();
+  syncable::ModelTypeSet preferred_types;
+  GetPreferredDataTypes(&preferred_types);
+  syncable::ModelTypeBitSet preferred_types_bitset =
+      syncable::ModelTypeBitSetFromSet(preferred_types);
+  syncable::ModelTypeBitSet encrypted_types_bitset =
+      syncable::ModelTypeBitSetFromSet(encrypted_types_.current);
+  DCHECK(encrypted_types_.current.count(syncable::PASSWORDS));
+  return (preferred_types_bitset & encrypted_types_bitset).any();
 }
 
 void ProfileSyncService::StartUp() {
@@ -428,7 +461,7 @@ void ProfileSyncService::NotifyObservers() {
   // TODO(akalin): Make an Observer subclass that listens and does the
   // event routing.
   js_event_handlers_.RouteJsEvent(
-      "onSyncServiceStateChanged", browser_sync::JsArgList());
+      "onServiceStateChanged", browser_sync::JsEventDetails());
 }
 
 // static
@@ -605,6 +638,15 @@ void ProfileSyncService::OnPassphraseRequired(
 
   passphrase_required_reason_ = reason;
 
+  // First try supplying gaia password as the passphrase.
+  if (!gaia_password_.empty()) {
+    SetPassphrase(gaia_password_, false, true);
+    gaia_password_ = std::string();
+    return;
+  }
+
+  // If the above failed then try the custom passphrase the user might have
+  // entered in setup.
   if (!cached_passphrase_.value.empty()) {
     SetPassphrase(cached_passphrase_.value,
                   cached_passphrase_.is_explicit,
@@ -649,8 +691,8 @@ void ProfileSyncService::OnPassphraseAccepted() {
 
 void ProfileSyncService::OnEncryptionComplete(
     const syncable::ModelTypeSet& encrypted_types) {
-  if (encrypted_types_ != encrypted_types) {
-    encrypted_types_ = encrypted_types;
+  if (encrypted_types_.current != encrypted_types) {
+    encrypted_types_.current = encrypted_types;
     NotifyObservers();
   }
 }
@@ -690,9 +732,11 @@ void ProfileSyncService::ShowErrorUI() {
     if (IsUsingSecondaryPassphrase())
       PromptForExistingPassphrase();
     else
-      SigninForPassphraseMigration();
+      NOTREACHED();  // Migration no longer supported.
+
     return;
   }
+
   const GoogleServiceAuthError& error = GetAuthError();
   if (error.state() == GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS ||
       error.state() == GoogleServiceAuthError::CAPTCHA_REQUIRED ||
@@ -723,11 +767,6 @@ void ProfileSyncService::PromptForExistingPassphrase() {
   }
 
   wizard_.Step(SyncSetupWizard::ENTER_PASSPHRASE);
-}
-
-void ProfileSyncService::SigninForPassphraseMigration() {
-  passphrase_migration_in_progress_ = true;
-  ShowLoginDialog();
 }
 
 SyncBackendHost::StatusSummary ProfileSyncService::QuerySyncStatusSummary() {
@@ -977,14 +1016,6 @@ void ProfileSyncService::ConfigureDataTypeManager() {
 
   syncable::ModelTypeSet types;
   GetPreferredDataTypes(&types);
-  // We set this special case here since it's the only datatype whose encryption
-  // status we already know. All others are set after the initial sync
-  // completes (for now).
-  // TODO(zea): Implement a better way that uses preferences for which types
-  // need encryption.
-  encrypted_types_.clear();
-  if (types.count(syncable::PASSWORDS) > 0)
-    encrypted_types_.insert(syncable::PASSWORDS);
   if (IsPassphraseRequiredForDecryption()) {
     if (IsEncryptedDatatypeEnabled()) {
       // We need a passphrase still. Prompt the user for a passphrase, and
@@ -1099,16 +1130,15 @@ void ProfileSyncService::ActivateDataType(
     return;
   }
   DCHECK(backend_initialized_);
-  change_processor->Start(profile(), backend_->GetUserShare());
   backend_->ActivateDataType(data_type_controller, change_processor);
 }
 
 void ProfileSyncService::DeactivateDataType(
     DataTypeController* data_type_controller,
     ChangeProcessor* change_processor) {
-  change_processor->Stop();
-  if (backend_.get())
-    backend_->DeactivateDataType(data_type_controller, change_processor);
+  if (!backend_.get())
+    return;
+  backend_->DeactivateDataType(data_type_controller, change_processor);
 }
 
 void ProfileSyncService::SetPassphrase(const std::string& passphrase,
@@ -1117,20 +1147,30 @@ void ProfileSyncService::SetPassphrase(const std::string& passphrase,
   if (ShouldPushChanges() || IsPassphraseRequired()) {
     backend_->SetPassphrase(passphrase, is_explicit);
   } else {
-    cached_passphrase_.value = passphrase;
-    cached_passphrase_.is_explicit = is_explicit;
-    cached_passphrase_.is_creation = is_creation;
+    if (is_explicit) {
+      cached_passphrase_.value = passphrase;
+      cached_passphrase_.is_explicit = is_explicit;
+      cached_passphrase_.is_creation = is_creation;
+    } else {
+      gaia_password_ = passphrase;
+    }
   }
 }
 
 void ProfileSyncService::EncryptDataTypes(
     const syncable::ModelTypeSet& encrypted_types) {
-  backend_->EncryptDataTypes(encrypted_types);
+  if (HasSyncSetupCompleted()) {
+    backend_->EncryptDataTypes(encrypted_types);
+    encrypted_types_.pending.clear();
+  } else {
+    encrypted_types_.pending = encrypted_types;
+  }
 }
 
 void ProfileSyncService::GetEncryptedDataTypes(
     syncable::ModelTypeSet* encrypted_types) const {
-  *encrypted_types = encrypted_types_;
+  *encrypted_types = encrypted_types_.current;
+  DCHECK(encrypted_types->count(syncable::PASSWORDS));
 }
 
 void ProfileSyncService::Observe(NotificationType type,
@@ -1155,14 +1195,18 @@ void ProfileSyncService::Observe(NotificationType type,
         expect_sync_configuration_aborted_ = false;
         return;
       }
+      // Clear out the gaia password if it is already there.
+      gaia_password_ = std::string();
       if (result != DataTypeManager::OK) {
         VLOG(0) << "ProfileSyncService::Observe: Unrecoverable error detected";
         std::string message = StringPrintf("Sync Configuration failed with %d",
                                             result);
         OnUnrecoverableError(*(result_with_location->location), message);
+        cached_passphrase_ = CachedPassphrase();
         return;
       }
 
+      // If the user had entered a custom passphrase use it now.
       if (!cached_passphrase_.value.empty()) {
         // Don't hold on to the passphrase in raw form longer than needed.
         SetPassphrase(cached_passphrase_.value,
@@ -1184,14 +1228,9 @@ void ProfileSyncService::Observe(NotificationType type,
       // this is the point where it is safe to switch from config-mode to
       // normal operation.
       backend_->StartSyncingWithServer();
-      break;
-    }
-    case NotificationType::SYNC_DATA_TYPES_UPDATED: {
-      if (!HasSyncSetupCompleted()) break;
 
-      syncable::ModelTypeSet types;
-      GetPreferredDataTypes(&types);
-      OnUserChoseDatatypes(false, types);
+      if (!encrypted_types_.pending.empty())
+        EncryptDataTypes(encrypted_types_.pending);
       break;
     }
     case NotificationType::PREF_CHANGED: {
@@ -1216,15 +1255,6 @@ void ProfileSyncService::Observe(NotificationType type,
       // becomes a no-op.
       tried_implicit_gaia_remove_when_bug_62103_fixed_ = true;
       SetPassphrase(successful->password, false, true);
-
-      // If this signin was to initiate a passphrase migration (on the
-      // first computer, thus not for decryption), continue the migration.
-      if (passphrase_migration_in_progress_ &&
-          !IsPassphraseRequiredForDecryption()) {
-        wizard_.Step(SyncSetupWizard::PASSPHRASE_MIGRATION);
-        passphrase_migration_in_progress_ = false;
-      }
-
       break;
     }
     case NotificationType::GOOGLE_SIGNIN_FAILED: {
@@ -1304,3 +1334,9 @@ bool ProfileSyncService::ShouldPushChanges() {
 
   return data_type_manager_->state() == DataTypeManager::CONFIGURED;
 }
+
+ProfileSyncService::EncryptedTypes::EncryptedTypes() {
+  current.insert(syncable::PASSWORDS);
+}
+
+ProfileSyncService::EncryptedTypes::~EncryptedTypes() {}

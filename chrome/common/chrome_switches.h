@@ -24,10 +24,12 @@ namespace switches {
 // All switches in alphabetical order. The switches should be documented
 // alongside the definition of their values in the .cc file.
 extern const char kActivateOnLaunch[];
+extern const char kAllowCrossOriginAuthPrompt[];
 extern const char kAllowFileAccess[];
 extern const char kAllowOutdatedPlugins[];
 extern const char kAllowHTTPBackgroundPage[];
 extern const char kAllowScriptingGallery[];
+extern const char kAllowWebSocketProxy[];
 extern const char kAlwaysAuthorizePlugins[];
 extern const char kAlwaysEnableDevTools[];
 extern const char kApp[];
@@ -56,6 +58,7 @@ extern const char kCloudPrintServiceURL[];
 extern const char kConflictingModulesCheck[];
 extern const char kCountry[];
 extern const char kDebugDevToolsFrontend[];
+extern const char kDebugEnableFrameToggle[];
 extern const char kDebugPrint[];
 extern const char kDeviceManagementUrl[];
 extern const char kDiagnostics[];
@@ -117,9 +120,11 @@ extern const char kEnableClearServerData[];
 extern const char kEnableClickToPlay[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableCloudPrint[];
+extern const char kEnableCompactNavigation[];
 extern const char kEnableCompositeToTexture[];
 extern const char kEnableConnectBackupJobs[];
 extern const char kEnableCrxlessWebApps[];
+extern const char kEnableDhcpWpad[];
 extern const char kEnableDNSCertProvenanceChecking[];
 extern const char kEnableDNSSECCerts[];
 extern const char kEnableExperimentalAppManifests[];
@@ -128,17 +133,16 @@ extern const char kEnableExtensionTimelineApi[];
 extern const char kEnableFastback[];
 extern const char kEnableFileCookies[];
 extern const char kEnableFullScreen[];
-extern const char kEnableHistoryQuickProvider[];
 extern const char kEnableInBrowserThumbnailing[];
 extern const char kEnableIPv6[];
 extern const char kEnableIPCFuzzing[];
 extern const char kEnableIPPooling[];
+extern const char kEnableMacCookies[];
 extern const char kEnableMemoryInfo[];
 extern const char kEnableNaCl[];
 extern const char kEnableNaClDebug[];
 extern const char kEnablePanels[];
 extern const char kEnablePreconnect[];
-extern const char kEnablePrintPreview[];
 extern const char kEnableRemoting[];
 extern const char kEnableResourceContentSettings[];
 extern const char kEnableSearchProviderApiV2[];
@@ -173,6 +177,7 @@ extern const char kHideIcons[];
 extern const char kHomePage[];
 extern const char kHostRules[];
 extern const char kHostResolverParallelism[];
+extern const char kHostResolverRetryAttempts[];
 extern const char kHostResolverRules[];
 extern const char kHstsHosts[];
 extern const char kIgnoreGpuBlacklist[];
@@ -276,7 +281,6 @@ extern const char kWinHttpProxyResolver[];
 #if defined(OS_CHROMEOS)
 extern const char kDOMLogin[];
 extern const char kEnableDevicePolicy[];
-extern const char kEnableExperimentalEap[];
 extern const char kEnableVPN[];
 extern const char kEnableGView[];
 extern const char kEnableLoginImages[];
@@ -346,6 +350,14 @@ extern const char kExposePrivateExtensionApi[];
 #if defined(HAVE_XINPUT2)
 extern const char kTouchDevices[];
 #endif
+
+#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+extern const char kDisablePrintPreview[];
+#else
+extern const char kEnablePrintPreview[];
+#endif
+
+bool IsPrintPreviewEnabled();
 
 // DON'T ADD RANDOM STUFF HERE. Put it in the main section above in
 // alphabetical order, or in one of the ifdefs (also in order in each section).

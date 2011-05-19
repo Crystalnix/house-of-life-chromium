@@ -87,6 +87,7 @@
             'installer/util/delete_reg_key_work_item_unittest.cc',
             'installer/util/delete_reg_value_work_item_unittest.cc',
             'installer/util/delete_tree_work_item_unittest.cc',
+            'installer/util/duplicate_tree_detector_unittest.cc',
             'installer/util/google_chrome_distribution_unittest.cc',
             'installer/util/google_update_settings_unittest.cc',
             'installer/util/install_util_unittest.cc',
@@ -390,6 +391,7 @@
           'installer/linux/internal/debian/changelog.template',
           'installer/linux/internal/debian/control.template',
           'installer/linux/internal/debian/debian.menu',
+          'installer/linux/internal/debian/expected_deps',
           'installer/linux/internal/debian/postinst',
           'installer/linux/internal/debian/postrm',
           'installer/linux/internal/debian/prerm',
@@ -425,11 +427,15 @@
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/libgcflashplayer.so',
               '<(PRODUCT_DIR)/plugin.vch',
+              '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
             ],
           }],
           ['target_arch=="x64"', {
             'deb_arch': 'amd64',
             'rpm_arch': 'x86_64',
+            'packaging_files_binaries': [
+              '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+            ],
           }],
           ['target_arch=="arm"', {
             'deb_arch': 'arm',

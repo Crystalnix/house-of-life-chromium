@@ -13,16 +13,12 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/string16.h"
+#include "chrome/browser/download/download_process_handle.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "views/view.h"
 #endif
-
-namespace gfx {
-class Canvas;
-class Image;
-}
 
 class BaseDownloadItemModel;
 class DictionaryValue;
@@ -36,8 +32,13 @@ class SkBitmap;
 struct DownloadCreateInfo;
 struct DownloadSaveInfo;
 
-namespace net {
-class URLRequestContextGetter;
+namespace content {
+class ResourceContext;
+}
+
+namespace gfx {
+class Canvas;
+class Image;
 }
 
 namespace download_util {
@@ -63,7 +64,11 @@ void GenerateExtension(const FilePath& file_name,
 void GenerateFileNameFromInfo(DownloadCreateInfo* info,
                               FilePath* generated_name);
 
-// Create a file name based on the response from the server.
+void GenerateFileNameFromSuggestedName(const GURL& url,
+                                       const std::string& suggested_name,
+                                       const std::string& mime_type,
+                                       FilePath* generated_name);
+
 void GenerateFileName(const GURL& url,
                       const std::string& content_disposition,
                       const std::string& referrer_charset,
@@ -238,13 +243,14 @@ void DownloadUrl(const GURL& url,
                  ResourceDispatcherHost* rdh,
                  int render_process_host_id,
                  int render_view_id,
-                 net::URLRequestContextGetter* request_context_getter);
+                 const content::ResourceContext* context);
 
 // Tells the resource dispatcher host to cancel a download request.
 // Must be called on the IO thread.
+// |process_handle| is passed by value because it is ultimately passed to
+// other threads, and this way we don't have to worry about object lifetimes.
 void CancelDownloadRequest(ResourceDispatcherHost* rdh,
-                           int render_process_id,
-                           int request_id);
+                           DownloadProcessHandle process_handle);
 
 // Sends a notification on downloads being initiated
 // Must be called on the UI thread.

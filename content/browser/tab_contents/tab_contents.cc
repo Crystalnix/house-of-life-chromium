@@ -13,36 +13,23 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
-#include "chrome/browser/content_settings/content_settings_details.h"
-#include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_manager.h"
-#include "chrome/browser/download/download_request_limiter.h"
 #include "chrome/browser/external_protocol_handler.h"
 #include "chrome/browser/history/history.h"
-#include "chrome/browser/history/history_types.h"
 #include "chrome/browser/load_from_memory_cache_details.h"
 #include "chrome/browser/load_notification_details.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/plugin_observer.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
 #include "chrome/browser/renderer_preferences_util.h"
-#include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/tab_contents/infobar_delegate.h"
-#include "chrome/browser/tab_contents/tab_contents_ssl_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/message_box_handler.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
@@ -112,14 +99,17 @@
 // - After RDH receives a response and determines that it is safe and not a
 //   download, it pauses the response to first run the old page's onunload
 //   handler.  It does this by asynchronously calling the OnCrossSiteResponse
-//   method of TabContents on the UI thread, which sends a ClosePage message
+//   method of TabContents on the UI thread, which sends a SwapOut message
 //   to the current RVH.
-// - Once the onunload handler is finished, a ClosePage_ACK message is sent to
+// - Once the onunload handler is finished, a SwapOut_ACK message is sent to
 //   the ResourceDispatcherHost, who unpauses the response.  Data is then sent
 //   to the pending RVH.
 // - The pending renderer sends a FrameNavigate message that invokes the
 //   DidNavigate method.  This replaces the current RVH with the
 //   pending RVH and goes back to the NORMAL RendererState.
+// - The previous renderer is kept swapped out in RenderViewHostManager in case
+//   the user goes back.  The process only stays live if another tab is using
+//   it, but if so, the existing frame relationships will be maintained.
 
 namespace {
 
@@ -272,10 +262,6 @@ TabContents::TabContents(Profile* profile,
   registrar_.Add(this, NotificationType::USER_STYLE_SHEET_UPDATED,
                  NotificationService::AllSources());
 
-  // Register for notifications about content setting changes.
-  registrar_.Add(this, NotificationType::CONTENT_SETTINGS_CHANGED,
-                 NotificationService::AllSources());
-
   // Listen for Google URL changes.
   registrar_.Add(this, NotificationType::GOOGLE_URL_UPDATED,
                  NotificationService::AllSources());
@@ -308,19 +294,6 @@ TabContents::~TabContents() {
       Source<TabContents>(this),
       NotificationService::NoDetails());
 
-  // Notify any lasting InfobarDelegates that have not yet been removed that
-  // whatever infobar they were handling in this TabContents has closed,
-  // because the TabContents is going away entirely.
-  // This must happen after the TAB_CONTENTS_DESTROYED notification as the
-  // notification may trigger infobars calls that access their delegate. (and
-  // some implementations of InfoBarDelegate do delete themselves on
-  // InfoBarClosed()).
-  for (size_t i = 0; i < infobar_count(); ++i) {
-    InfoBarDelegate* delegate = GetInfoBarDelegateAt(i);
-    delegate->InfoBarClosed();
-  }
-  infobar_delegates_.clear();
-
   // TODO(brettw) this should be moved to the view.
 #if defined(OS_WIN)
   // If we still have a window handle, destroy it. GetNativeView can return
@@ -344,8 +317,6 @@ TabContents::~TabContents() {
 }
 
 void TabContents::AddObservers() {
-  content_settings_delegate_.reset(new TabSpecificContentSettings(this));
-  plugin_observer_.reset(new PluginObserver(this));
   net::NetworkChangeNotifier::AddOnlineStateObserver(this);
 }
 
@@ -394,12 +365,6 @@ bool TabContents::OnMessageReceived(const IPC::Message& message) {
 // Returns true if contains content rendered by an extension.
 bool TabContents::HostsExtension() const {
   return GetURL().SchemeIs(chrome::kExtensionScheme);
-}
-
-TabContentsSSLHelper* TabContents::GetSSLHelper() {
-  if (ssl_helper_.get() == NULL)
-    ssl_helper_.reset(new TabContentsSSLHelper(this));
-  return ssl_helper_.get();
 }
 
 RenderProcessHost* TabContents::GetRenderProcessHost() const {
@@ -754,89 +719,6 @@ void TabContents::SetFocusToLocationBar(bool select_all) {
     delegate()->SetFocusToLocationBar(select_all);
 }
 
-void TabContents::AddInfoBar(InfoBarDelegate* delegate) {
-  if (delegate_ && !delegate_->infobars_enabled()) {
-    delegate->InfoBarClosed();
-    return;
-  }
-
-  // Look through the existing InfoBarDelegates we have for a match. If we've
-  // already got one that matches, then we don't add the new one.
-  for (size_t i = 0; i < infobar_count(); ++i) {
-    if (GetInfoBarDelegateAt(i)->EqualsDelegate(delegate)) {
-      // Tell the new infobar to close so that it can clean itself up.
-      delegate->InfoBarClosed();
-      return;
-    }
-  }
-
-  infobar_delegates_.push_back(delegate);
-  NotificationService::current()->Notify(
-      NotificationType::TAB_CONTENTS_INFOBAR_ADDED, Source<TabContents>(this),
-      Details<InfoBarDelegate>(delegate));
-
-  // Add ourselves as an observer for navigations the first time a delegate is
-  // added. We use this notification to expire InfoBars that need to expire on
-  // page transitions.
-  if (infobar_delegates_.size() == 1) {
-    registrar_.Add(this, NotificationType::NAV_ENTRY_COMMITTED,
-                   Source<NavigationController>(&controller_));
-  }
-}
-
-void TabContents::RemoveInfoBar(InfoBarDelegate* delegate) {
-  if (delegate_ && !delegate_->infobars_enabled()) {
-    return;
-  }
-
-  std::vector<InfoBarDelegate*>::iterator it =
-      find(infobar_delegates_.begin(), infobar_delegates_.end(), delegate);
-  if (it != infobar_delegates_.end()) {
-    InfoBarDelegate* delegate = *it;
-    NotificationService::current()->Notify(
-        NotificationType::TAB_CONTENTS_INFOBAR_REMOVED,
-        Source<TabContents>(this),
-        Details<InfoBarDelegate>(delegate));
-
-    infobar_delegates_.erase(it);
-    // Remove ourselves as an observer if we are tracking no more InfoBars.
-    if (infobar_delegates_.empty()) {
-      registrar_.Remove(this, NotificationType::NAV_ENTRY_COMMITTED,
-                        Source<NavigationController>(&controller_));
-    }
-  }
-}
-
-void TabContents::ReplaceInfoBar(InfoBarDelegate* old_delegate,
-                                 InfoBarDelegate* new_delegate) {
-  if (delegate_ && !delegate_->infobars_enabled()) {
-    new_delegate->InfoBarClosed();
-    return;
-  }
-
-  std::vector<InfoBarDelegate*>::iterator it =
-      find(infobar_delegates_.begin(), infobar_delegates_.end(), old_delegate);
-  DCHECK(it != infobar_delegates_.end());
-
-  // Notify the container about the change of plans.
-  scoped_ptr<std::pair<InfoBarDelegate*, InfoBarDelegate*> > details(
-    new std::pair<InfoBarDelegate*, InfoBarDelegate*>(
-        old_delegate, new_delegate));
-  NotificationService::current()->Notify(
-      NotificationType::TAB_CONTENTS_INFOBAR_REPLACED,
-      Source<TabContents>(this),
-      Details<std::pair<InfoBarDelegate*, InfoBarDelegate*> >(details.get()));
-
-  // Remove the old one.
-  infobar_delegates_.erase(it);
-
-  // Add the new one.
-  DCHECK(find(infobar_delegates_.begin(),
-              infobar_delegates_.end(), new_delegate) ==
-         infobar_delegates_.end());
-  infobar_delegates_.push_back(new_delegate);
-}
-
 bool TabContents::ShouldShowBookmarkBar() {
   if (showing_interstitial_page())
     return false;
@@ -864,23 +746,6 @@ bool TabContents::ShouldShowBookmarkBar() {
     return render_manager_.pending_web_ui()->force_bookmark_bar_visible();
   return (render_manager_.web_ui() == NULL) ?
       false : render_manager_.web_ui()->force_bookmark_bar_visible();
-}
-
-bool TabContents::CanDownload(int request_id) {
-  TabContentsDelegate* d = delegate();
-  if (d)
-    return d->CanDownload(request_id);
-  return true;
-}
-
-void TabContents::OnStartDownload(DownloadItem* download) {
-  DCHECK(download);
-
-  // Download in a constrained popup is shown in the tab that opened it.
-  TabContents* tab_contents = delegate()->GetConstrainingContents(this);
-
-  if (tab_contents && tab_contents->delegate())
-    tab_contents->delegate()->OnStartDownload(download, this);
 }
 
 void TabContents::WillClose(ConstrainedWindow* window) {
@@ -1028,10 +893,13 @@ void TabContents::OnDidStartProvisionalLoadForFrame(int64 frame_id,
   render_view_host()->FilterURL(ChildProcessSecurityPolicy::GetInstance(),
       GetRenderProcessHost()->id(), &validated_url);
 
+  RenderViewHost* rvh =
+      render_manager_.pending_render_view_host() ?
+          render_manager_.pending_render_view_host() : render_view_host();
   // Notify observers about the start of the provisional load.
   FOR_EACH_OBSERVER(TabContentsObserver, observers_,
                     DidStartProvisionalLoadForFrame(frame_id, is_main_frame,
-                    validated_url, is_error_page));
+                    validated_url, is_error_page, rvh));
 
   if (is_main_frame) {
     // Notify observers about the provisional change in the main frame URL.
@@ -1207,24 +1075,6 @@ void TabContents::SetIsLoading(bool is_loading,
   NotificationService::current()->Notify(type,
       Source<NavigationController>(&controller_),
       det);
-}
-
-void TabContents::ExpireInfoBars(
-    const NavigationController::LoadCommittedDetails& details) {
-  // Only hide InfoBars when the user has done something that makes the main
-  // frame load. We don't want various automatic or subframe navigations making
-  // it disappear.
-  if (!details.is_user_initiated_main_frame_load())
-    return;
-
-  // NOTE: It is not safe to change the following code to count upwards or use
-  // iterators, as the RemoveInfoBar() call synchronously modifies our delegate
-  // list.
-  for (size_t i = infobar_count(); i > 0; --i) {
-    InfoBarDelegate* delegate = GetInfoBarDelegateAt(i - 1);
-    if (delegate->ShouldExpire(details))
-      RemoveInfoBar(delegate);
-  }
 }
 
 WebUI* TabContents::GetWebUIForCurrentState() {
@@ -1502,15 +1352,6 @@ TabContents::GetRendererManagementDelegate() {
   return &render_manager_;
 }
 
-RenderViewHostDelegate::ContentSettings*
-TabContents::GetContentSettingsDelegate() {
-  return content_settings_delegate_.get();
-}
-
-RenderViewHostDelegate::SSL* TabContents::GetSSLDelegate() {
-  return GetSSLHelper();
-}
-
 RenderViewHostDelegate::BookmarkDrag* TabContents::GetBookmarkDragDelegate() {
   return bookmark_drag_;
 }
@@ -1518,10 +1359,6 @@ RenderViewHostDelegate::BookmarkDrag* TabContents::GetBookmarkDragDelegate() {
 void TabContents::SetBookmarkDragDelegate(
     RenderViewHostDelegate::BookmarkDrag* bookmark_drag) {
   bookmark_drag_ = bookmark_drag;
-}
-
-TabSpecificContentSettings* TabContents::GetTabSpecificContentSettings() const {
-  return content_settings_delegate_.get();
 }
 
 RendererPreferences TabContents::GetRendererPrefs(Profile* profile) const {
@@ -1596,10 +1433,6 @@ void TabContents::RenderViewGone(RenderViewHost* rvh,
   SetIsLoading(false, NULL);
   NotifyDisconnected();
   SetIsCrashed(status, error_code);
-
-  // Remove all infobars.
-  while (!infobar_delegates_.empty())
-    RemoveInfoBar(GetInfoBarDelegateAt(infobar_count() - 1));
 
   // Tell the view that we've crashed so it can prepare the sad tab page.
   // Only do this if we're not in browser shutdown, so that TabContents
@@ -1705,7 +1538,9 @@ void TabContents::DidNavigate(RenderViewHost* rvh,
 void TabContents::UpdateState(RenderViewHost* rvh,
                               int32 page_id,
                               const std::string& state) {
-  DCHECK(rvh == render_view_host());
+  // Ensure that this state update comes from either the active RVH or one of
+  // the swapped out RVHs.  We don't expect to hear from any other RVHs.
+  DCHECK(rvh == render_view_host() || render_manager_.IsSwappedOut(rvh));
 
   // We must be prepared to handle state updates for any page, these occur
   // when the user is scrolling and entering form data, as well as when we're
@@ -1714,7 +1549,7 @@ void TabContents::UpdateState(RenderViewHost* rvh,
   // NavigationEntry and update it when it is notified via the delegate.
 
   int entry_index = controller_.GetEntryIndexWithPageID(
-      GetSiteInstance(), page_id);
+      rvh->site_instance(), page_id);
   if (entry_index < 0)
     return;
   NavigationEntry* entry = controller_.GetEntryAtIndex(entry_index);
@@ -1868,14 +1703,8 @@ void TabContents::RequestOpenURL(const GURL& url, const GURL& referrer,
   }
 }
 
-void TabContents::ProcessExternalHostMessage(const std::string& message,
-                                             const std::string& origin,
-                                             const std::string& target) {
-  if (delegate())
-    delegate()->ForwardMessageToExternalHost(message, origin, target);
-}
-
 void TabContents::RunJavaScriptMessage(
+    const RenderViewHost* rvh,
     const std::wstring& message,
     const std::wstring& default_prompt,
     const GURL& frame_url,
@@ -1889,6 +1718,7 @@ void TabContents::RunJavaScriptMessage(
   // shown over the previous page, we don't want the hidden page dialogs to
   // interfere with the interstitial.
   bool suppress_this_message =
+      rvh->is_swapped_out() ||
       suppress_javascript_messages_ ||
       showing_interstitial_page() ||
       (delegate() && delegate()->ShouldSuppressDialogs());
@@ -1918,11 +1748,14 @@ void TabContents::RunJavaScriptMessage(
   }
 }
 
-void TabContents::RunBeforeUnloadConfirm(const std::wstring& message,
+void TabContents::RunBeforeUnloadConfirm(const RenderViewHost* rvh,
+                                         const std::wstring& message,
                                          IPC::Message* reply_msg) {
   if (delegate())
     delegate()->WillRunBeforeUnloadConfirm();
-  if (delegate() && delegate()->ShouldSuppressDialogs()) {
+  bool suppress_this_message = rvh->is_swapped_out() ||
+      (delegate() && delegate()->ShouldSuppressDialogs());
+  if (suppress_this_message) {
     render_view_host()->JavaScriptMessageBoxClosed(reply_msg, true,
                                                    std::wstring());
     return;
@@ -1960,11 +1793,8 @@ WebPreferences TabContents::GetWebkitPrefs() {
 }
 
 void TabContents::OnUserGesture() {
-  // See comment in RenderViewHostDelegate::OnUserGesture as to why we do this.
-  DownloadRequestLimiter* limiter =
-      g_browser_process->download_request_limiter();
-  if (limiter)
-    limiter->OnUserGesture(this);
+  // Notify observers.
+  FOR_EACH_OBSERVER(TabContentsObserver, observers_, DidGetUserGesture());
   ExternalProtocolHandler::PermitLaunchUrl();
 }
 
@@ -1986,6 +1816,10 @@ void TabContents::OnCrossSiteResponse(int new_render_process_host_id,
 
 void TabContents::RendererUnresponsive(RenderViewHost* rvh,
                                        bool is_during_unload) {
+  // Don't show hung renderer dialog for a swapped out RVH.
+  if (rvh != render_view_host())
+    return;
+
   if (is_during_unload) {
     // Hang occurred while firing the beforeunload/unload handler.
     // Pretend the handler fired so tab closing continues as if it had.
@@ -2155,15 +1989,6 @@ void TabContents::Observe(NotificationType type,
       view_->RenderWidgetHostDestroyed(Source<RenderWidgetHost>(source).ptr());
       break;
 
-    case NotificationType::NAV_ENTRY_COMMITTED: {
-      DCHECK(&controller_ == Source<NavigationController>(source).ptr());
-
-      NavigationController::LoadCommittedDetails& committed_details =
-          *(Details<NavigationController::LoadCommittedDetails>(details).ptr());
-      ExpireInfoBars(committed_details);
-      break;
-    }
-
 #if defined(OS_LINUX)
     case NotificationType::BROWSER_THEME_CHANGED: {
       renderer_preferences_util::UpdateFromSystemSettings(
@@ -2176,21 +2001,6 @@ void TabContents::Observe(NotificationType type,
     case NotificationType::USER_STYLE_SHEET_UPDATED:
       UpdateWebPreferences();
       break;
-
-    case NotificationType::CONTENT_SETTINGS_CHANGED: {
-      Details<const ContentSettingsDetails> settings_details(details);
-      NavigationEntry* entry = controller_.GetActiveEntry();
-      GURL entry_url;
-      if (entry)
-        entry_url = entry->url();
-      if (settings_details.ptr()->update_all() ||
-          settings_details.ptr()->pattern().Matches(entry_url)) {
-        render_view_host()->SendContentSettings(entry_url,
-            profile()->GetHostContentSettingsMap()->
-                GetContentSettings(entry_url));
-      }
-      break;
-    }
 
     case NotificationType::GOOGLE_URL_UPDATED:
       UpdateAlternateErrorPageURL();

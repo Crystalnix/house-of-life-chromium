@@ -229,8 +229,3 @@ base::WaitableEvent* PepperPluginRegistry::GetShutdownEvent() {
   DCHECK(ChildProcess::current()) << "Must be in the renderer.";
   return ChildProcess::current()->GetShutDownEvent();
 }
-
-std::set<PP_Instance>* PepperPluginRegistry::GetGloballySeenInstanceIDSet() {
-  // This function is not needed on the host side of the proxy.
-  return NULL;
-}

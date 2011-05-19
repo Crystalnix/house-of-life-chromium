@@ -18,10 +18,10 @@
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -84,7 +84,7 @@ KeystonePromotionInfoBarDelegate::~KeystonePromotionInfoBarDelegate() {
 
 bool KeystonePromotionInfoBarDelegate::ShouldExpire(
     const NavigationController::LoadCommittedDetails& details) const {
-  return can_expire_;
+  return details.is_user_initiated_main_frame_load() && can_expire_;
 }
 
 gfx::Image* KeystonePromotionInfoBarDelegate::GetIcon() const {
@@ -186,13 +186,13 @@ bool KeystonePromotionInfoBarDelegate::Cancel() {
       [[KeystoneGlue defaultKeystoneGlue] needsPromotion]) {
     Browser* browser = BrowserList::GetLastActive();
     if (browser) {
-      TabContents* tabContents = browser->GetSelectedTabContents();
+      TabContentsWrapper* wrapper = browser->GetSelectedTabContentsWrapper();
 
       // Only show if no other info bars are showing, because that's how the
       // default browser info bar works.
-      if (tabContents && tabContents->infobar_count() == 0) {
-        tabContents->AddInfoBar(
-            new KeystonePromotionInfoBarDelegate(tabContents));
+      if (wrapper && wrapper->infobar_count() == 0) {
+        wrapper->AddInfoBar(new KeystonePromotionInfoBarDelegate(
+            wrapper->tab_contents()));
       }
     }
   }

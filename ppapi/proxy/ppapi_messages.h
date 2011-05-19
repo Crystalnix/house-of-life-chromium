@@ -250,25 +250,14 @@ IPC_MESSAGE_CONTROL1(PpapiHostMsg_ChannelCreated,
                      IPC::ChannelHandle /* handle */)
 
 // PPB_Audio.
-IPC_SYNC_MESSAGE_ROUTED2_1(PpapiHostMsg_PPBAudio_Create,
+IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBAudio_Create,
                            PP_Instance /* instance_id */,
-                           pp::proxy::HostResource /* config_id */,
+                           int32_t /* sample_rate */,
+                           uint32_t /* sample_frame_count */,
                            pp::proxy::HostResource /* result */)
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBAudio_StartOrStop,
                     pp::proxy::HostResource /* audio_id */,
                     bool /* play */)
-
-// PPB_AudioConfig.
-IPC_SYNC_MESSAGE_ROUTED3_1(PpapiHostMsg_PPBAudioConfig_Create,
-                           PP_Instance /* instance */,
-                           int32_t /* sample_rate */,
-                           uint32_t /* sample_frame_count */,
-                           pp::proxy::HostResource /* result */)
-IPC_SYNC_MESSAGE_ROUTED2_1(
-    PpapiHostMsg_PPBAudioConfig_RecommendSampleFrameCount,
-    int32_t /* sample_rate */,
-    uint32_t /* requested */,
-    uint32_t /* result */)
 
 // PPB_Broker.
 IPC_SYNC_MESSAGE_ROUTED1_1(PpapiHostMsg_PPBBroker_Create,
@@ -530,37 +519,8 @@ IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBFlashNetConnector_ConnectTcpAddress,
                     std::string /* net_address_as_string */)
 
 // PPB_Font.
-IPC_SYNC_MESSAGE_ROUTED2_3(
-    PpapiHostMsg_PPBFont_Create,
-    PP_Instance /* instance */,
-    pp::proxy::SerializedFontDescription /* in_description */,
-    pp::proxy::HostResource /* result */,
-    pp::proxy::SerializedFontDescription /* out_description */,
-    std::string /* out_metrics */)
-IPC_SYNC_MESSAGE_ROUTED2_1(PpapiHostMsg_PPBFont_DrawTextAt,
-                           pp::proxy::SerializedVar /* text */,
-                           pp::proxy::PPBFont_DrawTextAt_Params /* params */,
-                           PP_Bool /* result */)
-IPC_SYNC_MESSAGE_ROUTED4_1(PpapiHostMsg_PPBFont_MeasureText,
-                           pp::proxy::HostResource /* font */,
-                           pp::proxy::SerializedVar /* text */,
-                           PP_Bool /* text_is_rtl */,
-                           PP_Bool /* override_direction */,
-                           int32_t /* result */)
-IPC_SYNC_MESSAGE_ROUTED5_1(PpapiHostMsg_PPBFont_CharacterOffsetForPixel,
-                           pp::proxy::HostResource /* font */,
-                           pp::proxy::SerializedVar /* text */,
-                           PP_Bool /* text_is_rtl */,
-                           PP_Bool /* override_direction */,
-                           int32_t /* pixel_pos */,
-                           uint32_t /* result */)
-IPC_SYNC_MESSAGE_ROUTED5_1(PpapiHostMsg_PPBFont_PixelOffsetForCharacter,
-                           pp::proxy::HostResource /* font */,
-                           pp::proxy::SerializedVar /* text */,
-                           PP_Bool /* text_is_rtl */,
-                           PP_Bool /* override_direction */,
-                           uint32_t /* char_offset */,
-                           int32_t /* result */)
+IPC_SYNC_MESSAGE_CONTROL0_1(PpapiHostMsg_PPBFont_GetFontFamilies,
+                            std::string /* result */)
 
 // PPB_Fullscreen.
 IPC_SYNC_MESSAGE_ROUTED2_1(PpapiHostMsg_PPBFullscreen_SetFullscreen,

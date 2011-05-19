@@ -126,6 +126,10 @@ function captureEvent(name, details) {
     details.requestHeadersExist = true;
     delete details.requestHeaders;
   }
+  if (details.responseHeaders) {
+    details.responseHeadersExist = true;
+    delete details.responseHeaders;
+  }
 
   // find |details| in expectedEventData
   var found = false;
@@ -169,19 +173,19 @@ function initListeners(filter, extraInfoSpec) {
   chrome.experimental.webRequest.onRequestSent.addListener(
       function(details) {
     return captureEvent("onRequestSent", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["requestHeaders"]));
   chrome.experimental.webRequest.onResponseStarted.addListener(
       function(details) {
     return captureEvent("onResponseStarted", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onBeforeRedirect.addListener(
       function(details) {
     return captureEvent("onBeforeRedirect", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onCompleted.addListener(
       function(details) {
     return captureEvent("onCompleted", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onErrorOccurred.addListener(
       function(details) {
     return captureEvent("onErrorOccurred", details);
@@ -266,7 +270,8 @@ runTests([
           event: "onRequestSent",
           details: {
             url: URL_HTTP_SIMPLE_LOAD_REDIRECT,
-            ip: "127.0.0.1"
+            ip: "127.0.0.1",
+            requestHeadersExist: true
           }
         },
         { label: "onBeforeRedirect",
@@ -274,7 +279,9 @@ runTests([
           details: {
             url: URL_HTTP_SIMPLE_LOAD_REDIRECT,
             redirectUrl: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 301
+            statusCode: 301,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 301 Moved Permanently"
           }
         },
         { label: "onBeforeRequest-2",
@@ -297,21 +304,26 @@ runTests([
           event: "onRequestSent",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            ip: "127.0.0.1"
+            ip: "127.0.0.1",
+            requestHeadersExist: true
           }
         },
         { label: "onResponseStarted",
           event: "onResponseStarted",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 200
+            statusCode: 200,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 200 OK",
           }
         },
         { label: "onCompleted",
           event: "onCompleted",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 200
+            statusCode: 200,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 200 OK"
           }
         }
       ],
@@ -320,8 +332,8 @@ runTests([
          "onBeforeRedirect",
          "onBeforeRequest-2", "onBeforeSendHeaders-2", "onRequestSent-2",
          "onResponseStarted", "onCompleted"] ],
-      {},
-      ["requestHeaders"]);
+      {},  // filter
+      ["requestHeaders", "responseHeaders", "statusLine"]);
     navigateAndWait(URL_HTTP_SIMPLE_LOAD_REDIRECT);
   },
 
@@ -433,7 +445,7 @@ runTests([
           event: "onErrorOccurred",
           details: {
             url: getURL("complexLoad/a.html"),
-            error: ""
+            error: "net::ERR_EMPTY_RESPONSE"
           }
         },
       ],
@@ -582,7 +594,7 @@ runTests([
           event: "onErrorOccurred",
           details: {
             url: getURL("does_not_exist.html"),
-            error: ""
+            error: "net::ERR_FILE_NOT_FOUND"
           }
         },
       ],

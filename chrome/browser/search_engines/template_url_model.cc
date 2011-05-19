@@ -10,6 +10,7 @@
 #include "base/stl_util-inl.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
+#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/google/google_url_tracker.h"
@@ -155,6 +156,7 @@ string16 TemplateURLModel::GenerateKeyword(const GURL& url,
 string16 TemplateURLModel::CleanUserInputKeyword(const string16& keyword) {
   // Remove the scheme.
   string16 result(base::i18n::ToLower(keyword));
+  TrimWhitespace(result, TRIM_ALL, &result);
   url_parse::Component scheme_component;
   if (url_parse::ExtractScheme(UTF16ToUTF8(keyword).c_str(),
                                static_cast<int>(keyword.length()),
@@ -589,26 +591,36 @@ void TemplateURLModel::Observe(NotificationType type,
 
 // static
 void TemplateURLModel::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(
-      prefs::kDefaultSearchProviderEnabled, true);
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderName, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderID, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderPrepopulateID, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderSuggestURL, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderSearchURL, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderInstantURL, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderKeyword, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderIconURL, std::string());
-  prefs->RegisterStringPref(
-      prefs::kDefaultSearchProviderEncodings, std::string());
+  prefs->RegisterBooleanPref(prefs::kDefaultSearchProviderEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderName,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderID,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderPrepopulateID,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderSuggestURL,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderSearchURL,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderInstantURL,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderKeyword,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderIconURL,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kDefaultSearchProviderEncodings,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
 }
 
 void TemplateURLModel::SetKeywordSearchTermsForURL(const TemplateURL* t_url,

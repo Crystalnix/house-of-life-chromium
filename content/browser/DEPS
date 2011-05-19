@@ -6,8 +6,6 @@ include_rules = [
 
   "+chrome/browser/accessibility/browser_accessibility_state.h",
 
-  "+chrome/browser/automation/automation_resource_message_filter.h",
-
   "+chrome/browser/browser_about_handler.h",
 
   "+chrome/browser/browser_process.h",
@@ -16,24 +14,13 @@ include_rules = [
 
   "+chrome/browser/browser_url_handler.h",
 
-  # http://crbug.com/76793
-  "+chrome/browser/content_settings/content_settings_details.h",
-  "+chrome/browser/content_settings/host_content_settings_map.h",
-  "+chrome/browser/content_settings/tab_specific_content_settings.h",
-  "+chrome/common/content_settings.h",
-  "+chrome/common/content_settings_types.h",
-
-  "+chrome/browser/chromeos/cros/cros_library.h",
-  "+chrome/browser/chromeos/cros/network_library.h",
-  "+chrome/browser/chromeos/plugin_selection_policy.h",
-
   "+chrome/browser/debugger/devtools_manager.h",
   "+chrome/browser/debugger/devtools_netlog_observer.h",
 
   "+chrome/browser/defaults.h",
 
+  # http://crbug.com/82782
   "+chrome/browser/download/download_file_manager.h",
-  "+chrome/browser/download/download_item_model.h",
   "+chrome/browser/download/download_manager.h",
   "+chrome/browser/download/download_request_limiter.h",
   "+chrome/browser/download/save_file_manager.h",
@@ -51,7 +38,6 @@ include_rules = [
 
   # http://crbug.com/76794
   "+chrome/browser/history/history.h",
-  "+chrome/browser/history/history_types.h",
 
   "+chrome/browser/load_from_memory_cache_details.h",
   "+chrome/browser/load_notification_details.h",
@@ -60,7 +46,6 @@ include_rules = [
 
   "+chrome/browser/net/load_timing_observer.h",
   "+chrome/browser/net/predictor_api.h",
-  "+chrome/browser/net/resolve_proxy_msg_helper.h",
   "+chrome/browser/net/url_request_tracking.h",
 
   "+chrome/browser/notifications/desktop_notification_service.h",
@@ -69,9 +54,6 @@ include_rules = [
 
   "+chrome/browser/platform_util.h",
 
-  "+chrome/browser/plugin_download_helper.h",
-  "+chrome/browser/plugin_observer.h",
-  "+chrome/common/default_plugin.h",
 
   "+chrome/browser/prefs/pref_change_registrar.h",
   "+chrome/browser/prefs/pref_service.h",
@@ -102,16 +84,10 @@ include_rules = [
   "+chrome/browser/ssl/ssl_add_cert_handler.h",
   "+chrome/browser/ssl/ssl_client_auth_handler.h",
   "+chrome/browser/ssl/ssl_manager.h",
-  "+chrome/browser/tab_contents/tab_contents_ssl_helper.h",
-
-  # http://crbug.com/76792
-  "+chrome/browser/tab_contents/infobar_delegate.h",
 
   "+chrome/browser/tab_contents/render_view_host_delegate_helper.h",
 
   "+chrome/browser/utility_process_host.h",
-
-  "+chrome/browser/ui/browser_list.h",
 
   "+chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h",
   "+chrome/browser/ui/app_modal_dialogs/message_box_handler.h",
@@ -132,10 +108,6 @@ include_rules = [
   "+chrome/common/sandbox_policy.h",
 
   "+chrome/common/security_style.h",
-
-  "+chrome/common/view_types.h",
-
-  "+chrome/common/net/x509_certificate_model.h",
 
   # ONLY USED BY TESTS
   "+chrome/browser/chromeos/cros/mock_network_library.h",

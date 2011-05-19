@@ -24,7 +24,6 @@
 #include "chrome/common/icon_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/common/view_types.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
@@ -128,6 +127,8 @@ void PrerenderContents::StartPrerenderingOld(
 
   // Create the RenderView, so it can receive messages.
   render_view_host_->CreateRenderView(string16());
+
+  OnRenderViewHostCreated(render_view_host_);
 
   // Give the RVH a PrerenderRenderWidgetHostView, both so its size can be set
   // and so that the prerender can be cancelled under certain circumstances.
@@ -285,7 +286,8 @@ void PrerenderContents::StartPrerendering(
       Source<RenderViewHostDelegate>(GetRenderViewHostDelegate()));
 
   // Register for new windows from any source.
-  notification_registrar_.Add(this, NotificationType::CREATING_NEW_WINDOW,
+  notification_registrar_.Add(this,
+                              NotificationType::CREATING_NEW_WINDOW_CANCELLED,
                               Source<TabContents>(new_contents));
 
   DCHECK(load_start_time_.is_null());
@@ -473,24 +475,34 @@ void PrerenderContents::Observe(NotificationType type,
     }
 
     case NotificationType::RENDER_VIEW_HOST_CREATED_FOR_TAB: {
-      // When a new RenderView is created for a prerendering TabContents,
-      // tell the new RenderView it's being used for prerendering before any
-      // navigations occur.  Note that this is always triggered before the
-      // first navigation, so there's no need to send the message just after the
-      // TabContents is created.
       if (prerender_contents_.get()) {
         DCHECK_EQ(Source<TabContents>(source).ptr(),
                   prerender_contents_->tab_contents());
 
         Details<RenderViewHost> new_render_view_host(details);
+        OnRenderViewHostCreated(new_render_view_host.ptr());
+
+        // When a new RenderView is created for a prerendering TabContents,
+        // tell the new RenderView it's being used for prerendering before any
+        // navigations occur.  Note that this is always triggered before the
+        // first navigation, so there's no need to send the message just after
+        // the TabContents is created.
         new_render_view_host->Send(
             new ViewMsg_SetIsPrerendering(new_render_view_host->routing_id(),
                                           true));
+
+        // Set the new TabContents and its RenderViewHost as hidden, to reduce
+        // resource usage.  This can only be done after the first call to
+        // LoadURL, so there's an actual RenderViewHost with a
+        // RenderWidgetHostView to hide.
+        //
+        // Done here to prevent a race with loading the page.
+        prerender_contents_->tab_contents()->HideContents();
       }
       break;
     }
 
-    case NotificationType::CREATING_NEW_WINDOW: {
+    case NotificationType::CREATING_NEW_WINDOW_CANCELLED: {
       if (prerender_contents_.get()) {
         CHECK(Source<TabContents>(source).ptr() ==
               prerender_contents_->tab_contents());
@@ -586,6 +598,10 @@ void PrerenderContents::ShowCreatedFullscreenWidget(int route_id) {
   NOTIMPLEMENTED();
 }
 
+void PrerenderContents::OnRenderViewHostCreated(
+    RenderViewHost* new_render_view_host) {
+}
+
 void PrerenderContents::OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                                           bool is_main_frame,
                                                           const GURL& url) {
@@ -614,10 +630,6 @@ void PrerenderContents::OnUpdateFaviconURL(
       return;
     }
   }
-}
-
-void PrerenderContents::OnMaybeCancelPrerenderForHTML5Media() {
-  Destroy(FINAL_STATUS_HTML5_MEDIA);
 }
 
 bool PrerenderContents::AddAliasURL(const GURL& url) {
@@ -668,8 +680,6 @@ void PrerenderContents::DidStopLoading() {
 void PrerenderContents::Destroy(FinalStatus final_status) {
   if (prerender_manager_->IsPendingDelete(this))
     return;
-
-  OnDestroy();
 
   prerender_manager_->MoveEntryToPendingDelete(this);
   set_final_status(final_status);

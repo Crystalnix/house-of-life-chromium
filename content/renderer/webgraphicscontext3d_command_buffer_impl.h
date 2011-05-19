@@ -408,6 +408,8 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void waitLatchCHROMIUM(WGC3Duint latch_id);
   virtual void setLatchCHROMIUM(WGC3Duint latch_id);
 
+  virtual void rateLimitOffscreenContextCHROMIUM();
+
   virtual WebKit::WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
 
@@ -430,8 +432,8 @@ class WebGraphicsContext3DCommandBufferImpl
       WebGraphicsContext3D::WebGraphicsContextLostCallback* callback);
 
  private:
-  // SwapBuffers callback;
-  void OnSwapBuffers();
+  // SwapBuffers callback.
+  void OnSwapBuffersComplete();
   virtual void OnContextLost();
 
   // The context we use for OpenGL rendering.
@@ -463,4 +465,3 @@ class WebGraphicsContext3DCommandBufferImpl
 
 #endif  // defined(ENABLE_GPU)
 #endif  // CONTENT_RENDERER_WEBGRAPHICSCONTEXT3D_COMMAND_BUFFER_IMPL_H_
-

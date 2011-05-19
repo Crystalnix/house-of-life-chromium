@@ -66,6 +66,7 @@
 #include "testing/platform_test.h"
 #include "webkit/database/database_tracker.h"
 #include "webkit/database/database_util.h"
+#include "webkit/quota/quota_manager.h"
 
 namespace keys = extension_manifest_keys;
 
@@ -344,7 +345,7 @@ class ExtensionTestingProfile : public TestingProfile {
 
   virtual ChromeAppCacheService* GetAppCacheService() {
     if (!appcache_service_) {
-      appcache_service_ = new ChromeAppCacheService;
+      appcache_service_ = new ChromeAppCacheService(NULL);
       if (!BrowserThread::PostTask(
               BrowserThread::IO, FROM_HERE,
               NewRunnableMethod(
@@ -352,7 +353,7 @@ class ExtensionTestingProfile : public TestingProfile {
                   &ChromeAppCacheService::InitializeOnIOThread,
                   IsOffTheRecord()
                   ? FilePath() : GetPath().Append(chrome::kAppCacheDirname),
-                  make_scoped_refptr(GetHostContentSettingsMap()),
+                  &GetResourceContext(),
                   make_scoped_refptr(GetExtensionSpecialStoragePolicy()),
                   false)))
         NOTREACHED();
@@ -361,9 +362,13 @@ class ExtensionTestingProfile : public TestingProfile {
   }
 
   virtual fileapi::FileSystemContext* GetFileSystemContext() {
-    if (!file_system_context_)
+    if (!file_system_context_) {
+      quota::QuotaManager* quota_manager = GetQuotaManager();
       file_system_context_ = CreateFileSystemContext(
-          GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy());
+          GetPath(), IsOffTheRecord(),
+          GetExtensionSpecialStoragePolicy(),
+          quota_manager ? quota_manager->proxy() : NULL);
+    }
     return file_system_context_;
   }
 

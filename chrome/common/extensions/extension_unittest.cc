@@ -13,8 +13,8 @@
 #include "base/file_util.h"
 #include "base/i18n/rtl.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_action.h"
@@ -1014,8 +1014,6 @@ TEST(ExtensionTest, PermissionMessages) {
   // TODO(erikkay) add a string for this permission.
   skip.insert(Extension::kBackgroundPermission);
 
-  // TODO(dcheng): add a string for clipboardRead
-  skip.insert(Extension::kClipboardReadPermission);
   skip.insert(Extension::kClipboardWritePermission);
 
   // The cookie permission does nothing unless you have associated host
@@ -1033,10 +1031,11 @@ TEST(ExtensionTest, PermissionMessages) {
   // to warn you further.
   skip.insert(Extension::kExperimentalPermission);
 
-  // These are only usable by component extensions.
+  // These are private.
   skip.insert(Extension::kWebstorePrivatePermission);
   skip.insert(Extension::kFileBrowserPrivatePermission);
-  skip.insert(Extension::kChromeosInfoPrivatePermissions);
+  skip.insert(Extension::kChromeosInfoPrivatePermission);
+  skip.insert(Extension::kWebSocketProxyPrivatePermission);
 
   const Extension::PermissionMessage::MessageId ID_NONE =
       Extension::PermissionMessage::ID_NONE;

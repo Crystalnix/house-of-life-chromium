@@ -335,7 +335,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   if (touch_pressed_handler_) {
     TouchEvent touch_event(e, this, touch_pressed_handler_);
     status = touch_pressed_handler_->ProcessTouchEvent(touch_event);
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     if (status == TOUCH_STATUS_END)
       touch_pressed_handler_ = NULL;
     return status;
@@ -373,7 +374,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
     if (status != TOUCH_STATUS_START)
       touch_pressed_handler_ = NULL;
 
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     return status;
   }
 
@@ -381,7 +383,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   touch_pressed_handler_ = NULL;
 
   // Give the touch event to the gesture manager.
-  gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+  if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+    status = View::TOUCH_STATUS_SYNTH_MOUSE;
   return status;
 }
 #endif
@@ -446,6 +449,18 @@ void RootView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
 
 void RootView::OnPaint(gfx::Canvas* canvas) {
   canvas->AsCanvasSkia()->drawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
+}
+
+bool RootView::ShouldPaintToTexture() const {
+  return widget_->compositor() != NULL;
+}
+
+const ui::Compositor* RootView::GetCompositor() const {
+  return widget_->compositor();
+}
+
+ui::Compositor* RootView::GetCompositor() {
+  return widget_->compositor();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

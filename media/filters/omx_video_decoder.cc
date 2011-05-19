@@ -4,6 +4,7 @@
 
 #include "media/filters/omx_video_decoder.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/message_loop.h"
 #include "media/base/callback.h"
@@ -155,30 +156,29 @@ void OmxVideoDecoder::OnFlushComplete() {
   pts_stream_.Flush();
 }
 
-void OmxVideoDecoder::Seek(base::TimeDelta time,
-                           FilterCallback* callback) {
+void OmxVideoDecoder::Seek(base::TimeDelta time, const FilterStatusCB& cb) {
   if (MessageLoop::current() != message_loop_) {
      message_loop_->PostTask(FROM_HERE,
                               NewRunnableMethod(this,
                                                 &OmxVideoDecoder::Seek,
                                                 time,
-                                                callback));
+                                                cb));
      return;
   }
 
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(!seek_callback_.get());
+  DCHECK(seek_cb_.is_null());
 
   pts_stream_.Seek(time);
-  seek_callback_.reset(callback);
+  seek_cb_ = cb;
   decode_engine_->Seek();
 }
 
 void OmxVideoDecoder::OnSeekComplete() {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  DCHECK(seek_callback_.get());
+  DCHECK(!seek_cb_.is_null());
 
-  AutoCallbackRunner done_runner(seek_callback_.release());
+  ResetAndRunCB(&seek_cb_, PIPELINE_OK);
 }
 
 void OmxVideoDecoder::OnError() {
@@ -192,7 +192,7 @@ void OmxVideoDecoder::ProduceVideoSample(scoped_refptr<Buffer> buffer) {
   DCHECK_EQ(message_loop_, MessageLoop::current());
 
   // Issue more demux.
-  demuxer_stream_->Read(NewCallback(this, &OmxVideoDecoder::DemuxCompleteTask));
+  demuxer_stream_->Read(base::Bind(&OmxVideoDecoder::DemuxCompleteTask, this));
 }
 
 void OmxVideoDecoder::ConsumeVideoFrame(scoped_refptr<VideoFrame> frame,

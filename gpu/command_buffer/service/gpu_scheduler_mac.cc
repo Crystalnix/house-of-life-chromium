@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 using ::base::SharedMemory;
 
@@ -28,10 +29,22 @@ bool GpuScheduler::Initialize(
     DCHECK(parent_context);
   }
 
-  scoped_ptr<gfx::GLContext> context(
-      gfx::GLContext::CreateOffscreenGLContext(parent_context));
-  if (!context.get())
+  scoped_ptr<gfx::GLSurface> surface(
+      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+  if (!surface.get()) {
+    LOG(ERROR) << "CreateOffscreenGLSurface failed.\n";
+    Destroy();
     return false;
+  }
+
+  // Create a GLContext and attach the surface.
+  scoped_ptr<gfx::GLContext> context(
+      gfx::GLContext::CreateGLContext(surface.release(), parent_context));
+  if (!context.get()) {
+    LOG(ERROR) << "CreateGLContext failed.\n";
+    Destroy();
+    return false;
+  }
 
   // On Mac OS X since we can not render on-screen we don't even
   // attempt to create a view based GLContext. The only difference
@@ -104,6 +117,10 @@ uint64 GpuScheduler::GetSurfaceId() {
 
 uint64 GpuScheduler::swap_buffers_count() const {
   return swap_buffers_count_;
+}
+
+uint64 GpuScheduler::acknowledged_swap_buffers_count() const {
+  return acknowledged_swap_buffers_count_;
 }
 
 void GpuScheduler::set_acknowledged_swap_buffers_count(

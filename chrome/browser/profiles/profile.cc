@@ -96,37 +96,68 @@ const ProfileId Profile::kInvalidProfileId = static_cast<ProfileId>(0);
 
 // static
 void Profile::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kSearchSuggestEnabled, true);
-  prefs->RegisterBooleanPref(prefs::kSessionExitedCleanly, true);
-  prefs->RegisterBooleanPref(prefs::kSafeBrowsingEnabled, true);
-  prefs->RegisterBooleanPref(prefs::kSafeBrowsingReportingEnabled, false);
+  prefs->RegisterBooleanPref(prefs::kSearchSuggestEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kSessionExitedCleanly,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kSafeBrowsingEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kSafeBrowsingReportingEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
   // TODO(estade): IDS_SPELLCHECK_DICTIONARY should be an ASCII string.
   prefs->RegisterLocalizedStringPref(prefs::kSpellCheckDictionary,
-      IDS_SPELLCHECK_DICTIONARY);
-  prefs->RegisterBooleanPref(prefs::kEnableSpellCheck, true);
-  prefs->RegisterBooleanPref(prefs::kEnableAutoSpellCorrect, true);
+                                     IDS_SPELLCHECK_DICTIONARY,
+                                     PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableSpellCheck,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableAutoSpellCorrect,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 #if defined(TOOLKIT_USES_GTK)
   prefs->RegisterBooleanPref(prefs::kUsesSystemTheme,
-                             GtkThemeService::DefaultUsesSystemTheme());
+                             GtkThemeService::DefaultUsesSystemTheme(),
+                             PrefService::UNSYNCABLE_PREF);
 #endif
-  prefs->RegisterFilePathPref(prefs::kCurrentThemePackFilename, FilePath());
+  prefs->RegisterFilePathPref(prefs::kCurrentThemePackFilename,
+                              FilePath(),
+                              PrefService::UNSYNCABLE_PREF);
   prefs->RegisterStringPref(prefs::kCurrentThemeID,
-                            ThemeService::kDefaultThemeID);
-  prefs->RegisterDictionaryPref(prefs::kCurrentThemeImages);
-  prefs->RegisterDictionaryPref(prefs::kCurrentThemeColors);
-  prefs->RegisterDictionaryPref(prefs::kCurrentThemeTints);
-  prefs->RegisterDictionaryPref(prefs::kCurrentThemeDisplayProperties);
-  prefs->RegisterBooleanPref(prefs::kDisableExtensions, false);
-  prefs->RegisterStringPref(prefs::kSelectFileLastDirectory, "");
+                            ThemeService::kDefaultThemeID,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kCurrentThemeImages,
+                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kCurrentThemeColors,
+                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kCurrentThemeTints,
+                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kCurrentThemeDisplayProperties,
+                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDisableExtensions,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kSelectFileLastDirectory,
+                            "",
+                            PrefService::UNSYNCABLE_PREF);
 #if defined(OS_CHROMEOS)
   // TODO(dilmah): For OS_CHROMEOS we maintain kApplicationLocale in both
   // local state and user's profile.  For other platforms we maintain
   // kApplicationLocale only in local state.
   // In the future we may want to maintain kApplicationLocale
   // in user's profile for other platforms as well.
-  prefs->RegisterStringPref(prefs::kApplicationLocale, "");
-  prefs->RegisterStringPref(prefs::kApplicationLocaleBackup, "");
-  prefs->RegisterStringPref(prefs::kApplicationLocaleAccepted, "");
+  prefs->RegisterStringPref(prefs::kApplicationLocale,
+                            "",
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kApplicationLocaleBackup,
+                            "",
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kApplicationLocaleAccepted,
+                            "",
+                            PrefService::UNSYNCABLE_PREF);
 #endif
 }
 
@@ -239,27 +270,12 @@ class OffTheRecordProfileImpl : public Profile,
   }
 
   virtual ChromeAppCacheService* GetAppCacheService() {
-    if (!appcache_service_) {
-      appcache_service_ = new ChromeAppCacheService;
-      BrowserThread::PostTask(
-          BrowserThread::IO, FROM_HERE,
-          NewRunnableMethod(
-              appcache_service_.get(),
-              &ChromeAppCacheService::InitializeOnIOThread,
-              IsOffTheRecord()
-                  ? FilePath() : GetPath().Append(chrome::kAppCacheDirname),
-              make_scoped_refptr(GetHostContentSettingsMap()),
-              make_scoped_refptr(GetExtensionSpecialStoragePolicy()),
-              false));
-    }
+    CreateQuotaManagerAndClients();
     return appcache_service_;
   }
 
   virtual webkit_database::DatabaseTracker* GetDatabaseTracker() {
-    if (!db_tracker_.get()) {
-      db_tracker_ = new webkit_database::DatabaseTracker(
-          GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy());
-    }
+    CreateQuotaManagerAndClients();
     return db_tracker_;
   }
 
@@ -404,10 +420,7 @@ class OffTheRecordProfileImpl : public Profile,
   }
 
   virtual fileapi::FileSystemContext* GetFileSystemContext() {
-    if (!file_system_context_)
-      file_system_context_ = CreateFileSystemContext(
-          GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy());
-    DCHECK(file_system_context_.get());
+    CreateQuotaManagerAndClients();
     return file_system_context_.get();
   }
 
@@ -416,13 +429,7 @@ class OffTheRecordProfileImpl : public Profile,
   }
 
   virtual quota::QuotaManager* GetQuotaManager() {
-    if (!quota_manager_.get()) {
-      quota_manager_ = new quota::QuotaManager(
-          IsOffTheRecord(),
-          GetPath(),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
-    }
+    CreateQuotaManagerAndClients();
     return quota_manager_.get();
   }
 
@@ -674,6 +681,46 @@ class OffTheRecordProfileImpl : public Profile,
   }
 
  private:
+  void CreateQuotaManagerAndClients() {
+    if (quota_manager_.get()) {
+      DCHECK(file_system_context_.get());
+      DCHECK(db_tracker_.get());
+      return;
+    }
+
+    // All of the clients have to be created and registered with the
+    // QuotaManager prior to the QuotaManger being used. So we do them
+    // all together here prior to handing out a reference to anything
+    // that utlizes the QuotaManager.
+    quota_manager_ = new quota::QuotaManager(
+        IsOffTheRecord(),
+        GetPath(),
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB));
+
+    // Each consumer is responsible for registering its QuotaClient during
+    // its construction.
+    file_system_context_ = CreateFileSystemContext(
+        GetPath(), IsOffTheRecord(),
+        GetExtensionSpecialStoragePolicy(),
+        quota_manager_->proxy());
+    db_tracker_ = new webkit_database::DatabaseTracker(
+        GetPath(), IsOffTheRecord(), GetExtensionSpecialStoragePolicy(),
+        quota_manager_->proxy(),
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE));
+    appcache_service_ = new ChromeAppCacheService(quota_manager_->proxy());
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        NewRunnableMethod(
+            appcache_service_.get(),
+            &ChromeAppCacheService::InitializeOnIOThread,
+            IsOffTheRecord()
+                ? FilePath() : GetPath().Append(chrome::kAppCacheDirname),
+            &GetResourceContext(),
+            make_scoped_refptr(GetExtensionSpecialStoragePolicy()),
+            false));
+  }
+
   NotificationRegistrar registrar_;
 
   // The real underlying profile.

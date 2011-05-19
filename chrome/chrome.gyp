@@ -307,6 +307,13 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          'action_name': 'options_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/options_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
           'action_name': 'shared_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/shared_resources.grd',
@@ -358,6 +365,7 @@
           },
           'inputs': [
             '<(grit_grd_file)',
+            '<(frontend_folder)/devtools_frontend.html',
           ],
           'outputs': [
             '<(grit_out_dir)/grit/devtools_frontend_resources.h',
@@ -407,6 +415,7 @@
       'type': '<(library)',
       'msvs_guid': '57823D8C-A317-4713-9125-2C91FDFD12D6',
       'dependencies': [
+        'chrome_extra_resources',
         'chrome_resources',
         'chrome_strings',
         '../base/base.gyp:base',
@@ -504,8 +513,8 @@
       'target_name': 'syncapi',
       'type': '<(library)',
       'sources': [
-	'browser/sync/engine/http_post_provider_factory.h',
-	'browser/sync/engine/http_post_provider_interface.h',
+        'browser/sync/engine/http_post_provider_factory.h',
+        'browser/sync/engine/http_post_provider_interface.h',
         'browser/sync/engine/syncapi.cc',
         'browser/sync/engine/syncapi.h',
         'browser/sync/engine/configure_reason.h'
@@ -607,6 +616,10 @@
         'browser/sync/js_arg_list.cc',
         'browser/sync/js_arg_list.h',
         'browser/sync/js_backend.h',
+        'browser/sync/js_directory_change_listener.cc',
+        'browser/sync/js_directory_change_listener.h',
+        'browser/sync/js_event_details.cc',
+        'browser/sync/js_event_details.h',
         'browser/sync/js_event_handler.h',
         'browser/sync/js_event_handler_list.cc',
         'browser/sync/js_event_handler_list.h',
@@ -629,6 +642,7 @@
         'browser/sync/sessions/sync_session.h',
         'browser/sync/sessions/sync_session_context.cc',
         'browser/sync/sessions/sync_session_context.h',
+        'browser/sync/shared_value.h',
         'browser/sync/syncable/autofill_migration.h',
         'browser/sync/syncable/blob.h',
         'browser/sync/syncable/dir_open_result.h',
@@ -811,8 +825,6 @@
         'service/gaia/service_gaia_authenticator.h',
         'service/net/service_url_request_context.cc',
         'service/net/service_url_request_context.h',
-        'service/remoting/chromoting_host_manager.cc',
-        'service/remoting/chromoting_host_manager.h',
       ],
       'include_dirs': [
         '..',
@@ -844,17 +856,6 @@
           ],
           'sources': [
             'service/cloud_print/print_system_cups.cc',
-          ],
-        }],
-        ['remoting==1', {
-          'dependencies': [
-            '../remoting/remoting.gyp:chromoting_host',
-          ],
-        }],
-        ['remoting==0', {
-          'sources!': [
-            'service/remoting/chromoting_host_manager.cc',
-            'service/remoting/chromoting_host_manager.h',
           ],
         }],
       ],
@@ -1206,6 +1207,7 @@
                   '<(grit_out_dir)/component_extension_resources.pak',
                   '<(grit_out_dir)/devtools_frontend_resources.pak',
                   '<(grit_out_dir)/devtools_resources.pak',
+                  '<(grit_out_dir)/options_resources.pak',
                   '<(grit_out_dir)/net_internals_resources.pak',
                   '<(grit_out_dir)/shared_resources.pak',
                   '<(grit_out_dir)/sync_internals_resources.pak',
@@ -1318,6 +1320,7 @@
             '../media/media.gyp:*',
             '../net/net.gyp:*',
             '../ppapi/ppapi.gyp:*',
+            '../ppapi/ppapi_internal.gyp:*',
             '../printing/printing.gyp:*',
             '../sdch/sdch.gyp:*',
             '../skia/skia.gyp:*',

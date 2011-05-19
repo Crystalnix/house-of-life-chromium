@@ -38,18 +38,12 @@ void TabContentsDelegate::ContentsMouseEvent(
 
 void TabContentsDelegate::ContentsZoomChange(bool zoom_in) { }
 
-void TabContentsDelegate::OnContentSettingsChange(TabContents* source) { }
-
 bool TabContentsDelegate::IsApplication() const { return false; }
 
 void TabContentsDelegate::ConvertContentsToApplication(TabContents* source) { }
 
 bool TabContentsDelegate::CanReloadContents(TabContents* source) const {
   return true;
-}
-
-void TabContentsDelegate::ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                                         gfx::NativeWindow parent_window) {
 }
 
 void TabContentsDelegate::WillRunBeforeUnloadConfirm() {
@@ -63,12 +57,6 @@ void TabContentsDelegate::BeforeUnloadFired(TabContents* tab,
                                             bool proceed,
                                             bool* proceed_to_fire_unload) {
   *proceed_to_fire_unload = true;
-}
-
-void TabContentsDelegate::ForwardMessageToExternalHost(
-    const std::string& message,
-    const std::string& origin,
-    const std::string& target) {
 }
 
 bool TabContentsDelegate::IsExternalTabContainer() const { return false; }
@@ -97,14 +85,6 @@ void TabContentsDelegate::TabContentsFocused(TabContents* tab_content) {
 
 int TabContentsDelegate::GetExtraRenderViewHeight() const {
   return 0;
-}
-
-bool TabContentsDelegate::CanDownload(int request_id) {
-  return true;
-}
-
-void TabContentsDelegate::OnStartDownload(DownloadItem* download,
-                                          TabContents* tab) {
 }
 
 bool TabContentsDelegate::HandleContextMenu(const ContextMenuParams& params) {
@@ -171,10 +151,6 @@ void TabContentsDelegate::ShowRepostFormWarningDialog(
     TabContents* tab_contents) {
 }
 
-void TabContentsDelegate::ShowContentSettingsPage(
-    ContentSettingsType content_type) {
-}
-
 void TabContentsDelegate::ShowCollectedCookiesDialog(
     TabContents* tab_contents) {
 }
@@ -194,10 +170,6 @@ gfx::NativeWindow TabContentsDelegate::GetFrameNativeWindow() {
 }
 
 void TabContentsDelegate::TabContentsCreated(TabContents* new_contents) {
-}
-
-bool TabContentsDelegate::infobars_enabled() {
-  return true;
 }
 
 bool TabContentsDelegate::ShouldEnablePreferredSizeNotifications() {

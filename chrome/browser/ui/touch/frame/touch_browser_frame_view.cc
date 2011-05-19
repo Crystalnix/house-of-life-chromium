@@ -20,6 +20,7 @@
 #include "content/common/notification_type.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/transform.h"
 #include "views/controls/button/image_button.h"
 #include "views/controls/textfield/textfield.h"
 #include "views/focus/focus_manager.h"
@@ -142,7 +143,8 @@ void TouchBrowserFrameView::InitVirtualKeyboard() {
   Profile* keyboard_profile = browser_view()->browser()->profile();
   DCHECK(keyboard_profile) << "Profile required for virtual keyboard.";
 
-  keyboard_ = new KeyboardContainerView(keyboard_profile);
+  keyboard_ = new KeyboardContainerView(keyboard_profile,
+      browser_view()->browser());
   keyboard_->SetVisible(false);
   AddChildView(keyboard_);
 }
@@ -247,13 +249,26 @@ void TouchBrowserFrameView::Observe(NotificationType type,
     GetFocusedStateAccessor()->SetProperty(
         source_tab->property_bag(), editable);
   } else if (type == NotificationType::NAV_ENTRY_COMMITTED) {
+    NavigationController* controller =
+        Source<NavigationController>(source).ptr();
     Browser* source_browser = Browser::GetBrowserForController(
-        Source<NavigationController>(source).ptr(), NULL);
+        controller, NULL);
+
     // If the Browser for the keyboard has navigated, re-evaluate the visibility
     // of the keyboard.
+    TouchBrowserFrameView::VirtualKeyboardType keyboard_type = NONE;
+    views::View* view = GetFocusManager()->GetFocusedView();
+    if (view) {
+      if (view->GetClassName() == views::Textfield::kViewClassName)
+        keyboard_type = GENERIC;
+      if (view->GetClassName() == RenderWidgetHostViewViews::kViewClassName) {
+        // Reset the state of the focused field in the current tab.
+        GetFocusedStateAccessor()->SetProperty(
+            controller->tab_contents()->property_bag(), false);
+      }
+    }
     if (source_browser == browser)
-      UpdateKeyboardAndLayout(DecideKeyboardStateForView(
-          GetFocusManager()->GetFocusedView()) == GENERIC);
+      UpdateKeyboardAndLayout(keyboard_type == GENERIC);
   } else if (type == NotificationType::TAB_CONTENTS_DESTROYED) {
     GetFocusedStateAccessor()->DeleteProperty(
         Source<TabContents>(source).ptr()->property_bag());
@@ -265,8 +280,10 @@ void TouchBrowserFrameView::Observe(NotificationType type,
 ///////////////////////////////////////////////////////////////////////////////
 // ui::AnimationDelegate implementation
 void TouchBrowserFrameView::AnimationProgressed(const ui::Animation* anim) {
-  keyboard_->SetTranslateY(
+  ui::Transform transform;
+  transform.SetTranslateY(
       ui::Tween::ValueBetween(anim->GetCurrentValue(), kKeyboardHeight, 0));
+  keyboard_->SetTransform(transform);
   browser_view()->set_clip_y(
       ui::Tween::ValueBetween(anim->GetCurrentValue(), 0, kKeyboardHeight));
   SchedulePaint();

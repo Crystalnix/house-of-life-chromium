@@ -25,7 +25,6 @@
 
 using ui::OSExchangeData;
 
-
 namespace gfx {
 class Canvas;
 class Insets;
@@ -35,6 +34,7 @@ class Path;
 namespace ui {
 struct AccessibleViewState;
 class Compositor;
+class Texture;
 class ThemeProvider;
 class Transform;
 
@@ -150,8 +150,11 @@ class View : public AcceleratorTarget {
     TOUCH_STATUS_CONTINUE,     // The touch event is part of a previously
                                // started touch sequence.
     TOUCH_STATUS_END,          // The touch event ended the touch sequence.
-    TOUCH_STATUS_CANCEL        // The touch event was cancelled, but didn't
+    TOUCH_STATUS_CANCEL,       // The touch event was cancelled, but didn't
                                // terminate the touch sequence.
+    TOUCH_STATUS_SYNTH_MOUSE   // The touch event was not processed, but a
+                               // synthetic mouse event generated from the
+                               // unused touch event was handled.
   };
 #endif
 
@@ -345,24 +348,8 @@ class View : public AcceleratorTarget {
   void set_clip_y(float y) { clip_y_ = y; }
   void set_clip(float x, float y) { clip_x_ = x; clip_y_ = y; }
 
-  void SetRotation(float degree);
-
-  void SetScaleX(float x);
-  void SetScaleY(float y);
-  void SetScale(float x, float y);
-
-  void SetTranslateX(float x);
-  void SetTranslateY(float y);
-  void SetTranslate(float x, float y);
-
-  // The following functions apply the transformations on top of the existing
-  // transform.
-  void ConcatRotation(float degree);
-  void ConcatScale(float x, float y);
-  void ConcatTranslate(float x, float y);
-
-  // Reset the transformation matrix.
-  void ResetTransform();
+  // Sets the transform to the supplied transform.
+  void SetTransform(const ui::Transform& transform);
 
   // RTL positioning -----------------------------------------------------------
 
@@ -527,9 +514,6 @@ class View : public AcceleratorTarget {
   // to paint itself via the various OnPaint*() event handlers and then paints
   // the hierarchy beneath it.
   virtual void Paint(gfx::Canvas* canvas);
-
-  // Paint this View immediately.
-  virtual void PaintNow();
 
   // The background object is owned by this object and may be NULL.
   void set_background(Background* b) { background_.reset(b); }
@@ -1040,8 +1024,29 @@ class View : public AcceleratorTarget {
 
   // Accelerated painting ------------------------------------------------------
 
+#if !defined(COMPOSITOR_2)
   // Performs accelerated painting using the compositor.
   virtual void PaintComposite(ui::Compositor* compositor);
+#else
+  // If our texture is out of date invokes Paint() with a canvas that is then
+  // copied to the texture. If the texture is not out of date recursively
+  // descends in case any children needed their textures updated.
+  //
+  // This is invoked internally by Widget and painting code.
+  void PaintToTexture(const gfx::Rect& dirty_rect);
+
+  // Instructs the compositor to show our texture and all children textures.
+  //
+  // This is invoked internally by Widget and painting code.
+  void PaintComposite();
+#endif
+
+  // Returns true if this view should paint using a texture.
+  virtual bool ShouldPaintToTexture() const;
+
+  // Returns the Compositor.
+  virtual const ui::Compositor* GetCompositor() const;
+  virtual ui::Compositor* GetCompositor();
 
   // Input ---------------------------------------------------------------------
 
@@ -1213,8 +1218,11 @@ class View : public AcceleratorTarget {
 
   // Transformations -----------------------------------------------------------
 
-  // Initialize the transform matrix when necessary.
-  void InitTransform();
+  // Returns in |transform| the transform to get from coordinates of |ancestor|
+  // to this. Returns true if |ancestor| is found. If |ancestor| is not found,
+  // or NULL, |transform| is set to convert from root view coordinates to this.
+  bool GetTransformRelativeTo(const View* ancestor,
+                              ui::Transform* transform) const;
 
   // Coordinate conversion -----------------------------------------------------
 
@@ -1237,6 +1245,11 @@ class View : public AcceleratorTarget {
   // point was successfully from the ancestor's coordinate system to the view's
   // coordinate system.
   bool ConvertPointFromAncestor(const View* ancestor, gfx::Point* point) const;
+
+  // Accelerated painting ------------------------------------------------------
+
+  // Releases the texture of this and recurses through all children.
+  void ResetTexture();
 
   // Input ---------------------------------------------------------------------
 
@@ -1372,6 +1385,7 @@ class View : public AcceleratorTarget {
 
   // Accelerated painting ------------------------------------------------------
 
+#if !defined(COMPOSITOR_2)
   // Each transformed view will maintain its own canvas.
   scoped_ptr<gfx::Canvas> canvas_;
 
@@ -1379,6 +1393,17 @@ class View : public AcceleratorTarget {
   // TODO(sadrul): This will eventually be replaced by an abstract texture
   //               object.
   ui::TextureID texture_id_;
+#else
+  scoped_ptr<ui::Texture> texture_;
+
+  // If not empty and Paint() is invoked, the canvas is created with the
+  // specified size.
+  // TODO(sky): this should be passed in.
+  gfx::Rect texture_clip_rect_;
+#endif
+
+  // Is the texture out of date?
+  bool texture_needs_updating_;
 
   // Accelerators --------------------------------------------------------------
 

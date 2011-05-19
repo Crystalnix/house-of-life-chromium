@@ -22,6 +22,7 @@
         '../media/media.gyp:*',
         '../net/net.gyp:*',
         '../ppapi/ppapi.gyp:*',
+        '../ppapi/ppapi_internal.gyp:*',
         '../printing/printing.gyp:*',
         '../sdch/sdch.gyp:*',
         '../skia/skia.gyp:*',
@@ -59,7 +60,7 @@
             '../v8/tools/gyp/v8.gyp:*',
           ],
         }],
-        ['OS=="mac" or OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['OS=="mac" or OS=="linux"', {
           'dependencies': [
             '../third_party/yasm/yasm.gyp:*#host',
            ],
@@ -88,7 +89,7 @@
             }],
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             '../tools/gtk_clipboard_dump/gtk_clipboard_dump.gyp:*',
             '../tools/xdisplaycheck/xdisplaycheck.gyp:*',
@@ -284,11 +285,11 @@
         '../chrome/chrome.gyp:chromedriver',
       ],
       'conditions': [
-        ['OS=="mac" or OS=="win" or (OS=="linux" and target_arch==python_arch)', {
+        ['OS=="mac" or OS=="win" or (os_posix==1 and target_arch==python_arch)', {
           'dependencies': [
             '../chrome/chrome.gyp:pyautolib',
           ],
-        }], # 'OS=="mac" or OS=="win" or (OS=="linux" and target_arch==python_arch)'
+        }],
       ],
     }, # target_name: chromium_builder_qa
   ],
@@ -496,19 +497,15 @@
                 '../chrome/app/locales/locales.gyp:*',
                 '../chrome/chrome.gyp:chromedriver',
                 '../chrome/chrome.gyp:crash_service',
-                '../chrome/chrome.gyp:page_cycler_tests',
                 '../chrome/chrome.gyp:policy_templates',
                 '../chrome/chrome.gyp:pyautolib',
                 '../chrome/chrome.gyp:reliability_tests',
-                '../chrome/chrome.gyp:startup_tests',
                 '../chrome/chrome.gyp:automated_ui_tests',
                 '../chrome/installer/mini_installer.gyp:mini_installer',
-                '../chrome_frame/chrome_frame.gyp:chrome_frame_unittests',
                 '../chrome_frame/chrome_frame.gyp:npchrome_frame',
                 '../courgette/courgette.gyp:courgette',
                 '../courgette/courgette.gyp:courgette64',
                 '../third_party/adobe/flash/flash_player.gyp:flash_player',
-                '../webkit/webkit.gyp:test_shell',
               ],
               'conditions': [
                 ['internal_pdf', {

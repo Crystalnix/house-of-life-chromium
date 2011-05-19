@@ -17,6 +17,7 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 
 class AutomationProxy;
+class CommandLine;
 class DictionaryValue;
 class FilePath;
 class GURL;
@@ -41,9 +42,14 @@ class Automation {
   Automation();
   virtual ~Automation();
 
-  // Creates a browser, using the exe found in |browser_dir|. If |browser_dir|
-  // is empty, it will search in all the default locations.
-  void Init(const FilePath& browser_dir, ErrorCode* code);
+  // Creates a browser, using the specified |browser_exe|.
+  void InitWithBrowserPath(const FilePath& browser_exe,
+                           const CommandLine& options,
+                           ErrorCode* code);
+
+  // Start the system's default Chrome binary.
+  void Init(const CommandLine& options,
+            ErrorCode* code);
 
   // Terminates this session and disconnects its automation proxy. After
   // invoking this method, the Automation can safely be deleted.
@@ -116,6 +122,17 @@ class Automation {
   void DoesTabExist(int tab_id, bool* does_exist, bool* success);
 
   void CloseTab(int tab_id, bool* success);
+
+  // Gets the active JavaScript modal dialog's message.
+  void GetAppModalDialogMessage(std::string* message, bool* success);
+
+  // Accepts or dismisses the active JavaScript modal dialog.
+  void AcceptOrDismissAppModalDialog(bool accept, bool* success);
+
+  // Accepts an active prompt JavaScript modal dialog, using the given
+  // prompt text as the result of the prompt.
+  void AcceptPromptAppModalDialog(const std::string& prompt_text,
+                                  bool* success);
 
   // Gets the version of the runing browser.
   void GetBrowserVersion(std::string* version);

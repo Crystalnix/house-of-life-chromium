@@ -13,7 +13,6 @@
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/profile_menu_button.h"
-#include "chrome/browser/ui/views/profile_menu_model.h"
 #include "chrome/browser/ui/views/profile_tag_view.h"
 #include "chrome/browser/ui/views/tabs/side_tab_strip.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
@@ -67,9 +66,6 @@ const int kNewTabCaptionRestoredSpacing = 5;
 // similar vertical coordinates, we need to reserve a larger, 16 px gap to avoid
 // looking too cluttered.
 const int kNewTabCaptionMaximizedSpacing = 16;
-// Menu should display below the profile button tag image on the frame. This
-// offset size depends on whether the frame is in glass or opaque mode.
-const int kMenuDisplayOffset = 7;
 // Y position for profile button inside the frame.
 const int kProfileButtonYPosition = 2;
 // Y position for profile tag inside the frame.
@@ -95,8 +91,8 @@ GlassBrowserFrameView::GlassBrowserFrameView(BrowserFrame* frame,
   if (browser_command_line.HasSwitch(switches::kMultiProfiles) &&
       !browser_view->ShouldShowOffTheRecordAvatar()) {
     RegisterLoginNotifications();
-    profile_button_.reset(new ProfileMenuButton(NULL, std::wstring(),
-        this, browser_view_->browser()->profile()));
+    profile_button_.reset(new ProfileMenuButton(std::wstring(),
+        browser_view_->browser()->profile()));
     profile_button_->SetVisible(false);
     profile_tag_.reset(new ProfileTagView(frame_, profile_button_.get()));
     profile_tag_->SetVisible(false);
@@ -130,8 +126,7 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
   // a tab strip until the left end of this window without considering the size
   // of window controls in RTL languages.
   if (base::i18n::IsRTL()) {
-    if (!browser_view_->ShouldShowOffTheRecordAvatar() &&
-        frame_->GetWindow()->IsMaximized())
+    if (!browser_view_->ShouldShowOffTheRecordAvatar() && frame_->IsMaximized())
       tabstrip_x += otr_avatar_bounds_.x();
     minimize_button_offset = width();
   }
@@ -141,7 +136,7 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
           profile_button_->GetPreferredSize().width() +
               ProfileMenuButton::kProfileTagHorizontalSpacing : 0);
   int tabstrip_width = minimize_button_offset - tabstrip_x -
-      (frame_->GetWindow()->IsMaximized() ?
+      (frame_->IsMaximized() ?
           maximized_spacing : kNewTabCaptionRestoredSpacing);
   return gfx::Rect(tabstrip_x, GetHorizontalTabStripVerticalOffset(false),
                    std::max(0, tabstrip_width),
@@ -172,13 +167,9 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForClientView() const {
   return client_view_bounds_;
 }
 
-bool GlassBrowserFrameView::AlwaysUseNativeFrame() const {
-  return frame_->AlwaysUseNativeFrame();
-}
-
 gfx::Rect GlassBrowserFrameView::GetWindowBoundsForClientBounds(
     const gfx::Rect& client_bounds) const {
-  HWND hwnd = frame_->GetWindow()->GetNativeWindow();
+  HWND hwnd = frame_->GetNativeWindow();
   if (!browser_view_->IsTabStripVisible() && hwnd) {
     // If we don't have a tabstrip, we're either a popup or an app window, in
     // which case we have a standard size non-client area and can just use
@@ -206,8 +197,7 @@ int GlassBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   if (!browser_view_->IsBrowserTypeNormal() || !bounds().Contains(point))
     return HTNOWHERE;
 
-  int frame_component =
-      frame_->GetWindow()->client_view()->NonClientHitTest(point);
+  int frame_component = frame_->client_view()->NonClientHitTest(point);
 
   // See if we're in the sysmenu region.  We still have to check the tabstrip
   // first so that clicks in a tab don't get treated as sysmenu clicks.
@@ -229,19 +219,9 @@ int GlassBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   int window_component = GetHTComponentForFrame(point, frame_border_thickness,
       nonclient_border_thickness, frame_border_thickness,
       kResizeAreaCornerSize - frame_border_thickness,
-      frame_->GetWindow()->window_delegate()->CanResize());
+      frame_->window_delegate()->CanResize());
   // Fall back to the caption if no other component matches.
   return (window_component == HTNOWHERE) ? HTCAPTION : window_component;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// GlassBrowserFrameView, views::ViewMenuDelegate implementation:
-void GlassBrowserFrameView::RunMenu(views::View *source, const gfx::Point &pt) {
-  if (profile_menu_model_ == NULL)
-    profile_menu_model_.reset(new ProfileMenuModel);
-  gfx::Point menu_point(pt.x(),
-                        pt.y() + kMenuDisplayOffset);
-  profile_menu_model_->RunMenuAt(menu_point);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -254,7 +234,7 @@ void GlassBrowserFrameView::OnPaint(gfx::Canvas* canvas) {
   PaintToolbarBackground(canvas);
   if (browser_view_->ShouldShowOffTheRecordAvatar())
     PaintOTRAvatar(canvas);
-  if (!frame_->GetWindow()->IsMaximized())
+  if (!frame_->IsMaximized())
     PaintRestoredClientEdge(canvas);
 }
 
@@ -267,12 +247,12 @@ void GlassBrowserFrameView::Layout() {
 bool GlassBrowserFrameView::HitTest(const gfx::Point& l) const {
   // The ProfileMenuButton intrudes into the client area when the window is
   // maximized.
-  if (frame_->GetWindow()->IsMaximized() && show_profile_button() &&
+  if (frame_->IsMaximized() && show_profile_button() &&
        profile_button_->IsVisible() &&
        profile_button_->GetMirroredBounds().Contains(l)) {
     return true;
   } else {
-    return !GetWindow()->client_view()->bounds().Contains(l);
+    return !frame_->client_view()->bounds().Contains(l);
   }
 }
 
@@ -280,14 +260,12 @@ bool GlassBrowserFrameView::HitTest(const gfx::Point& l) const {
 // GlassBrowserFrameView, private:
 
 int GlassBrowserFrameView::FrameBorderThickness() const {
-  views::Window* window = frame_->GetWindow();
-  return (window->IsMaximized() || window->IsFullscreen()) ?
+  return (frame_->IsMaximized() || frame_->IsFullscreen()) ?
       0 : GetSystemMetrics(SM_CXSIZEFRAME);
 }
 
 int GlassBrowserFrameView::NonClientBorderThickness() const {
-  views::Window* window = frame_->GetWindow();
-  if (window->IsMaximized() || window->IsFullscreen())
+  if (frame_->IsMaximized() || frame_->IsFullscreen())
     return 0;
 
   return browser_view_->UseVerticalTabs() ?
@@ -298,7 +276,7 @@ int GlassBrowserFrameView::NonClientBorderThickness() const {
 int GlassBrowserFrameView::NonClientTopBorderHeight(
     bool restored,
     bool ignore_vertical_tabs) const {
-  if (!restored && frame_->GetWindow()->IsFullscreen())
+  if (!restored && frame_->IsFullscreen())
     return 0;
   // We'd like to use FrameBorderThickness() here, but the maximized Aero glass
   // frame has a 0 frame border around most edges and a CYSIZEFRAME-thick border
@@ -436,7 +414,7 @@ void GlassBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   // of how tall the toolbar itself is.
   int client_area_top = browser_view_->UseVerticalTabs() ?
       client_area_bounds.y() :
-      (frame_->GetWindow()->client_view()->y() +
+      (frame_->client_view()->y() +
       browser_view_->GetToolbarBounds().y() +
       tp->GetBitmapNamed(IDR_CONTENT_TOP_LEFT_CORNER)->height());
   int client_area_bottom =
@@ -497,7 +475,7 @@ void GlassBrowserFrameView::LayoutOTRAvatar() {
         browser_view_->GetTabStripHeight() - kOTRBottomSpacing;
     otr_restored_y = otr_bottom - otr_avatar_icon.height();
   }
-  int otr_y = frame_->GetWindow()->IsMaximized() ?
+  int otr_y = frame_->IsMaximized() ?
       (NonClientTopBorderHeight(false, true) + kTabstripTopShadowThickness) :
       otr_restored_y;
   otr_avatar_bounds_.SetRect(otr_x, otr_y, otr_avatar_icon.width(),
@@ -536,7 +514,7 @@ void GlassBrowserFrameView::LayoutProfileTag() {
           ProfileMenuButton::kProfileTagHorizontalSpacing -
           // - the width of the profile button
           profile_button_->GetPreferredSize().width();
-  int y_maximized_offset = frame_->GetWindow()->IsMaximized() ?
+  int y_maximized_offset = frame_->IsMaximized() ?
       kProfileElementMaximizedYOffset : 0;
   profile_button_->SetBounds(
       x_tag,
@@ -570,7 +548,7 @@ void GlassBrowserFrameView::StartThrobber() {
     throbber_running_ = true;
     throbber_frame_ = 0;
     InitThrobberIcons();
-    SendMessage(frame_->GetWindow()->GetNativeWindow(), WM_SETICON,
+    SendMessage(frame_->GetNativeWindow(), WM_SETICON,
                 static_cast<WPARAM>(ICON_SMALL),
                 reinterpret_cast<LPARAM>(throbber_icons_[throbber_frame_]));
   }
@@ -592,13 +570,13 @@ void GlassBrowserFrameView::StopThrobber() {
     // Fallback to class icon.
     if (!frame_icon) {
       frame_icon = reinterpret_cast<HICON>(GetClassLongPtr(
-          frame_->GetWindow()->GetNativeWindow(), GCLP_HICONSM));
+          frame_->GetNativeWindow(), GCLP_HICONSM));
     }
 
     // This will reset the small icon which we set in the throbber code.
     // WM_SETICON with NULL icon restores the icon for title bar but not
     // for taskbar. See http://crbug.com/29996
-    SendMessage(frame_->GetWindow()->GetNativeWindow(), WM_SETICON,
+    SendMessage(frame_->GetNativeWindow(), WM_SETICON,
                 static_cast<WPARAM>(ICON_SMALL),
                 reinterpret_cast<LPARAM>(frame_icon));
   }
@@ -606,7 +584,7 @@ void GlassBrowserFrameView::StopThrobber() {
 
 void GlassBrowserFrameView::DisplayNextThrobberFrame() {
   throbber_frame_ = (throbber_frame_ + 1) % kThrobberIconCount;
-  SendMessage(frame_->GetWindow()->GetNativeWindow(), WM_SETICON,
+  SendMessage(frame_->GetNativeWindow(), WM_SETICON,
               static_cast<WPARAM>(ICON_SMALL),
               reinterpret_cast<LPARAM>(throbber_icons_[throbber_frame_]));
 }

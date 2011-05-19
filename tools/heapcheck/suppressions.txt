@@ -119,6 +119,11 @@
    fun:PL_ArenaAllocate
    fun:net::TestRootCerts::*
 }
+{
+   bug_todo_getdelim_lucid
+   Heapcheck:Leak
+   fun:_IO_getdelim
+}
 
 #-----------------------------------------------------------------------
 # 2. intentional unit test errors, or stuff that is somehow a false positive
@@ -149,7 +154,7 @@
    String name pushed into deliberately leaked histograms
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:base:*:HistogramTest_*_Test::TestBody
 }
 {
@@ -158,28 +163,35 @@
    ...
    fun:std::string::*
    ...
-   fun:ClientSocketPoolHistograms
+   fun:net::ClientSocketPoolHistograms::ClientSocketPoolHistograms
 }
 {
    String name pushed into leaked CookieMonsterHistograms
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:net::CookieMonster::InitializeHistograms
 }
 {
    String name pushed into deliberately leaked StatsHistogram
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:DiskCacheBackendTest_Histograms_Test::TestBody
 }
 {
    Histogram name pushed in deliberately leaked StatsHistogram
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:disk_cache::Stats::Init
+}
+{
+   Intentional LeakyLazyInstanceTraits leaks
+   Heapcheck:Leak
+   ...
+   fun:base::LeakyLazyInstanceTraits::New
+   fun:base::LazyInstance::Pointer
 }
 #-----------------------------------------------------------------------
 # 3. Suppressions for real chromium bugs that are not yet fixed.
@@ -938,7 +950,7 @@
    fun:std::string::_S_construct
    fun:std::string::_S_construct_aux
    fun:std::string::_S_construct
-   fun:basic_string
+   fun:*basic_string*
    fun:file_util::FileEnumerator::ReadDirectory
    fun:file_util::FileEnumerator::Next
    fun:::RelayReadDirectory::RunWork
@@ -999,7 +1011,7 @@
    fun:std::string::_S_construct
    fun:std::string::_S_construct_aux
    fun:std::string::_S_construct
-   fun:basic_string
+   fun:*basic_string*
    fun:std::basic_stringbuf::str
    fun:std::basic_ostringstream::str
    fun:talk_base::SocketAddress::IPToString
@@ -1068,32 +1080,6 @@
    Heapcheck:Leak
    ...
    fun:net::::ProxyResolverV8WithMockBindings::SetPacScriptFromDisk
-}
-{
-   bug_67933
-   Heapcheck:Leak
-   fun:_Znw*
-   fun:_ZN3net25DiskCacheBasedSSLHostInfoC1ERKSsRKNS_9SSLConfigEPNS_9HttpCacheE
-   fun:_ZN3net9HttpCache25SSLHostInfoFactoryAdaptor10GetForHostERKSsRKNS_9SSLConfigE
-   fun:_ZN3net13SSLConnectJob12DoTCPConnectEv
-   fun:_ZN3net13SSLConnectJob6DoLoopEi
-   fun:_ZN3net13SSLConnectJob15ConnectInternalEv
-   fun:_ZN3net10ConnectJob7ConnectEv
-   fun:_ZN3net8internal26ClientSocketPoolBaseHelper21RequestSocketInternalERKSsPKNS1_7RequestE
-   fun:_ZN3net8internal26ClientSocketPoolBaseHelper13RequestSocketERKSsPKNS1_7RequestE
-   fun:_ZN3net20ClientSocketPoolBaseINS_15SSLSocketParamsEE13RequestSocketERKSsRK13scoped_refptrIS1_ENS_15RequestPriorityEPNS_18ClientSocketHandleEP14CallbackRunnerI6Tuple1IiEERKNS_11BoundNetLogE
-   fun:_ZN3net19SSLClientSocketPool13RequestSocketERKSsPKvNS_15RequestPriorityEPNS_18ClientSocketHandleEP14CallbackRunnerI6Tuple1IiEERKNS_11BoundNetLogE
-   fun:_ZN3net18ClientSocketHandle4InitINS_15SSLSocketParamsENS_19SSLClientSocketPoolEEEiRKSsRK13scoped_refptrIT_ENS_15RequestPriorityEP14CallbackRunnerI6Tuple1IiEEPT0_RKNS_11BoundNetLogE
-   fun:_ZN3net17HttpStreamRequest16DoInitConnectionEv
-   fun:_ZN3net17HttpStreamRequest6DoLoopEi
-   fun:_ZN3net17HttpStreamRequest7RunLoopEi
-   fun:_ZN3net17HttpStreamRequest13StartInternalEPKNS_15HttpRequestInfoEPNS_9SSLConfigEPNS_9ProxyInfoERKNS_11BoundNetLogE
-   fun:_ZN3net17HttpStreamRequest5StartEPKNS_15HttpRequestInfoEPNS_9SSLConfigEPNS_9ProxyInfoEPNS_13StreamRequest8DelegateERKNS_11BoundNetLogE
-   fun:_ZN3net17HttpStreamFactory13RequestStreamEPKNS_15HttpRequestInfoEPNS_9SSLConfigEPNS_9ProxyInfoEPNS_18HttpNetworkSessionEPNS_13StreamRequest8DelegateERKNS_11BoundNetLogE
-   fun:_ZN3net22HttpNetworkTransaction14DoCreateStreamEv
-   fun:_ZN3net22HttpNetworkTransaction6DoLoopEi
-   fun:_ZN3net22HttpNetworkTransaction5StartEPKNS_15HttpRequestInfoEP14CallbackRunnerI6Tuple1IiEERKNS_11BoundNetLogE
-   fun:_ZN3net9HttpCache11Transaction13DoSendRequestEv
 }
 {
    bug_68304
@@ -1212,14 +1198,9 @@
    fun:GpuProcessHostUIShim::GetForRenderer
 }
 {
-   bug_75120
-   Heapcheck:Leak
-   fun:remoting::ChromotingHostTest::SetUp
-}
-{
    bug_75224
    Heapcheck:Leak
-   fun:AutofillDownloadTestHelper
+   fun:AutofillDownloadTestHelper::AutofillDownloadTestHelper
    fun:AutofillDownloadTest_*Test_Test::TestBody
 }
 {
@@ -1235,8 +1216,8 @@
 {
    bug_76354
    Heapcheck:Leak
-   fun:MessageWithReply
-   fun:ChildProcessHostMsg_ResolveProxy
+   fun:IPC::MessageWithReply::MessageWithReply
+   fun:ChildProcessHostMsg_ResolveProxy::ChildProcessHostMsg_ResolveProxy
    fun:ResolveProxyMsgHelperTest::GenerateReply
    fun:ResolveProxyMsgHelperTest_*_Test::TestBody
 }
@@ -1285,7 +1266,7 @@
    fun:std::string::_S_construct
    fun:std::string::_S_construct_aux
    fun:std::string::_S_construct
-   fun:basic_string
+   fun:*basic_string*
    fun:RendererMessageLoopObserver
    fun:RendererMain
    fun:SimpleRenderer
@@ -1298,7 +1279,7 @@
    fun:std::string::_S_construct
    fun:std::string::_S_construct_aux
    fun:std::string::_S_construct
-   fun:basic_string
+   fun:*basic_string*
    fun:AutofillMetrics::Log
 }
 {
@@ -1321,9 +1302,9 @@
    fun:std::string::reserve
    fun:std::operator+
    fun:ThreadWatcher::Initialize
-   fun:ThreadWatcher
-   fun:CustomThreadWatcher
-   fun:ThreadWatcherTest
+   fun:ThreadWatcher::ThreadWatcher
+   fun:CustomThreadWatcher::CustomThreadWatcher
+   fun:ThreadWatcherTest::ThreadWatcherTest
 }
 {
    bug_79322d
@@ -1395,7 +1376,7 @@
    bug_79651_b
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:sync_notifier::::InvalidationNotifierTest_Basic_Test::TestBody
 }
 {
@@ -1470,7 +1451,7 @@
    Heapcheck:Leak
    ...
    fun:TestURLRequestContextGetter::GetURLRequestContext
-   fun:SingleLoginAttempt
+   fun:notifier::SingleLoginAttempt::SingleLoginAttempt
    fun:notifier::Login::StartConnection
    fun:sync_notifier::InvalidationNotifier::UpdateCredentials
    fun:sync_notifier::NonBlockingInvalidationNotifier::Core::UpdateCredentials
@@ -1485,10 +1466,10 @@
    fun:std::vector::push_back
    fun:ObserverListBase::AddObserver
    fun:net::SSLConfigService::AddObserver
-   fun:SSLClientSocketPool
-   fun:ClientSocketPoolManager
-   fun:HttpNetworkSession
-   fun:ProxyResolvingClientSocket
+   fun:net::SSLClientSocketPool::SSLClientSocketPool
+   fun:net::ClientSocketPoolManager::ClientSocketPoolManager
+   fun:net::HttpNetworkSession::HttpNetworkSession
+   fun:notifier::ProxyResolvingClientSocket::ProxyResolvingClientSocket
    fun:notifier::XmppClientSocketFactory::CreateTransportClientSocket
    fun:notifier::ChromeAsyncSocket::Connect
    fun:buzz::XmppClient::ProcessStartXmppLogin
@@ -1503,7 +1484,6 @@
    bug_80663
    Heapcheck:Leak
    ...
-   fun:TestURLRequestContextGetter::GetURLRequestContext
    fun:URLFetcher::Core::StartURLRequest
    fun:URLFetcher::Core::StartURLRequestWhenAppropriate
    fun:void DispatchToMethod
@@ -1512,7 +1492,7 @@
    bug_80666
    Heapcheck:Leak
    ...
-   fun:basic_string
+   fun:*basic_string*
    fun:GURL::ComponentString
    fun:GURL::HostNoBrackets
    fun:net::::InitSocketPoolHelper
@@ -1531,7 +1511,43 @@
    bug_81796
    Heapcheck:Leak
    fun:base::MessageLoopProxy::CreateForCurrentThread
-   fun:Context
-   fun:ChannelProxy
+   fun:IPC::ChannelProxy::Context::Context
+   fun:IPC::ChannelProxy::ChannelProxy
    fun:IPCChannelTest_ChannelProxyTest_Test::TestBody
+}
+{
+   bug_82974a
+   Heapcheck:Leak
+   fun:sqlite3_bind_parameter_index
+   fun:net::X509Certificate::CreateOSCertHandleFromBytes
+}
+{
+   bug_82974b
+   Heapcheck:Leak
+   fun:sqlite3_bind_parameter_index
+   fun:net::::PKIXVerifyCert
+   fun:net::X509Certificate::Verify
+}
+{
+   bug_82974c
+   Heapcheck:Leak
+   fun:sqlite3_bind_parameter_index
+   fun:net::::ListCertsInSlot
+   ...
+   fun:net::CertDatabaseNSSTest::TearDown
+}
+{
+   bug_82974d
+   Heapcheck:Leak
+   fun:sqlite3_bind_parameter_index
+   fun:net::CertDatabase::ListCerts
+   fun:net::CertDatabaseNSSTest_ListCerts_Test::TestBody
+}
+{
+   bug_82974e
+   Heapcheck:Leak
+   fun:sqlite3_bind_parameter_index
+   fun:net::CertDatabase::DeleteCertAndKey
+   fun:net::::CleanupSlotContents
+   fun:net::CertDatabaseNSSTest::TearDown
 }

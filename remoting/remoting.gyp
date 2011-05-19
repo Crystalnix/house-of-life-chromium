@@ -4,7 +4,37 @@
 
 {
   'variables': {
+    # TODO(dmaclach): can we pick this up some other way? Right now it's
+    # duplicated from chrome.gyp
     'chromium_code': 1,
+    'conditions': [
+      ['OS=="mac"', {
+        'conditions': [
+          ['branding=="Chrome"', {
+            'mac_bundle_id': 'com.google.Chrome',
+            'mac_creator': 'rimZ',
+          }, {  # else: branding!="Chrome"
+            'mac_bundle_id': 'org.chromium.Chromium',
+            'mac_creator': 'Cr24',
+          }],  # branding
+        ],  # conditions
+        'plugin_extension': 'plugin',
+        'plugin_prefix': '',
+      }],
+      ['OS=="linux"', {
+        'plugin_extension': 'so',
+        'plugin_prefix': 'lib',
+      }],
+      ['OS=="win"', {
+        'plugin_extension': 'dll',
+        'plugin_prefix': '',
+      }],
+      ['branding=="Chrome"', {
+        'host_plugin_mime_type': 'application/vnd.google-chrome.remoting-host',
+      }, {  # else: branding!="Chrome"
+        'host_plugin_mime_type': 'application/vnd.chromium.remoting-host',
+      }],  # branding
+    ],
   },
 
   'target_defaults': {
@@ -18,15 +48,15 @@
   'conditions': [
     ['OS=="linux" or OS=="mac"', {
       'targets': [
-        # Simple webserver for testing chromoting client plugin.
+        # Simple webserver for testing remoting client plugin.
         {
-          'target_name': 'chromoting_client_test_webserver',
+          'target_name': 'remoting_client_test_webserver',
           'type': 'executable',
           'sources': [
             'tools/client_webserver/main.c',
           ],
         }
-      ],  # end of target 'chromoting_client_test_webserver'
+      ],  # end of target 'remoting_client_test_webserver'
     }],
 
     # TODO(hclam): Enable this target for mac.
@@ -34,12 +64,12 @@
 
       'targets': [
         {
-          'target_name': 'chromoting_x11_client',
+          'target_name': 'remoting_x11_client',
           'type': 'executable',
           'dependencies': [
-            'chromoting_base',
-            'chromoting_client',
-            'chromoting_jingle_glue',
+            'remoting_base',
+            'remoting_client',
+            'remoting_jingle_glue',
           ],
           'link_settings': {
             'libraries': [
@@ -56,24 +86,23 @@
             'client/x11_view.cc',
             'client/x11_view.h',
           ],
-        },  # end of target 'chromoting_x11_client'
+        },  # end of target 'remoting_x11_client'
       ],
     }],  # end of OS conditions for x11 client
-
   ],  # end of 'conditions'
 
   'targets': [
     {
-      'target_name': 'chromoting_plugin',
+      'target_name': 'remoting_client_plugin',
       'type': 'static_library',
       'defines': [
         'HAVE_STDINT_H',  # Required by on2_integer.h
       ],
       'dependencies': [
-        'chromoting_base',
-        'chromoting_client',
-        'chromoting_jingle_glue',
-        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_cpp_objects',
+        'remoting_base',
+        'remoting_client',
+        'remoting_jingle_glue',
+        '../ppapi/ppapi.gyp:ppapi_cpp_objects',
 
         # TODO(sergeyu): This is a hack: plugin should not depend on
         # webkit glue. Skia is needed here to add include path webkit glue
@@ -108,10 +137,83 @@
         '../media/base/yuv_row_win.cc',
         '../media/base/yuv_row_posix.cc',
       ],
-    },  # end of target 'chromoting_plugin'
-
+    },  # end of target 'remoting_client_plugin'
     {
-      'target_name': 'chromoting_base',
+      'target_name': 'remoting_host_plugin',
+      'type': 'loadable_module',
+      'defines': [
+        'HOST_PLUGIN_MIME_TYPE=<(host_plugin_mime_type)',
+      ],
+      'dependencies': [
+        'remoting_base',
+        'remoting_host',
+        'remoting_jingle_glue',
+        '../third_party/npapi/npapi.gyp:npapi',
+      ],
+      'sources': [
+        'host/host_plugin.cc',
+      ],
+      'conditions': [
+        ['OS=="mac"', {
+          'mac_bundle': 1,
+          'xcode_settings': {
+            'CHROMIUM_BUNDLE_ID': '<(mac_bundle_id)',
+            'INFOPLIST_FILE': 'host/host_plugin-Info.plist',
+            'INFOPLIST_PREPROCESS': 'YES',
+            'INFOPLIST_PREPROCESSOR_DEFINITIONS': 'HOST_PLUGIN_MIME_TYPE=<(host_plugin_mime_type)',
+            'WRAPPER_EXTENSION': '<(plugin_extension)',
+          },
+          # TODO(mark): Come up with a fancier way to do this.  It should
+          # only be necessary to list framework-Info.plist once, not the
+          # three times it is listed here.
+          'mac_bundle_resources': [
+            'host/host_plugin-Info.plist',
+          ],
+          'mac_bundle_resources!': [
+            'host/host_plugin-Info.plist',
+          ],
+        }],
+      ],
+    },  # end of target 'remoting_host_plugin'
+    {
+      'target_name': 'webapp_me2mom',
+      'type': 'none',
+      'dependencies': [
+        'remoting_host_plugin',
+      ],
+      'sources': [
+        'webapp/build-webapp.py',
+      ],
+      'sources!': [
+        'webapp/build-webapp.py',
+      ],
+      # Can't use a 'copies' because we need to manipulate
+      # the manifest file to get the right plugin name.
+      # Also we need to move the plugin into the me2mom
+      # folder, which means 2 copies, and gyp doesn't
+      # seem to guarantee the ordering of 2 copies statements
+      # when the actual project is generated.
+      'actions': [
+        {
+          'action_name': 'Build Me2Mom WebApp',
+          'inputs': [
+            'webapp/me2mom/',
+            '<(PRODUCT_DIR)/<(plugin_prefix)remoting_host_plugin.<(plugin_extension)',
+          ],
+          'outputs': [
+            '<(PRODUCT_DIR)/remoting/remoting-me2mom.webapp',
+          ],
+          'action': [
+            'python', 'webapp/build-webapp.py',
+            '<(host_plugin_mime_type)',
+            '<@(_inputs)',
+            '<@(_outputs)'
+          ],
+        },
+      ],
+    }, # end of target 'webapp_me2mom'
+    {
+      'target_name': 'remoting_base',
       'type': '<(library)',
       'dependencies': [
         '../base/base.gyp:base',
@@ -120,7 +222,7 @@
         '../third_party/protobuf/protobuf.gyp:protobuf_lite',
         '../third_party/libvpx/libvpx.gyp:libvpx_include',
         '../third_party/zlib/zlib.gyp:zlib',
-        'chromoting_jingle_glue',
+        'remoting_jingle_glue',
         'proto/chromotocol.gyp:chromotocol_proto_lib',
         'proto/trace.gyp:trace_proto_lib',
         # TODO(hclam): Enable VP8 in the build.
@@ -181,20 +283,19 @@
           ],
         }],
       ],
-    },  # end of target 'chromoting_base'
+    },  # end of target 'remoting_base'
 
     {
-      'target_name': 'chromoting_host',
+      'target_name': 'remoting_host',
       'type': '<(library)',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_jingle_glue',
-        'chromoting_protocol',
+        'remoting_base',
+        'remoting_jingle_glue',
+        'remoting_protocol',
         'differ_block',
         '../crypto/crypto.gyp:crypto',
       ],
       'sources': [
-        'host/access_verifier.cc',
         'host/access_verifier.h',
         'host/capturer.h',
         'host/capturer_helper.cc',
@@ -233,8 +334,14 @@
         'host/in_memory_host_config.h',
         'host/json_host_config.cc',
         'host/json_host_config.h',
+        'host/register_support_host_request.cc',
+        'host/register_support_host_request.h',
+        'host/self_access_verifier.cc',
+        'host/self_access_verifier.h',
         'host/screen_recorder.cc',
         'host/screen_recorder.h',
+        'host/support_access_verifier.cc',
+        'host/support_access_verifier.h',
         'host/user_authenticator.h',
         'host/user_authenticator_linux.cc',
         'host/user_authenticator_mac.cc',
@@ -267,15 +374,15 @@
           },
         }],
       ],
-    },  # end of target 'chromoting_host'
+    },  # end of target 'remoting_host'
 
     {
-      'target_name': 'chromoting_client',
+      'target_name': 'remoting_client',
       'type': '<(library)',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_jingle_glue',
-        'chromoting_protocol',
+        'remoting_base',
+        'remoting_jingle_glue',
+        'remoting_protocol',
       ],
       'sources': [
         'client/chromoting_client.cc',
@@ -284,6 +391,7 @@
         'client/chromoting_stats.h',
         'client/chromoting_view.cc',
         'client/chromoting_view.h',
+        'client/client_config.cc',
         'client/client_config.h',
         'client/client_context.cc',
         'client/client_context.h',
@@ -295,15 +403,15 @@
         'client/rectangle_update_decoder.cc',
         'client/rectangle_update_decoder.h',
       ],
-    },  # end of target 'chromoting_client'
+    },  # end of target 'remoting_client'
 
     {
-      'target_name': 'chromoting_simple_host',
+      'target_name': 'remoting_simple_host',
       'type': 'executable',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_host',
-        'chromoting_jingle_glue',
+        'remoting_base',
+        'remoting_host',
+        'remoting_jingle_glue',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
       ],
@@ -314,13 +422,13 @@
         '../base/test/mock_chrome_application_mac.mm',
         '../base/test/mock_chrome_application_mac.h',
       ],
-    },  # end of target 'chromoting_simple_host'
+    },  # end of target 'remoting_simple_host'
 
     {
-      'target_name': 'chromoting_host_keygen',
+      'target_name': 'remoting_host_keygen',
       'type': 'executable',
       'dependencies': [
-        'chromoting_base',
+        'remoting_base',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../crypto/crypto.gyp:crypto',
@@ -328,10 +436,10 @@
       'sources': [
         'host/keygen_main.cc',
       ],
-    },  # end of target 'chromoting_host_keygen'
+    },  # end of target 'remoting_host_keygen'
 
     {
-      'target_name': 'chromoting_jingle_glue',
+      'target_name': 'remoting_jingle_glue',
       'type': '<(library)',
       'dependencies': [
         '../base/base.gyp:base',
@@ -339,7 +447,6 @@
         '../jingle/jingle.gyp:notifier',
         '../third_party/libjingle/libjingle.gyp:libjingle',
         '../third_party/libjingle/libjingle.gyp:libjingle_p2p',
-        '../third_party/libsrtp/libsrtp.gyp:libsrtp',
       ],
       'export_dependent_settings': [
         '../third_party/libjingle/libjingle.gyp:libjingle',
@@ -362,21 +469,23 @@
         'jingle_glue/xmpp_socket_adapter.cc',
         'jingle_glue/xmpp_socket_adapter.h',
       ],
-    },  # end of target 'chromoting_jingle_glue'
+    },  # end of target 'remoting_jingle_glue'
 
     {
-      'target_name': 'chromoting_protocol',
+      'target_name': 'remoting_protocol',
       'type': '<(library)',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_jingle_glue',
+        'remoting_base',
+        'remoting_jingle_glue',
         '../crypto/crypto.gyp:crypto',
         '../jingle/jingle.gyp:jingle_glue',
       ],
       'export_dependent_settings': [
-        'chromoting_jingle_glue',
+        'remoting_jingle_glue',
       ],
       'sources': [
+        'protocol/auth_token_utils.cc',
+        'protocol/auth_token_utils.h',
         'protocol/buffered_socket_writer.cc',
         'protocol/buffered_socket_writer.h',
         'protocol/client_control_sender.cc',
@@ -436,7 +545,7 @@
         'protocol/video_writer.cc',
         'protocol/video_writer.h',
       ],
-    },  # end of target 'chromoting_protocol'
+    },  # end of target 'remoting_protocol'
 
     {
       'target_name': 'differ_block',
@@ -482,8 +591,8 @@
       'target_name': 'chromotocol_test_client',
       'type': 'executable',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_protocol',
+        'remoting_base',
+        'remoting_protocol',
       ],
       'sources': [
         'protocol/protocol_test_client.cc',
@@ -497,11 +606,11 @@
       'target_name': 'remoting_unittests',
       'type': 'executable',
       'dependencies': [
-        'chromoting_base',
-        'chromoting_client',
-        'chromoting_host',
-        'chromoting_jingle_glue',
-        'chromoting_protocol',
+        'remoting_base',
+        'remoting_client',
+        'remoting_host',
+        'remoting_jingle_glue',
+        'remoting_protocol',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
@@ -525,7 +634,6 @@
         'base/base_mock_objects.cc',
         'base/base_mock_objects.h',
 # BUG57351        'client/chromoting_view_unittest.cc',
-        'host/access_verifier_unittest.cc',
         'host/capturer_linux_unittest.cc',
         'host/capturer_mac_unittest.cc',
         'host/capturer_win_unittest.cc',
@@ -539,11 +647,15 @@
         'host/host_mock_objects.cc',
         'host/host_mock_objects.h',
         'host/json_host_config_unittest.cc',
+        'host/register_support_host_request_unittest.cc',
+        'host/self_access_verifier_unittest.cc',
         'host/screen_recorder_unittest.cc',
         'host/test_key_pair.h',
         'jingle_glue/iq_request_unittest.cc',
         'jingle_glue/jingle_client_unittest.cc',
         'jingle_glue/jingle_thread_unittest.cc',
+        'jingle_glue/mock_objects.cc',
+        'jingle_glue/mock_objects.h',
         'protocol/connection_to_client_unittest.cc',
         'protocol/fake_session.cc',
         'protocol/fake_session.h',
@@ -584,7 +696,7 @@
           ],
         }],
       ],  # end of 'conditions'
-    },  # end of target 'chromoting_unittests'
+    },  # end of target 'remoting_unittests'
   ],  # end of targets
 }
 

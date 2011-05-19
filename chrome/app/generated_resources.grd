@@ -747,6 +747,9 @@ Other platform defines such as use_titlecase are declared in build/common.gypi.
         <message name="IDS_PASTE" desc="The text label of the Paste menu item">
           &amp;Paste
         </message>
+        <message name="IDS_DELETE" desc="The text label of the Delete menu item (which deletes selected text without copying to clipboard)">
+          &amp;Delete
+        </message>
         <message name="IDS_SELECT_ALL" desc="The text label of the Select All menu item">
           Select &amp;all
         </message>
@@ -823,6 +826,9 @@ Other platform defines such as use_titlecase are declared in build/common.gypi.
         </message>
         <message name="IDS_PASTE" desc="In Title Case: The text label of the Paste menu item">
           &amp;Paste
+        </message>
+        <message name="IDS_DELETE" desc="In Title Case: The text label of the Delete menu item (which deletes selected text without copying to clipboard)">
+          &amp;Delete
         </message>
         <message name="IDS_SELECT_ALL" desc="In Title Case: The text label of the Select All menu item">
           Select &amp;All
@@ -3636,6 +3642,9 @@ Other platform defines such as use_titlecase are declared in build/common.gypi.
       <message name="IDS_EXTENSION_PROMPT_WARNING_DEBUGGER" desc="Permission string for access to debugger.">
         Your data on all websites
       </message>
+      <message name="IDS_EXTENSION_PROMPT_WARNING_CLIPBOARD" desc="Permission string for access to clipboard.">
+        Data you copy and paste
+      </message>
 
       <!-- Extension/App error messages -->
       <message name="IDS_EXTENSION_CANT_GET_ABSOLUTE_PATH" desc="Warning displayed in pack dialog when the absolute path to the extension directory can not be found.">
@@ -4064,7 +4073,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Remoting
       </message>
       <message name="IDS_FLAGS_REMOTING_DESCRIPTION" desc="Description of the 'Remoting' client lab.">
-        Enable the UI plus backing code for the Remoting serivce process, and client plugin. Warning: This is currently for developer testing only. Unless you are on the dev team and whitelisted, nothing in the enabled UI will work.
+        Enable the Remoting client plugin. Warning: This is currently for developer testing only. Unless you are on the dev team and whitelisted, nothing in the enabled UI will work.
       </message>
       <message name="IDS_FLAGS_FOCUS_EXISTING_TAB_ON_OPEN_NAME" desc="Name for 'Focus existing tab on open' lab">
         Focus existing tab on open
@@ -4125,6 +4134,18 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_COMPOSITE_TO_TEXTURE_DESCRIPTION" desc="Description of the 'Offscreen Compositing' lab.">
         Enables compositing to offscreen texture instead of directly to display.
+      </message>
+      <message name="IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME" desc="Name of the 'Force compositing mode' lab.">
+        GPU compositing on all pages
+      </message>
+      <message name="IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION" desc="Description of the 'Force compositing mode' lab.">
+        Uses GPU accelerated compositing on all pages, not just those that include GPU-accelerated layers.
+      </message>
+      <message name="IDS_FLAGS_IGNORE_GPU_BLACKLIST_NAME" desc="Name of the 'Ignore GPU blacklist' lab.">
+        Override software rendering list
+      </message>
+      <message name="IDS_FLAGS_IGNORE_GPU_BLACKLIST_DESCRIPTION" desc="Description of the 'Ignore GPU blacklist' lab.">
+        Overrides the built-in software rendering list and enables GPU-acceleration on unsupported system configurations.
       </message>
       <message name="IDS_FLAGS_ACCELERATED_CANVAS_2D_NAME" desc="Name of the 'GPU Accelerated Canvas 2D' lab.">
         GPU Accelerated Canvas 2D
@@ -4198,11 +4219,14 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_DISABLE_INTERACTIVE_FORM_VALIDATION_DESCRIPTION" desc="Description of the 'Disable HTML5 interactive form validation' lab.">
         Disable showing validation messages and preventing form submission.
       </message>
-      <message name="IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER" desc="Name of the 'Enable better visit history matching in the omnibox' lab.">
-        Better omnibox history matching
+      <message name="IDS_FLAGS_ENABLE_COMPACT_NAVIGATION" desc="Name of the 'Compact Navigation' lab.">
+        Compact Navigation
       </message>
-      <message name="IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER_DESCRIPTION" desc="Description of the 'Enable better visit history matching in the omnibox' lab.">
-        Enables substring and multi-fragment matching within URLs from history.
+      <message name="IDS_FLAGS_ENABLE_COMPACT_NAVIGATION_DESCRIPTION" desc="Description of the 'Compact Navigation' lab.">
+        Adds a "Hide the toolbar" entry to the tabstrip's context menu. Use this to toggle between always displaying the toolbar (default) and only opening it as a drop down box as needed.
+      </message>
+      <message name="IDS_COMPACT_NAVIGATION_BAR" desc="The menu item on the app menu to toggle compact navigation bar">
+        Compact Navigation Bar
       </message>
       <message name="IDS_FLAGS_NEW_TAB_PAGE_4_NAME" desc="Name of the new tab page 4 lab.">
         Experimental new tab page
@@ -4227,12 +4251,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_LINUX_GLOBAL_MENUBAR_DESCRIPTION" desc="Description for the flag to show a global menu bar on linux.">
         Newer versions of Unity and GNOME (including the upcoming Ubuntu Natty Narwhal) show an OSX style menubar across the top of the screen.
-      </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_NAME" desc="Name of the 'Experimental Wi-Fi EAP methods' lab.">
-        Experimental Wi-Fi EAP methods
-      </message>
-      <message name="IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_DESCRIPTION" desc="Description of the 'Experimental Wi-Fi EAP methods' lab.">
-        Experimental support for additional Wi-Fi Extensible Authentication Protocol methods, such as EAP-TLS and LEAP.
       </message>
       <message name="IDS_FLAGS_ENABLE_VPN_NAME" desc="Title for the flag to enable VPN support">
         VPN support
@@ -4469,11 +4487,23 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_ABOUT_VERSION_UNOFFICIAL" desc="unofficial build on the about:version page">
         Developer Build
       </message>
+      <message name="IDS_ABOUT_VERSION_OS" desc="label for the OS on the about:version page">
+        OS
+      </message>
       <message name="IDS_ABOUT_VERSION_USER_AGENT" desc="label for the user agent on the about:version page">
         User Agent
       </message>
       <message name="IDS_ABOUT_VERSION_COMMAND_LINE" desc="label for the command line on the about:version page">
         Command Line
+      </message>
+      <message name="IDS_ABOUT_VERSION_EXECUTABLE_PATH" desc="label for the executable path on the about:version page">
+        Executable Path
+      </message>
+      <message name="IDS_ABOUT_VERSION_PROFILE_PATH" desc="label for the profile path on the about:version page">
+        Profile Path
+      </message>
+      <message name="IDS_ABOUT_VERSION_PATH_NOTFOUND" desc="label for the non-existent path on the about:version page">
+        No such file or directory
       </message>
 
       <!-- Javascript Dialog Box strings -->
@@ -5182,8 +5212,8 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_COOKIES_ALLOW_RADIO" desc="A radio button in the Content Settings dialog for allowing cookies and other site data to be stored on your computer.">
         Allow local data to be set (recommended)
       </message>
-      <message name="IDS_COOKIES_ASK_EVERY_TIME_RADIO" desc="A radio button in the Content Settings dialog for asking to store cookies and other site data on your computer every time.">
-        Ask me when a site tries to set data
+      <message name="IDS_COOKIES_SESSION_ONLY_RADIO" desc="A radio button in the Content Settings dialog for allowing cookies and other site data for the current session only.">
+        Allow local data to be set for the current session only
       </message>
       <message name="IDS_COOKIES_BLOCK_RADIO" desc="A radio button in the Content Settings dialog for blocking cookies and other site data from being stored on your computer.">
         Block sites from setting any data
@@ -5519,6 +5549,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_PRINT_PREVIEW_FAILED" desc="Message to display when print preview fails.">
         Print preview failed.
       </message>
+      <message name="IDS_PRINT_PREVIEW_INITIATOR_TAB_CLOSED" desc="Message to display when print preview fails, because the user closed the tab that initiated the print preview before the preview was generated.">
+        Print preview failed because the page you are trying to print has been closed. Please click &lt;a href="<ph name="INITIATOR_TAB_URL">$1<ex>http://www.google.com</ex></ph>"&gt;here&lt;/a&gt; to reopen the page and try printing again.
+      </message>
       <message name="IDS_PRINT_PREVIEW_PRINT_BUTTON" desc="Print button.">
         Print
       </message>
@@ -5530,15 +5563,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_PRINT_PREVIEW_DESTINATION_LABEL" desc="Destination option label. It is displayed right on top of the available printers list.">
         Destination
-      </message>
-      <message name="IDS_PRINT_PREVIEW_BINDING_LABEL" desc="Binding option label.">
-        Binding
-      </message>
-      <message name="IDS_PRINT_PREVIEW_OPTION_LONG_EDGE_BINDING" desc="Option to specify long edge binding when duplex printing is used.">
-        Long-edge binding
-      </message>
-      <message name="IDS_PRINT_PREVIEW_OPTION_SHORT_EDGE_BINDING" desc="Option to specify short edge binding when duplex printing is used.">
-        Short-edge binding
       </message>
       <message name="IDS_PRINT_PREVIEW_OPTION_BW" desc="Option to print in black and white.">
         Black and white
@@ -5592,11 +5616,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
           desc="Option shown in printer drop-down list for managing printers.">
         Manage Printers...
       </message>
-      <message name="IDS_PRINT_PREVIEW_SUMMARY_FORMAT" desc="Print summary, explaining to the user how many pages will be printed.">
-        Total: <ph name="NUMBER_OF_PAGES">$1<ex>4</ex></ph> <ph name="PAGE_OR_PAGES_LABEL">$2<ex>Pages</ex></ph> <ph name="TWO_SIDED">$3<ex>(two-sided)</ex></ph> <ph name="TIMES">$4<ex>x</ex></ph> <ph name="NUMBER_OF_COPIES">$5<ex>2</ex></ph> <ph name="COPIES_LABEL">$6<ex>copies</ex></ph> <ph name="EQUAL_SIGN">$7<ex>=</ex></ph> <ph name="NUMBER_OF_SHEETS">$8<ex>10</ex></ph> <ph name="SHEETS_LABEL">$9<ex>sheets of paper</ex></ph>
+      <message name="IDS_PRINT_PREVIEW_SUMMARY_FORMAT_LONG" desc="Print summary, explaining to the user how many pages will be printed.">
+        Total: <ph name="NUMBER_OF_SHEETS">$1<ex>10</ex></ph> <ph name="SHEETS_LABEL">$2<ex>sheets of paper</ex></ph> (<ph name="NUMBER_OF_PAGES">$3<ex>4</ex></ph> <ph name="PAGE_OR_PAGES_LABEL">$4<ex>Pages</ex></ph>)
       </message>
-      <message name="IDS_PRINT_PREVIEW_SHEETS_LABEL" desc="Label shown in the print preview summary.">
+      <message name="IDS_PRINT_PREVIEW_SUMMARY_FORMAT_SHORT" desc="Print summary, explaining to the user how many pages will be printed.">
+        Total: <ph name="NUMBER_OF_SHEETS">$1<ex>10</ex></ph> <ph name="SHEETS_LABEL">$2<ex>sheets of paper</ex></ph>
+      </message>
+      <message name="IDS_PRINT_PREVIEW_SHEETS_LABEL_PLURAL" desc="Label shown in the print preview summary.">
         sheets of paper
+      </message>
+      <message name="IDS_PRINT_PREVIEW_SHEETS_LABEL_SINGULAR" desc="Label shown in the print preview summary.">
+        sheet of paper
       </message>
       <message name="IDS_PRINT_PREVIEW_PAGE_LABEL_SINGULAR" desc="Label shown in the print preview summary.">
         page
@@ -5687,6 +5717,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <message name="IDS_TAB_CXMENU_USE_VERTICAL_TABS" desc="Use the vertical tab strip">
           Use side tabs
         </message>
+        <message name="IDS_TAB_CXMENU_USE_COMPACT_NAVIGATION_BAR" desc="Hide the toolbar so that we use the compact navigation bar instead">
+          Hide the toolbar
+        </message>
         <message name="IDS_TAB_CXMENU_SELECT_BY_DOMAIN" desc="The label of the tab context menu item for selecting tabs with the same domain">
           Select by domain
         </message>
@@ -5733,6 +5766,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
         </message>
         <message name="IDS_TAB_CXMENU_USE_VERTICAL_TABS" desc="In Title Case: Use the vertical tab strip">
           Use Side Tabs
+        </message>
+        <message name="IDS_TAB_CXMENU_USE_COMPACT_NAVIGATION_BAR" desc="In Title Case: Hide the toolbar so that we use the compact navigation bar instead">
+          Hide The Toolbar
         </message>
         <message name="IDS_TAB_CXMENU_SELECT_BY_DOMAIN" desc="The label of the tab context menu item for selecting tabs with the same domain">
           Select by Domain
@@ -8307,6 +8343,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_ADVANCED_SECTION_TITLE_CLOUD_PRINT">
         <ph name="CLOUD_PRINT_NAME">Google Cloud Print</ph>
       </message>
+      <message name="IDS_OPTIONS_ADVANCED_SECTION_TITLE_BACKGROUND">
+        Background Apps
+      </message>
 
       <!-- Multiple download warning-->
       <message name="IDS_MULTI_DOWNLOAD_WARNING" desc="Warning invoked if multiple downloads are attempted without user interaction.">
@@ -8603,53 +8642,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Type your search query here
       </message>
 
-      <!-- Remoting strings -->
-      <message name="IDS_OPTIONS_ADVANCED_SECTION_TITLE_REMOTING" desc="Title for the remoting options section.">
-        Remoting
-      </message>
-      <message name="IDS_OPTIONS_REMOTING_SETUP_BUTTON" desc="Title for the remoting setup button.">
-        Set up this computer for remote access...
-      </message>
-      <message name="IDS_OPTIONS_REMOTING_STOP_BUTTON" desc="Title for the remoting stop button.">
-        Disable remote access to this computer
-      </message>
-      <message name="IDS_REMOTING_SETUP_DIALOG_TITLE" desc="Title of the remoting setup dialog.">
-        Set up remote access
-      </message>
-      <message name="IDS_REMOTING_SETTING_UP_MESSAGE" desc="Message shown while remoting host is being started">
-        Setting up remote access to this computer.
-      </message>
-      <message name="IDS_REMOTING_SUCCESS_TITLE" desc="Header of the page that is shown when remoting configuration is finished.">
-        Success!
-      </message>
-      <message name="IDS_REMOTING_SUCCESS_MESSAGE" desc="Message shown during remoting host setup after the host is successfully initialized.">
-        Remoting was started successfully. Now you should be able to connect to this computer remotely.
-      </message>
-      <message name="IDS_REMOTING_SERVICE_PROCESS_FAILED_MESSAGE" desc="Message shown during remoting host setup if there was an error starting service process.">
-        Unable to start service process.
-      </message>
-      <message name="IDS_REMOTING_REGISTRATION_FAILED_MESSAGE" desc="Message shown during remoting host setup if there was an error registering the host.">
-        Failed to register this computer for remote access.
-      </message>
-      <message name="IDS_REMOTING_REGISTRATION_ACCESS_DENIED" desc="Error message during remoting host setup if access to the remoting directory was denied.">
-        Access to the remoting host directory was denied. Please try with another account.
-      </message>
-      <message name="IDS_REMOTING_RETRY_BUTTON_TEXT" desc="Text for retry button">
-        Retry
-      </message>
-      <message name="IDS_REMOTING_STATUS_DISABLED_TEXT" desc="Status string shown when remoting is completely disabled.">
-        Remote access to or from this computer is disabled.
-      </message>
-      <message name="IDS_REMOTING_STATUS_ENABLED_TEXT" desc="Status string shown when a machine is enabled to be a remote access viewer (but not a host).">
-        Remote access to other computers is enabled.
-      </message>
-      <message name="IDS_REMOTING_STATUS_HOST_ENABLED_TEXT" desc="Status string shown when a machine is enabled to be a remote access host, but has not yet been configured.">
-        Remote access to this computer is not set up.
-      </message>
-      <message name="IDS_REMOTING_STATUS_CONFIGURED_TEXT" desc="Status string shown when a machine has been configured as a host for remote access.">
-        Remote access to this computer is set up for <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>.
-      </message>
-
       <!-- Sync strings -->
 
       <!-- Sync options dialog strings -->
@@ -8735,20 +8727,8 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_SYNC_LOGIN_FOR_ENCRYPTION" desc="Explanation of login for the purpose of encryption.">
         <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> can now sync your passwords. To protect your data, you need to confirm your account information.
       </message>
-      <message name="IDS_SYNC_FIRST_PASSPHRASE_TITLE" desc="Title for dialog setting up first passphrase.">
-        Sync your passwords
-      </message>
       <message name="IDS_SYNC_PASSPHRASE_ENCRYPTION_MESSAGE" desc="Message explaining that passwords are encrypted.">
         For added security, <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> will encrypt your passwords.
-      </message>
-      <message name="IDS_SYNC_FIRST_PASSPHRASE_MESSAGE" desc="Message for setting up first passphrase.">
-        <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> can now sync your passwords; your data will be encrypted with your Google Account password or a passphrase of your choosing.
-      </message>
-      <message name="IDS_SYNC_FIRST_PASSPHRASE_OK" desc="Message to confirm the passphrase setup.">
-        Sync passwords
-      </message>
-      <message name="IDS_SYNC_FIRST_PASSPHRASE_CANCEL" desc="Message to opt out of the passphrase setup and password sync">
-        No thanks
       </message>
       <message name="IDS_SYNC_PASSPHRASE_OPT_GOOGLE" desc="Radio button label for using Google password.">
         Use my Google Account password
@@ -8789,15 +8769,29 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_SYNC_CUSTOMIZE_BUTTON_LABEL" desc="The text to display on the button to customize which data types the user is syncing.">
         Customize...
       </message>
-      <message name="IDS_SYNC_STOP_SYNCING_BUTTON_LABEL" desc="The text to display on the button to indicate stop syncing functionality.">
-        Stop syncing this account
-      </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_STOP_SYNCING_BUTTON_LABEL" desc="The text to display on the button to indicate stop syncing functionality.">
+          Stop syncing this account...
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_STOP_SYNCING_BUTTON_LABEL" desc="In title case: the text to display on the button to indicate stop syncing functionality.">
+          Stop Syncing This Account...
+        </message>
+      </if>
       <message name="IDS_SYNC_STOP_SYNCING_CONFIRM_BUTTON_LABEL" desc="The text to display on the button to confirm the user wishes to stop syncing.">
         Stop syncing
       </message>
-      <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="The title of the dialog that explains what 'stop syncing' means.">
-        Stop syncing this account
-      </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="The title of the dialog that explains what 'stop syncing' means.">
+          Stop syncing this account
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_STOP_SYNCING_DIALOG_TITLE" desc="In title case: the title of the dialog that explains what 'stop syncing' means.">
+          Stop Syncing This Account
+        </message>
+      </if>
       <message name="IDS_SYNC_STOP_SYNCING_EXPLANATION_LABEL" desc="The text to display below the 'Stop syncing this account' button on the options pane, explaining what the button does.">
         If you stop syncing, the data stored on this computer as well as the data stored in your Google Account will remain in both places. However, new data or changes you make to your data will not be synchronized between them.
       </message>
@@ -8840,23 +8834,24 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Synced to <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>
       </message>
 
-      <!-- Customize Sync dialog, tab labels -->
-      <message name="IDS_SYNC_SETUP_CONFIGURE_TITLE" desc="The title of the Customize page of the sync setup dialog.">
-        Customize Sync Preferences
-      </message>
-      <message name="IDS_SYNC_DATA_TYPES_TAB_NAME" desc="The title of the Data Types tab in the customize sync dialog.">
-        Data Types
-      </message>
-      <message name="IDS_SYNC_ENCRYPTION_TAB_NAME" desc="The title of the Encryption tab in the customize sync dialog.">
-        Encryption
-      </message>
+      <!-- Customize Sync dialog -->
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_SETUP_CONFIGURE_TITLE" desc="The title of the Customize page of the sync setup dialog.">
+          Customize sync preferences
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_SETUP_CONFIGURE_TITLE" desc="In title case: the title of the Customize page of the sync setup dialog.">
+          Customize Sync Preferences
+        </message>
+      </if>
       <if expr="not pp_ifdef('use_titlecase')">
         <message name="IDS_SYNC_CONFIRM_SYNC_PREFERENCES" desc="The title of the 'Confirm Sync Preferences' page of the customize sync dialog.">
           Confirm sync preferences
         </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
-        <message name="IDS_SYNC_CONFIRM_SYNC_PREFERENCES" desc="The title of the 'Confirm Sync Preferences' page of the customize sync dialog.">
+        <message name="IDS_SYNC_CONFIRM_SYNC_PREFERENCES" desc="In title case: The title of the 'Confirm Sync Preferences' page of the customize sync dialog.">
           Confirm Sync Preferences
         </message>
       </if>
@@ -8929,9 +8924,16 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
 
       <!-- Passphrase dialog strings -->
-      <message name="IDS_SYNC_ENTER_PASSPHRASE_TITLE" desc="Title for the dialog where the user enters the passphrase.">
-        Enter your sync passphrase
-      </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_ENTER_PASSPHRASE_TITLE" desc="Title for the dialog where the user enters the passphrase.">
+          Enter your sync passphrase
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_ENTER_PASSPHRASE_TITLE" desc="In title case: title for the dialog where the user enters the passphrase.">
+          Enter Your Sync Passphrase
+        </message>
+      </if>
       <message name="IDS_SYNC_ENTER_PASSPHRASE_BODY" desc="Instructions for the dialog where the user enters the passphrase.">
         You already have data that is encrypted with a passphrase. Please enter it below.
       </message>
@@ -8975,9 +8977,16 @@ Keep your key file in a safe place. You will need it to create new versions of y
         <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> sync makes it easy to share your data (such as bookmarks and preferences) between your computers.
         <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> synchronizes your data by storing it online with Google when you sign in with your Google Account.
       </message>
-      <message name="IDS_SYNC_SETUP_TITLE" desc="The title of the Sync Setup overlay.">
-        Sign in with your Google Account
-      </message>
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_SETUP_TITLE" desc="The title of the Sync Setup overlay.">
+          Sign in with your Google Account
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_SYNC_SETUP_TITLE" desc="In title case: The title of the Sync Setup overlay.">
+          Sign In With Your Google Account
+        </message>
+      </if>
       <message name="IDS_SYNC_LOGIN_SIGNIN_PREFIX" desc="The first part of the sentence that is displayed after the login info">
         Sign in with your
       </message>
@@ -10499,9 +10508,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_HARDWARE_REVISION" desc="Cellular device hardware revision label under network details in chrome:settings/internet.">
         Hardware:
       </message>
-      <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_LAST_UPDATE" desc="Cellular device last updated label under network details in chrome:settings/internet.">
-        Last updated:
-      </message>
       <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_PRL_VERSION" desc="Cellular device PRL version label under network details in chrome:settings/internet.">
         PRL version:
       </message>
@@ -11362,6 +11368,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_STATUSBAR_BATTERY_PERCENTAGE" desc="In the power menu button, this shows what percentage of battery is left.">
         Battery: <ph name="PRECENTAGE">$1<ex>100</ex></ph>%
       </message>
+      <message name="IDS_STATUSBAR_NO_BATTERY" desc="In the power menu button, menu item label shown when there is no battery installed in the device.">
+        No battery
+      </message>
       <message name="IDS_STATUSBAR_BATTERY_TIME_UNTIL_FULL" desc="In the power menu button, this shows how much time until fully charged.">
         <ph name="HOUR">$1<ex>2</ex></ph>:<ph name="MINUTE">$2<ex>30</ex></ph> until full
       </message>
@@ -11693,9 +11702,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_HARDWARE_REVISION" desc="Label for cellular network modem hardware revision under chrome://options/internet">
         Hardware revision:
       </message>
-      <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_LAST_UPDATE" desc="Label for cellular network modem last update time under chrome://options/internet">
-        Last update:
-      </message>
       <message name="IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_PRL_VERSION" desc="Label for cellular network modem PRL (Preferred Roaming List) version under chrome://options/internet">
         PRL version:
       </message>
@@ -11885,9 +11891,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_KEYBOARD_OVERLAY_PREVIOUS_WINDOW" desc="The text in the keyboard overlay to explain the shortcut.">
         Previous window
       </message>
-      <message name="IDS_KEYBOARD_OVERLAY_USE_EXTERNAL_MONITOR" desc="The text in the keyboard overlay to explain the shortcut.">
-        Use external monitor
-      </message>
       <message name="IDS_KEYBOARD_OVERLAY_RELOAD_IGNORING_CACHE" desc="The text in the keyboard overlay to explain the shortcut.">
         Reload ignoring cache
       </message>
@@ -11938,6 +11941,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_KEYBOARD_OVERLAY_LOCK_SCREEN_OR_POWER_OFF" desc="The text in the keyboard overlay to explain the shortcut.">
         Lock screen or power off
+      </message>
+      <message name="IDS_KEYBOARD_OVERLAY_INPUT_UNICODE_CHARACTERS" desc="The text in the keyboard overlay to explain the shortcut.">
+        Input Unicode characters
       </message>
     </if>
     <if expr="pp_ifdef('chromeos') and lang == 'ja'">
@@ -12402,6 +12408,20 @@ Keep your key file in a safe place. You will need it to create new versions of y
     <message name="IDS_EXPORT_BOOKMARKS_DEFAULT_FILENAME" desc="Filename that pre-populates the filename field when user clicks attempts to export his bookmarks.">
       bookmarks_<ph name="DATESTAMP">$1<ex>02_11_11</ex></ph>.html
     </message>
+
+      <!-- Panels -->
+      <message name="IDS_PANEL_OPTIONS_MENU_MINIMIZE_ALL" desc="Text for the menu item of the options menu to minimize all panels.">
+        Minimize all
+      </message>
+      <message name="IDS_PANEL_OPTIONS_MENU_RESTORE_ALL" desc="Text for the menu item of the options menu to restore all panels.">
+        Restore all
+      </message>
+      <message name="IDS_PANEL_OPTIONS_MENU_CLOSE_ALL" desc="Text for the menu item of the options menu to close all panels.">
+        Close all
+      </message>
+      <message name="IDS_PANEL_OPTIONS_MENU_ABOUT" desc="Text for the menu item of the options menu to show the information about the panel.">
+        About this panel
+      </message>
 
     </messages>
     <includes>

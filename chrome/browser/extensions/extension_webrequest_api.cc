@@ -69,12 +69,12 @@ COMPILE_ASSERT(
 
 #define ARRAYEND(array) (array + arraysize(array))
 
-static bool IsWebRequestEvent(const std::string& event_name) {
+bool IsWebRequestEvent(const std::string& event_name) {
   return std::find(kWebRequestEvents, ARRAYEND(kWebRequestEvents),
                    event_name) != ARRAYEND(kWebRequestEvents);
 }
 
-static const char* ResourceTypeToString(ResourceType::Type type) {
+const char* ResourceTypeToString(ResourceType::Type type) {
   ResourceType::Type* iter =
       std::find(kResourceTypeValues, ARRAYEND(kResourceTypeValues), type);
   if (iter == ARRAYEND(kResourceTypeValues))
@@ -83,7 +83,7 @@ static const char* ResourceTypeToString(ResourceType::Type type) {
   return kResourceTypeStrings[iter - kResourceTypeValues];
 }
 
-static bool ParseResourceType(const std::string& type_str,
+bool ParseResourceType(const std::string& type_str,
                               ResourceType::Type* type) {
   const char** iter =
       std::find(kResourceTypeStrings, ARRAYEND(kResourceTypeStrings), type_str);
@@ -93,7 +93,7 @@ static bool ParseResourceType(const std::string& type_str,
   return true;
 }
 
-static void ExtractRequestInfo(net::URLRequest* request,
+void ExtractRequestInfo(net::URLRequest* request,
                                int* tab_id,
                                int* window_id,
                                ResourceType::Type* resource_type) {
@@ -113,7 +113,7 @@ static void ExtractRequestInfo(net::URLRequest* request,
       *iter : ResourceType::LAST_TYPE;
 }
 
-static void AddEventListenerOnIOThread(
+void AddEventListenerOnIOThread(
     ProfileId profile_id,
     const std::string& extension_id,
     const std::string& event_name,
@@ -125,7 +125,7 @@ static void AddEventListenerOnIOThread(
       extra_info_spec);
 }
 
-static void EventHandledOnIOThread(
+void EventHandledOnIOThread(
     ProfileId profile_id,
     const std::string& extension_id,
     const std::string& event_name,
@@ -135,6 +135,43 @@ static void EventHandledOnIOThread(
   ExtensionWebRequestEventRouter::GetInstance()->OnEventHandled(
       profile_id, extension_id, event_name, sub_event_name, request_id,
       response);
+}
+
+// Creates a list of HttpHeaders (see extension_api.json). If |headers| is
+// NULL, the list is empty. Ownership is passed to the caller.
+ListValue* GetResponseHeadersList(const net::HttpResponseHeaders* headers) {
+  ListValue* headers_value = new ListValue();
+  if (headers) {
+    void* iter = NULL;
+    std::string name;
+    std::string value;
+    while (headers->EnumerateHeaderLines(&iter, &name, &value)) {
+      DictionaryValue* header = new DictionaryValue();
+      header->SetString(keys::kHeaderNameKey, name);
+      header->SetString(keys::kHeaderValueKey, value);
+      headers_value->Append(header);
+    }
+  }
+  return headers_value;
+}
+
+ListValue* GetRequestHeadersList(const net::HttpRequestHeaders* headers) {
+  ListValue* headers_value = new ListValue();
+  if (headers) {
+    for (net::HttpRequestHeaders::Iterator it(*headers); it.GetNext(); ) {
+      DictionaryValue* header = new DictionaryValue();
+      header->SetString(keys::kHeaderNameKey, it.name());
+      header->SetString(keys::kHeaderValueKey, it.name());
+      headers_value->Append(header);
+    }
+  }
+  return headers_value;
+}
+
+// Creates a StringValue with the status line of |headers|. If |headers| is
+// NULL, an empty string is returned.  Ownership is passed to the caller.
+StringValue* GetStatusLine(net::HttpResponseHeaders* headers) {
+  return new StringValue(headers ? headers->GetStatusLine() : "");
 }
 
 }  // namespace
@@ -390,16 +427,9 @@ int ExtensionWebRequestEventRouter::OnBeforeSendHeaders(
   dict->SetString(keys::kUrlKey, request->url().spec());
   dict->SetDouble(keys::kTimeStampKey, base::Time::Now().ToDoubleT() * 1000);
 
-  if (extra_info_spec & ExtraInfoSpec::REQUEST_HEADERS) {
-    ListValue* headers_value = new ListValue();
-    for (net::HttpRequestHeaders::Iterator it(*headers); it.GetNext(); ) {
-      DictionaryValue* header = new DictionaryValue();
-      header->SetString(keys::kHeaderNameKey, it.name());
-      header->SetString(keys::kHeaderValueKey, it.name());
-      headers_value->Append(header);
-    }
-    dict->Set(keys::kRequestHeadersKey, headers_value);
-  }
+  if (extra_info_spec & ExtraInfoSpec::REQUEST_HEADERS)
+    dict->Set(keys::kRequestHeadersKey, GetRequestHeadersList(headers));
+  // TODO(battre): implement request line.
 
   args.Append(dict);
 
@@ -416,7 +446,8 @@ void ExtensionWebRequestEventRouter::OnRequestSent(
     ProfileId profile_id,
     ExtensionEventRouterForwarder* event_router,
     uint64 request_id,
-    const net::HostPortPair& socket_address) {
+    const net::HostPortPair& socket_address,
+    const net::HttpRequestHeaders& headers) {
   if (profile_id == Profile::kInvalidProfileId)
     return;
   base::Time time(base::Time::Now());
@@ -446,7 +477,9 @@ void ExtensionWebRequestEventRouter::OnRequestSent(
   dict->SetString(keys::kUrlKey, request->url().spec());
   dict->SetString(keys::kIpKey, socket_address.host());
   dict->SetDouble(keys::kTimeStampKey, time.ToDoubleT() * 1000);
-  // TODO(battre): support "request line" and "request headers".
+  if (extra_info_spec & ExtraInfoSpec::REQUEST_HEADERS)
+    dict->Set(keys::kRequestHeadersKey, GetRequestHeadersList(&headers));
+  // TODO(battre): support "request line".
   args.Append(dict);
 
   DispatchEvent(profile_id, event_router, request, listeners, args);
@@ -485,7 +518,12 @@ void ExtensionWebRequestEventRouter::OnBeforeRedirect(
   dict->SetString(keys::kRedirectUrlKey, new_location.spec());
   dict->SetInteger(keys::kStatusCodeKey, http_status_code);
   dict->SetDouble(keys::kTimeStampKey, time.ToDoubleT() * 1000);
-  // TODO(battre): support "statusLine", "responseHeaders"
+  if (extra_info_spec & ExtraInfoSpec::RESPONSE_HEADERS) {
+    dict->Set(keys::kResponseHeadersKey,
+              GetResponseHeadersList(request->response_headers()));
+  }
+  if (extra_info_spec & ExtraInfoSpec::STATUS_LINE)
+    dict->Set(keys::kStatusLineKey, GetStatusLine(request->response_headers()));
   args.Append(dict);
 
   DispatchEvent(profile_id, event_router, request, listeners, args);
@@ -523,7 +561,12 @@ void ExtensionWebRequestEventRouter::OnResponseStarted(
   dict->SetString(keys::kUrlKey, request->url().spec());
   dict->SetInteger(keys::kStatusCodeKey, response_code);
   dict->SetDouble(keys::kTimeStampKey, time.ToDoubleT() * 1000);
-  // TODO(battre): support "statusLine", "responseHeaders".
+  if (extra_info_spec & ExtraInfoSpec::RESPONSE_HEADERS) {
+    dict->Set(keys::kResponseHeadersKey,
+              GetResponseHeadersList(request->response_headers()));
+  }
+  if (extra_info_spec & ExtraInfoSpec::STATUS_LINE)
+    dict->Set(keys::kStatusLineKey, GetStatusLine(request->response_headers()));
   args.Append(dict);
 
   DispatchEvent(profile_id, event_router, request, listeners, args);
@@ -561,7 +604,12 @@ void ExtensionWebRequestEventRouter::OnCompleted(
   dict->SetString(keys::kUrlKey, request->url().spec());
   dict->SetInteger(keys::kStatusCodeKey, response_code);
   dict->SetDouble(keys::kTimeStampKey, time.ToDoubleT() * 1000);
-  // TODO(battre): support "statusLine", "responseHeaders".
+  if (extra_info_spec & ExtraInfoSpec::RESPONSE_HEADERS) {
+    dict->Set(keys::kResponseHeadersKey,
+              GetResponseHeadersList(request->response_headers()));
+  }
+  if (extra_info_spec & ExtraInfoSpec::STATUS_LINE)
+    dict->Set(keys::kStatusLineKey, GetStatusLine(request->response_headers()));
   args.Append(dict);
 
   DispatchEvent(profile_id, event_router, request, listeners, args);
@@ -587,16 +635,13 @@ void ExtensionWebRequestEventRouter::OnErrorOccurred(
   if (listeners.empty())
     return;
 
-  // TODO(mpcomplete): Convert network error status to string, see discussion
-  // in http://codereview.chromium.org/6881104/.
-  std::string my_error = "";
-
   ListValue args;
   DictionaryValue* dict = new DictionaryValue();
   dict->SetString(keys::kRequestIdKey,
                   base::Uint64ToString(request->identifier()));
   dict->SetString(keys::kUrlKey, request->url().spec());
-  dict->SetString(keys::kErrorKey, my_error);
+  dict->SetString(keys::kErrorKey,
+                  net::ErrorToString(request->status().os_error()));
   dict->SetDouble(keys::kTimeStampKey, time.ToDoubleT() * 1000);
   args.Append(dict);
 
@@ -639,6 +684,10 @@ bool ExtensionWebRequestEventRouter::DispatchEvent(
     CHECK(args_filtered->GetDictionary(0, &dict) && dict);
     if (!((*it)->extra_info_spec & ExtraInfoSpec::REQUEST_HEADERS))
       dict->Remove(keys::kRequestHeadersKey, NULL);
+    if (!((*it)->extra_info_spec & ExtraInfoSpec::RESPONSE_HEADERS))
+      dict->Remove(keys::kResponseHeadersKey, NULL);
+    if (!((*it)->extra_info_spec & ExtraInfoSpec::STATUS_LINE))
+      dict->Remove(keys::kStatusLineKey, NULL);
 
     base::JSONWriter::Write(args_filtered.get(), false, &json_args);
     event_router->DispatchEventToExtension(
@@ -943,16 +992,15 @@ bool WebRequestEventHandled::RunImpl() {
     }
 
     if (value->HasKey("cancel")) {
+      // Don't allow cancel mixed with other keys.
+      if (value->HasKey("redirectUrl") || value->HasKey("requestHeaders")) {
+        error_ = keys::kInvalidBlockingResponse;
+        return false;
+      }
+
       bool cancel = false;
       EXTENSION_FUNCTION_VALIDATE(value->GetBoolean("cancel", &cancel));
       response->cancel = cancel;
-    }
-
-    // Don't allow cancel mixed with other keys.
-    if (response->cancel &&
-        (value->HasKey("redirectUrl") || value->HasKey("requestHeaders"))) {
-      error_ = keys::kInvalidBlockingResponse;
-      return false;
     }
 
     if (value->HasKey("redirectUrl")) {

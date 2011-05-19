@@ -2418,9 +2418,179 @@
             "parameters": []
           }
         ]
+      },
+      {
+        "name": "sendHandwritingStroke",
+        "type": "function",
+        "description": "Send a handwriting event to Chrome.",
+        "parameters": [
+          {
+            "name": "stroke",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "x": {"type": "number", "minimum": 0, "maximum": 1},
+                "y": {"type": "number", "minimum": 0, "maximum": 1}
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "cancelHandwritingStrokes",
+        "type": "function",
+        "description": "Clear last N handwriting strokes.",
+        "parameters": [
+          {
+            "name": "strokeCount",
+            "optional": true,
+	    "description": "The number of strokes to be removed. Pass 0 to remove all strokes. If omitted, removes all.",
+            "type": "integer",
+            "minimum": 0
+          }
+        ]
       }
     ],
     "events": []
+  },
+  {
+    "namespace": "experimental.inputUI",
+    "nodoc": true,
+    "types": [],
+    "functions": [
+      {
+        "name": "register",
+        "type": "function",
+        "description": "Register the extension, so the extension can receive input method related events.",
+        "parameters": [
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "candidateClicked",
+        "type": "function",
+        "description": "Notify input method engine that a candidate was clicked.",
+        "parameters": [
+          { "type": "integer",
+            "name": "index"
+          },
+          { "type": "integer",
+            "name": "button"
+          },
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "cursorUp",
+        "type": "function",
+        "description": "Notify input method engine cursor up button was clicked.",
+        "parameters": [
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "cursorDown",
+        "type": "function",
+        "description": "Notify input method engine cursor down button was clicked.",
+        "parameters": [
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "pageUp",
+        "type": "function",
+        "description": "Notify input method engine page up button was clicked.",
+        "parameters": [
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "pageDown",
+        "type": "function",
+        "description": "Notify input method engine page down button was clicked.",
+        "parameters": [
+          { "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "This function is called when the event processing is completed.",
+            "parameters": []
+          }
+        ]
+      }
+    ],
+    "events": [
+      {
+        "name": "onSetCursorLocation",
+        "type": "function",
+        "description": "Fired when input cursor location is changed.",
+        "parameters": [
+          { "type": "integer",
+            "name": "x"
+          },
+          { "type": "integer",
+            "name": "y"
+          },
+          { "type": "integer",
+            "name": "width"
+          },
+          { "type": "integer",
+            "name": "height"
+          }
+        ]
+      },
+      {
+        "name": "onUpdateAuxiliaryText",
+        "type": "function",
+        "description": "Fired when auxiliary text is changed.",
+        "parameters": [
+          { "type": "string",
+            "name": "text",
+            "description": "Auxiliary text."
+          }
+        ]
+      },
+      {
+        "name": "onUpdateLookupTable",
+        "type": "function",
+        "description": "Fired when lookup table is updated.",
+        "parameters": [
+          { "type": "object",
+            "properties": {
+              "visible": { "type": "boolean" },
+              "candidates": { "type": "array", "items": { "type": "string" } }
+            },
+            "description": "Lookup table"
+          }
+        ]
+      }
+
+    ]
   },
   {
     "namespace": "experimental.bookmarkManager",
@@ -3715,7 +3885,8 @@
               "requestId": {"type": "string", "description": "The ID of the request."},
               "url": {"type": "string"},
               "ip": {"type": "string", "description": "The server IP address that is actually connected to. Note that it may be a literal IPv6 address."},
-              "timeStamp": {"type": "number", "description": "The time when the browser finished sending the request, in milliseconds since the epoch."}
+              "timeStamp": {"type": "number", "description": "The time when the browser finished sending the request, in milliseconds since the epoch."},
+              "requestHeaders": {"$ref": "HttpHeaders", "optional": true, "description": "The HTTP request headers that have been sent out with this request."}
             }
           }
         ],
@@ -3750,7 +3921,9 @@
               "requestId": {"type": "string", "description": "The ID of the request."},
               "url": {"type": "string"},
               "statusCode": {"type": "integer", "description": "Standard HTTP status code returned by the server."},
-              "timeStamp": {"type": "number", "description": "The time when the status line and response headers were received, in milliseconds since the epoch."}
+              "timeStamp": {"type": "number", "description": "The time when the status line and response headers were received, in milliseconds since the epoch."},
+              "responseHeaders": {"$ref": "HttpHeaders", "optional": true, "description": "The HTTP response headers that were received along with this response."},
+              "statusLine": {"type": "string", "optional": true, "description": "HTTP status line of the response"}
             }
           }
         ],
@@ -3786,7 +3959,9 @@
               "url": {"type": "string", "description": "The URL of the current request."},
               "statusCode": {"type": "integer", "description": "Standard HTTP status code returned by the server."},
               "redirectUrl": {"type": "string", "description": "The new URL."},
-              "timeStamp": {"type": "number", "description": "The time when the browser was about to make the redirect, in milliseconds since the epoch."}
+              "timeStamp": {"type": "number", "description": "The time when the browser was about to make the redirect, in milliseconds since the epoch."},
+              "responseHeaders": {"$ref": "HttpHeaders", "optional": true, "description": "The HTTP response headers that were received along with this redirect."},
+              "statusLine": {"type": "string", "optional": true, "description": "HTTP status line of the response"}
             }
           }
         ],
@@ -3821,7 +3996,9 @@
               "requestId": {"type": "string", "description": "The ID of the request."},
               "url": {"type": "string", "description": "The URL of the current request."},
               "statusCode": {"type": "integer", "description": "Standard HTTP status code returned by the server."},
-              "timeStamp": {"type": "number", "description": "The time when the response was received completely, in milliseconds since the epoch."}
+              "timeStamp": {"type": "number", "description": "The time when the response was received completely, in milliseconds since the epoch."},
+              "responseHeaders": {"$ref": "HttpHeaders", "optional": true, "description": "The HTTP response headers that were received along with this response."},
+              "statusLine": {"type": "string", "optional": true, "description": "HTTP status line of the response"}
             }
           }
         ],
@@ -3855,7 +4032,7 @@
             "properties": {
               "requestId": {"type": "string", "description": "The ID of the request."},
               "url": {"type": "string", "description": "The URL of the current request."},
-              "error": {"type": "string", "description": "The error description."},
+              "error": {"type": "string", "description": "The error description. This string is <em>not</em> guaranteed to remain backwards compatible between releases. You must not parse and act based upon its content."},
               "timeStamp": {"type": "number", "description": "The time when the error occurred, in milliseconds since the epoch."}
             }
           }
@@ -4068,40 +4245,6 @@
         ]
       }
     ]
-  },
-  {
-    "namespace": "experimental.clipboard",
-    "types": [],
-    "functions": [
-      {
-        "name": "executeCopy",
-        "type": "function",
-        "description": "Triggers a copy operation in the specified tab.",
-        "parameters": [
-          {"type": "integer", "name": "tabId", "minimum": 0},
-          {"type": "function", "name": "callback", "optional": true, "parameters": []}
-        ]
-      },
-      {
-        "name": "executeCut",
-        "type": "function",
-        "description": "Triggers a cut operation in the specified tab.",
-        "parameters": [
-          {"type": "integer", "name": "tabId", "minimum": 0},
-          {"type": "function", "name": "callback", "optional": true, "parameters": []}
-        ]
-      },
-      {
-        "name": "executePaste",
-        "type": "function",
-        "description": "Triggers a paste operation in the specified tab.",
-        "parameters": [
-          {"type": "integer", "name": "tabId", "minimum": 0},
-          {"type": "function", "name": "callback", "optional": true, "parameters": []}
-        ]
-      }
-    ],
-    "events": []
   },
   {
     "namespace": "experimental.sidebar",
@@ -4675,7 +4818,6 @@
   },
   {
     "namespace":"fileBrowserHandler",
-    "nodoc": "true",
     "types": [
       {
         "id": "FileHandlerExecuteEventDetails",
@@ -4905,9 +5047,15 @@
         "description": "View multiple files.",
         "parameters": [
           {
+            "name": "fileUrls",
             "type": "array",
             "description": "Array of selected paths",
             "items": {"type": "string"}
+          },
+          {
+            "name": "id",
+            "type": "string",
+            "description": "File browser handler id as for internal tasks."
           }
         ]
       }
@@ -5090,6 +5238,44 @@
         ]
       }
     ]
+  },
+  {
+    "namespace": "webSocketProxyPrivate",
+    "nodoc": true,
+    "types": [],
+    "functions": [
+      {
+        "name": "getPassportForTCP",
+        "description": "requests authorization token for websocket to TCP proxy.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "hostname",
+            "minLength": 1,
+            "description": "hostname to which TCP connection is requested."
+          },
+          {
+            "type": "integer",
+            "name": "port",
+            "minimum": 1,
+            "maximum": 65535,
+            "description": "TCP port number."
+          },
+          { 
+            "type": "function",
+            "name": "callback",
+            "parameters": [
+              { 
+                "type": "string",
+                "name": "passport",
+                "description": "Passport for passing to proxy."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "events": []
   },
   {
     "namespace": "experimental.extension",

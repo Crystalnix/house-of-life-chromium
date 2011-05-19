@@ -15,6 +15,7 @@
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
+#include "base/stringprintf.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/common/common_param_traits.h"
@@ -23,17 +24,17 @@
 #include "chrome/common/search_provider.h"
 #include "chrome/common/thumbnail_score.h"
 #include "chrome/common/translate_errors.h"
-#include "chrome/common/view_types.h"
 #include "content/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 
 // Singly-included section for enums and custom IPC traits.
 #ifndef CHROME_COMMON_RENDER_MESSAGES_H_
 #define CHROME_COMMON_RENDER_MESSAGES_H_
+
+class SkBitmap;
 
 // Command values for the cmd parameter of the
 // ViewHost_JavaScriptStressTestControl message. For each command the parameter
@@ -92,7 +93,6 @@ IPC_ENUM_TRAITS(InstantCompleteBehavior)
 IPC_ENUM_TRAITS(search_provider::OSDDType)
 IPC_ENUM_TRAITS(search_provider::InstallState)
 IPC_ENUM_TRAITS(TranslateErrors::Type)
-IPC_ENUM_TRAITS(ViewType::Type)
 IPC_ENUM_TRAITS(WebKit::WebConsoleMessage::Level)
 
 IPC_STRUCT_TRAITS_BEGIN(ThumbnailScore)
@@ -238,14 +238,6 @@ IPC_MESSAGE_ROUTED4(ViewMsg_DetermineIfPageSupportsInstant,
                     int /* selection_start */,
                     int /* selection_end */)
 
-// Tell the renderer which browser window it's being attached to.
-IPC_MESSAGE_ROUTED1(ViewMsg_UpdateBrowserWindowId,
-                    int /* id of browser window */)
-
-// Tell the renderer which type this view is.
-IPC_MESSAGE_ROUTED1(ViewMsg_NotifyRenderViewType,
-                    ViewType::Type /* view_type */)
-
 // Tells the renderer to translate the page contents from one language to
 // another.
 IPC_MESSAGE_ROUTED4(ViewMsg_TranslatePage,
@@ -313,6 +305,13 @@ IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_AllowDOMStorage,
                             DOMStorageType /* type */,
                             bool /* allowed */)
 
+// Sent by the renderer process to check whether access to FileSystem is
+// granted by content settings.
+IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_AllowFileSystem,
+                            int /* render_view_id */,
+                            GURL /* origin_url */,
+                            bool /* allowed */)
+
 // Sent by the renderer process to check whether access to Indexed DBis
 // granted by content settings.
 IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_AllowIndexedDB,
@@ -320,6 +319,25 @@ IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_AllowIndexedDB,
                             string16 /* origin_url */,
                             string16 /* database name */,
                             bool /* allowed */)
+
+// Gets the content setting for a plugin.
+// If |setting| is set to CONTENT_SETTING_BLOCK, the plug-in is
+// blocked by the content settings for |policy_url|. It still
+// appears in navigator.plugins in Javascript though, and can be
+// loaded via click-to-play.
+//
+// If |setting| is set to CONTENT_SETTING_ALLOW, the domain is
+// explicitly white-listed for the plug-in, or the user has chosen
+// not to block nonsandboxed plugins.
+//
+// If |setting| is set to CONTENT_SETTING_DEFAULT, the plug-in is
+// neither blocked nor white-listed, which means that it's allowed
+// by default and can still be blocked if it's non-sandboxed.
+//
+IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_GetPluginContentSetting,
+                            GURL /* policy_url */,
+                            std::string  /* resource */,
+                            ContentSetting /* setting */)
 
 // Specifies the URL as the first parameter (a wstring) and thumbnail as
 // binary data as the second parameter.
@@ -447,6 +465,11 @@ IPC_MESSAGE_ROUTED4(ViewHostMsg_PageTranslated,
 // may lead to the cancellation of a prerender. The message is sent only when
 // the renderer is prerendering.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_MaybeCancelPrerenderForHTML5Media)
+
+// Message sent from the renderer to the browser to notify it of a
+// window.print() call which should cancel the prerender. The message is sent
+// only when the renderer is prerendering.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_CancelPrerenderForPrinting)
 
 // Sent by the renderer to check if a URL has permission to trigger a clipboard
 // read/write operation from the DOM.

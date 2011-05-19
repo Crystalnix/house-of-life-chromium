@@ -75,7 +75,7 @@
 #include "chrome/browser/tabs/tab_finder.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
-#include "chrome/browser/ui/bookmarks/bookmarks_tab_helper.h"
+#include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_tab_restore_service_delegate.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -102,6 +102,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
 #include "chrome/common/url_constants.h"
@@ -112,7 +113,6 @@
 #include "content/browser/tab_contents/interstitial_page.h"
 #include "content/browser/tab_contents/navigation_controller.h"
 #include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/browser/user_metrics.h"
 #include "content/common/content_restriction.h"
@@ -124,7 +124,6 @@
 #include "net/base/cookie_monster.h"
 #include "net/base/net_util.h"
 #include "net/base/registry_controlled_domain.h"
-#include "net/base/static_cookie_policy.h"
 #include "net/url_request/url_request_context.h"
 #include "ui/base/animation/animation.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -239,6 +238,8 @@ Browser::Browser(Type type, Profile* profile)
                  NotificationService::AllSources());
   registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
                  NotificationService::AllSources());
+  registrar_.Add(this, NotificationType::TAB_CONTENT_SETTINGS_CHANGED,
+                 NotificationService::AllSources());
 
   // Need to know when to alert the user of theme install delay.
   registrar_.Add(this, NotificationType::EXTENSION_READY_FOR_INSTALL,
@@ -264,12 +265,22 @@ Browser::Browser(Type type, Profile* profile)
   encoding_auto_detect_.Init(prefs::kWebKitUsesUniversalDetector,
                              profile_->GetPrefs(), NULL);
   use_vertical_tabs_.Init(prefs::kUseVerticalTabs, profile_->GetPrefs(), this);
+  use_compact_navigation_bar_.Init(prefs::kUseCompactNavigationBar,
+                                   profile_->GetPrefs(),
+                                   this);
 
   if (!TabMenuModel::AreVerticalTabsEnabled()) {
     // If vertical tabs aren't enabled, explicitly turn them off. Otherwise we
     // might show vertical tabs but not show an option to turn them off.
     use_vertical_tabs_.SetValue(false);
   }
+  if (!TabMenuModel::IsCompactNavigationModeEnabled()) {
+    // If the compact navigation bar isn't enabled, explicitly turn it off.
+    // Otherwise we might show the compact navigation bar but not show an option
+    // to turn it off.
+    use_compact_navigation_bar_.SetValue(false);
+  }
+
   UpdateTabStripModelInsertionPolicy();
 
   tab_restore_service_ = TabRestoreServiceFactory::GetForProfile(profile);
@@ -328,6 +339,7 @@ Browser::~Browser() {
 
   encoding_auto_detect_.Destroy();
   use_vertical_tabs_.Destroy();
+  use_compact_navigation_bar_.Destroy();
 
   if (profile_->IsOffTheRecord() &&
       !BrowserList::IsOffTheRecordSessionActive()) {
@@ -426,6 +438,11 @@ void Browser::InitBrowserWindow() {
       NotificationType::BROWSER_WINDOW_READY,
       Source<Browser>(this),
       NotificationService::NoDetails());
+
+  if (use_compact_navigation_bar_.GetValue()) {
+    // This enables the compact navigation bar host.
+    UseCompactNavigationBarChanged();
+  }
 
   // Show the First Run information bubble if we've been told to.
   PrefService* local_state = g_browser_process->local_state();
@@ -1066,7 +1083,7 @@ void Browser::CloseTabContents(TabContents* contents) {
 
 void Browser::BrowserShowHtmlDialog(HtmlDialogUIDelegate* delegate,
                                     gfx::NativeWindow parent_window) {
-  ShowHtmlDialog(delegate, parent_window);
+  window_->ShowHTMLDialog(delegate, parent_window);
 }
 
 void Browser::BrowserRenderWidgetShowing() {
@@ -1216,6 +1233,7 @@ void Browser::UpdateCommandsForFullscreenMode(bool is_fullscreen) {
   command_updater_.UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
   command_updater_.UpdateCommandEnabled(IDC_SHOW_APP_MENU, show_main_ui);
   command_updater_.UpdateCommandEnabled(IDC_TOGGLE_VERTICAL_TABS, show_main_ui);
+  command_updater_.UpdateCommandEnabled(IDC_COMPACT_NAVBAR, show_main_ui);
 #if defined (ENABLE_PROFILING) && !defined(NO_TCMALLOC)
   command_updater_.UpdateCommandEnabled(IDC_PROFILING_ENABLED, show_main_ui);
 #endif
@@ -1251,6 +1269,10 @@ void Browser::UpdateTabStripModelInsertionPolicy() {
 void Browser::UseVerticalTabsChanged() {
   UpdateTabStripModelInsertionPolicy();
   window()->ToggleTabStripMode();
+}
+
+void Browser::UseCompactNavigationBarChanged() {
+  window_->ToggleUseCompactNavigationBar();
 }
 
 bool Browser::SupportsWindowFeatureImpl(WindowFeature feature,
@@ -1669,9 +1691,7 @@ void Browser::EmailPageLocation() {
 }
 
 void Browser::Print() {
-  UserMetrics::RecordAction(UserMetricsAction("PrintPreview"));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnablePrintPreview)) {
+  if (switches::IsPrintPreviewEnabled()) {
     printing::PrintPreviewTabController::PrintPreview(
         GetSelectedTabContents());
   } else {
@@ -2089,9 +2109,14 @@ void Browser::RegisterPrefs(PrefService* prefs) {
 // static
 void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kHomePage,
-                            chrome::kChromeUINewTabURL);
-  prefs->RegisterBooleanPref(prefs::kHomePageIsNewTabPage, true);
-  prefs->RegisterBooleanPref(prefs::kShowHomeButton, false);
+                            chrome::kChromeUINewTabURL,
+                            PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kHomePageIsNewTabPage,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kShowHomeButton,
+                             false,
+                             PrefService::SYNCABLE_PREF);
 #if defined(OS_MACOSX)
   // This really belongs in platform code, but there's no good place to
   // initialize it between the time when the AppController is created
@@ -2101,48 +2126,106 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   // pref to be already initialized. Doing it here also saves us from having
   // to hard-code pref registration in the several unit tests that use
   // this preference.
-  prefs->RegisterBooleanPref(prefs::kConfirmToQuitEnabled, false);
-  prefs->RegisterBooleanPref(prefs::kShowUpdatePromotionInfoBar, true);
+  prefs->RegisterBooleanPref(prefs::kConfirmToQuitEnabled,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kShowUpdatePromotionInfoBar,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 #endif
-  prefs->RegisterBooleanPref(prefs::kDeleteBrowsingHistory, true);
-  prefs->RegisterBooleanPref(prefs::kDeleteDownloadHistory, true);
-  prefs->RegisterBooleanPref(prefs::kDeleteCache, true);
-  prefs->RegisterBooleanPref(prefs::kDeleteCookies, true);
-  prefs->RegisterBooleanPref(prefs::kDeletePasswords, false);
-  prefs->RegisterBooleanPref(prefs::kDeleteFormData, false);
-  prefs->RegisterIntegerPref(prefs::kDeleteTimePeriod, 0);
-  prefs->RegisterBooleanPref(prefs::kCheckDefaultBrowser, true);
-  prefs->RegisterBooleanPref(prefs::kShowOmniboxSearchHint, true);
-  prefs->RegisterBooleanPref(prefs::kWebAppCreateOnDesktop, true);
-  prefs->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu, true);
-  prefs->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar, true);
-  prefs->RegisterBooleanPref(prefs::kUseVerticalTabs, false);
-  prefs->RegisterBooleanPref(prefs::kEnableTranslate, true);
-  prefs->RegisterBooleanPref(prefs::kEnableBookmarkBar, true);
-  prefs->RegisterBooleanPref(prefs::kRemotingHasSetupCompleted, false);
-  prefs->RegisterBooleanPref(prefs::kChromotingEnabled, false);
-  prefs->RegisterBooleanPref(prefs::kChromotingHostEnabled, false);
-  prefs->RegisterBooleanPref(prefs::kChromotingHostFirewallTraversal, false);
-  prefs->RegisterStringPref(prefs::kCloudPrintEmail, std::string());
-  prefs->RegisterBooleanPref(prefs::kCloudPrintProxyEnabled, true);
-  prefs->RegisterBooleanPref(prefs::kDevToolsDisabled, false);
-  prefs->RegisterBooleanPref(prefs::kIncognitoEnabled, true);
-  prefs->RegisterIntegerPref(prefs::kDevToolsSplitLocation, -1);
-  prefs->RegisterDictionaryPref(prefs::kBrowserWindowPlacement);
-  prefs->RegisterDictionaryPref(prefs::kPreferencesWindowPlacement);
+  prefs->RegisterBooleanPref(prefs::kDeleteBrowsingHistory,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDeleteDownloadHistory,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDeleteCache,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDeleteCookies,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDeletePasswords,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDeleteFormData,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kDeleteTimePeriod,
+                             0,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kCheckDefaultBrowser,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kShowOmniboxSearchHint,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kWebAppCreateOnDesktop,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kWebAppCreateInAppsMenu,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kWebAppCreateInQuickLaunchBar,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUseVerticalTabs,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kUseCompactNavigationBar,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableTranslate,
+                             true,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableBookmarkBar,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterStringPref(prefs::kCloudPrintEmail,
+                            std::string(),
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kCloudPrintProxyEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kDevToolsDisabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kIncognitoEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterIntegerPref(prefs::kDevToolsSplitLocation,
+                             -1,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kBrowserWindowPlacement,
+                                PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kPreferencesWindowPlacement,
+                                PrefService::UNSYNCABLE_PREF);
   // We need to register the type of these preferences in order to query
-  // them even though they're typically only controlled via policy or command
-  // line switches.
-  prefs->RegisterBooleanPref(prefs::kDisable3DAPIs, false);
-  prefs->RegisterBooleanPref(prefs::kPluginsAllowOutdated, false);
-  prefs->RegisterBooleanPref(prefs::kPluginsAlwaysAuthorize, false);
-  prefs->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing, true);
-  prefs->RegisterBooleanPref(prefs::kEnableReferrers, true);
-  prefs->RegisterBooleanPref(prefs::kWebKitAllowRunningInsecureContent, false);
+  // them even though they're only typically controlled via policy.
+  prefs->RegisterBooleanPref(prefs::kDisable3DAPIs,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kPluginsAllowOutdated,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kPluginsAlwaysAuthorize,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableHyperlinkAuditing,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEnableReferrers,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kWebKitAllowRunningInsecureContent,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kWebKitAllowDisplayingInsecureContent,
-                             true);
-
-  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled, true);
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 // static
@@ -2244,6 +2327,7 @@ void Browser::ExecuteCommandWithDisposition(
     case IDC_FULLSCREEN:            ToggleFullscreenMode();           break;
     case IDC_EXIT:                  Exit();                           break;
     case IDC_TOGGLE_VERTICAL_TABS:  ToggleUseVerticalTabs();          break;
+    case IDC_COMPACT_NAVBAR:        ToggleUseCompactNavigationBar();  break;
 #if defined(OS_CHROMEOS)
     case IDC_SEARCH:                Search();                         break;
     case IDC_SHOW_KEYBOARD_OVERLAY: ShowKeyboardOverlay();            break;
@@ -2648,6 +2732,10 @@ void Browser::CreateHistoricalTab(TabContentsWrapper* contents) {
   if (!profile() || profile()->IsOffTheRecord())
     return;
 
+  // We don't create historical tabs for print preview tabs.
+  if (contents->tab_contents()->GetURL() == GURL(chrome::kChromeUIPrintURL))
+    return;
+
   TabRestoreService* service =
       TabRestoreServiceFactory::GetForProfile(profile());
 
@@ -2719,6 +2807,11 @@ void Browser::ToggleUseVerticalTabs() {
   UseVerticalTabsChanged();
 }
 
+void Browser::ToggleUseCompactNavigationBar() {
+  use_compact_navigation_bar_.SetValue(!UseCompactNavigationBar());
+  UseCompactNavigationBarChanged();
+}
+
 bool Browser::LargeIconsPermitted() const {
   // We don't show the big icons in tabs for TYPE_EXTENSION_APP windows because
   // for those windows, we already have a big icon in the top-left outside any
@@ -2735,10 +2828,11 @@ void Browser::TabInsertedAt(TabContentsWrapper* contents,
   SetAsDelegate(contents, this);
   contents->controller().SetWindowID(session_id());
 
-  // Each renderer holds the ID of the window that hosts it. Notify the
-  // renderer that the window ID changed.
-  contents->render_view_host()->UpdateBrowserWindowId(
-      contents->controller().window_id().id());
+  // Extension code in the renderer holds the ID of the window that hosts it.
+  // Notify it that the window ID changed.
+  contents->render_view_host()->Send(new ExtensionMsg_UpdateBrowserWindowId(
+      contents->render_view_host()->routing_id(),
+      contents->controller().window_id().id()));
 
   SyncHistoryWithTabs(index);
 
@@ -3103,16 +3197,12 @@ bool Browser::UseVerticalTabs() const {
   return use_vertical_tabs_.GetValue();
 }
 
-void Browser::ContentsZoomChange(bool zoom_in) {
-  ExecuteCommand(zoom_in ? IDC_ZOOM_PLUS : IDC_ZOOM_MINUS);
+bool Browser::UseCompactNavigationBar() const {
+  return use_compact_navigation_bar_.GetValue();
 }
 
-void Browser::OnContentSettingsChange(TabContents* source) {
-  if (source == GetSelectedTabContents()) {
-    LocationBar* location_bar = window()->GetLocationBar();
-    if (location_bar)
-      location_bar->UpdateContentSettingsIcons();
-  }
+void Browser::ContentsZoomChange(bool zoom_in) {
+  ExecuteCommand(zoom_in ? IDC_ZOOM_PLUS : IDC_ZOOM_MINUS);
 }
 
 void Browser::SetTabContentBlocked(TabContents* contents, bool blocked) {
@@ -3194,11 +3284,6 @@ void Browser::BeforeUnloadFired(TabContents* tab,
   *proceed_to_fire_unload = true;
 }
 
-void Browser::ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                             gfx::NativeWindow parent_window) {
-  window_->ShowHTMLDialog(delegate, parent_window);
-}
-
 void Browser::SetFocusToLocationBar(bool select_all) {
   // Two differences between this and FocusLocationBar():
   // (1) This doesn't get recorded in user metrics, since it's called
@@ -3216,51 +3301,6 @@ void Browser::RenderWidgetShowing() {
 
 int Browser::GetExtraRenderViewHeight() const {
   return window_->GetExtraRenderViewHeight();
-}
-
-void Browser::OnStartDownload(DownloadItem* download, TabContents* tab) {
-  if (!window())
-    return;
-
-#if defined(OS_CHROMEOS)
-  // Don't show content browser for extension/theme downloads from gallery.
-  if (download->is_extension_install()) {
-    ExtensionService* service = profile_->GetExtensionService();
-    if (service && service->IsDownloadFromGallery(download->url(),
-                                                  download->referrer_url())) {
-      return;
-    }
-  }
-  // Open the Active Downloads ui for chromeos.
-  ActiveDownloadsUI::OpenPopup(profile_);
-#else
-  // GetDownloadShelf creates the download shelf if it was not yet created.
-  window()->GetDownloadShelf()->AddDownload(new DownloadItemModel(download));
-
-  // Don't show the animation for "Save file" downloads.
-  if (download->total_bytes() <= 0)
-    return;
-
-  // For non-theme extensions, we don't show the download animation.
-  if (download->is_extension_install() &&
-      !ExtensionService::IsDownloadFromMiniGallery(download->url()))
-    return;
-
-  TabContents* current_tab = GetSelectedTabContents();
-  // We make this check for the case of minimized windows, unit tests, etc.
-  if (platform_util::IsVisible(current_tab->GetNativeView()) &&
-      ui::Animation::ShouldRenderRichAnimation()) {
-    DownloadStartedAnimation::Show(current_tab);
-  }
-#endif
-
-  // If the download occurs in a new tab, close it.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab);
-  if (tab->controller().IsInitialNavigation() &&
-      GetConstrainingContentsWrapper(wrapper) == wrapper && tab_count() > 1) {
-    CloseContents(tab);
-  }
 }
 
 void Browser::ShowPageInfo(Profile* profile,
@@ -3321,10 +3361,11 @@ void Browser::ContentRestrictionsChanged(TabContents* source) {
 }
 
 void Browser::WorkerCrashed() {
-  TabContents* tab_contents = GetSelectedTabContents();
+  TabContentsWrapper* tab_contents = GetSelectedTabContentsWrapper();
   if (!tab_contents)
     return;
-  tab_contents->AddInfoBar(new SimpleAlertInfoBarDelegate(tab_contents, NULL,
+  tab_contents->AddInfoBar(new SimpleAlertInfoBarDelegate(
+      tab_contents->tab_contents(), NULL,
       l10n_util::GetStringUTF16(IDS_WEBWORKER_CRASHED_PROMPT), true));
 }
 
@@ -3394,11 +3435,61 @@ TabContentsWrapper* Browser::GetConstrainingContentsWrapper(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Browser, BookmarksTabHelperDelegate implementation:
+// Browser, BookmarkTabHelperDelegate implementation:
 
 void Browser::URLStarredChanged(TabContentsWrapper* source, bool starred) {
   if (source == GetSelectedTabContentsWrapper())
     window_->SetStarredState(starred);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Browser, DownloadTabHelperDelegate implementation:
+
+bool Browser::CanDownload(int request_id) {
+  return true;
+}
+
+void Browser::OnStartDownload(DownloadItem* download, TabContentsWrapper* tab) {
+  if (!window())
+    return;
+
+#if defined(OS_CHROMEOS)
+  // Don't show content browser for extension/theme downloads from gallery.
+  if (download->is_extension_install()) {
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service && service->IsDownloadFromGallery(download->url(),
+                                                  download->referrer_url())) {
+      return;
+    }
+  }
+  // Open the Active Downloads ui for chromeos.
+  ActiveDownloadsUI::OpenPopup(profile_);
+#else
+  // GetDownloadShelf creates the download shelf if it was not yet created.
+  window()->GetDownloadShelf()->AddDownload(new DownloadItemModel(download));
+
+  // Don't show the animation for "Save file" downloads.
+  if (download->total_bytes() <= 0)
+    return;
+
+  // For non-theme extensions, we don't show the download animation.
+  if (download->is_extension_install() &&
+      !ExtensionService::IsDownloadFromMiniGallery(download->url()))
+    return;
+
+  TabContents* current_tab = GetSelectedTabContents();
+  // We make this check for the case of minimized windows, unit tests, etc.
+  if (platform_util::IsVisible(current_tab->GetNativeView()) &&
+      ui::Animation::ShouldRenderRichAnimation()) {
+    DownloadStartedAnimation::Show(current_tab);
+  }
+#endif
+
+  // If the download occurs in a new tab, close it.
+  if (tab->tab_contents()->controller().IsInitialNavigation() &&
+      GetConstrainingContentsWrapper(tab) == tab && tab_count() > 1) {
+    CloseContents(tab->tab_contents());
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -3505,6 +3596,8 @@ void Browser::Observe(NotificationType type,
       const std::string& pref_name = *Details<std::string>(details).ptr();
       if (pref_name == prefs::kUseVerticalTabs) {
         UseVerticalTabsChanged();
+      } else if (pref_name == prefs::kUseCompactNavigationBar) {
+        UseCompactNavigationBarChanged();
       } else if (pref_name == prefs::kPrintingEnabled) {
         UpdatePrintingState(GetContentRestrictionsForSelectedTab());
       } else if (pref_name == prefs::kInstantEnabled) {
@@ -3528,6 +3621,16 @@ void Browser::Observe(NotificationType type,
         UpdateOpenFileState();
       } else {
         NOTREACHED();
+      }
+      break;
+    }
+
+    case NotificationType::TAB_CONTENT_SETTINGS_CHANGED: {
+      TabContents* tab_contents = Source<TabContents>(source).ptr();
+      if (tab_contents == GetSelectedTabContents()) {
+        LocationBar* location_bar = window()->GetLocationBar();
+        if (location_bar)
+          location_bar->UpdateContentSettingsIcons();
       }
       break;
     }
@@ -3645,6 +3748,7 @@ void Browser::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_RESTORE_TAB, false);
   command_updater_.UpdateCommandEnabled(IDC_EXIT, true);
   command_updater_.UpdateCommandEnabled(IDC_TOGGLE_VERTICAL_TABS, true);
+  command_updater_.UpdateCommandEnabled(IDC_DEBUG_FRAME_TOGGLE, true);
 
   // Page-related commands
   command_updater_.UpdateCommandEnabled(IDC_EMAIL_PAGE_LOCATION, true);
@@ -3799,11 +3903,13 @@ void Browser::UpdateCommandsForTabState() {
 
   // Page-related commands
   window_->SetStarredState(
-      current_tab_wrapper->bookmarks_tab_helper()->is_starred());
+      current_tab_wrapper->bookmark_tab_helper()->is_starred());
   command_updater_.UpdateCommandEnabled(IDC_VIEW_SOURCE,
       current_tab->controller().CanViewSource());
   command_updater_.UpdateCommandEnabled(IDC_EMAIL_PAGE_LOCATION,
       current_tab->ShouldDisplayURL() && current_tab->GetURL().is_valid());
+  if (is_devtools())
+      command_updater_.UpdateCommandEnabled(IDC_OPEN_FILE, false);
 
   // Changing the encoding is not possible on Chrome-internal webpages.
   // Instead of using GetURL here, we use url() (which is the "real" url of the
@@ -4115,7 +4221,7 @@ void Browser::ProcessPendingTabs() {
     // Null check render_view_host here as this gets called on a PostTask and
     // the tab's render_view_host may have been nulled out.
     if (tab->render_view_host()) {
-      tab->render_view_host()->ClosePage(false, -1, -1);
+      tab->render_view_host()->ClosePage();
     } else {
       ClearUnloadState(tab, true);
     }
@@ -4298,7 +4404,8 @@ void Browser::SetAsDelegate(TabContentsWrapper* tab, Browser* delegate) {
 
   // ...and all the helpers.
   tab->blocked_content_tab_helper()->set_delegate(delegate);
-  tab->bookmarks_tab_helper()->set_delegate(delegate);
+  tab->bookmark_tab_helper()->set_delegate(delegate);
+  tab->download_tab_helper()->set_delegate(delegate);
   tab->search_engine_tab_helper()->set_delegate(delegate);
 }
 
@@ -4365,8 +4472,10 @@ void Browser::RegisterAppPrefs(const std::string& app_name, Profile* profile) {
   window_pref.append("_");
   window_pref.append(app_name);
   PrefService* prefs = profile->GetPrefs();
-  if (!prefs->FindPreference(window_pref.c_str()))
-    prefs->RegisterDictionaryPref(window_pref.c_str());
+  if (!prefs->FindPreference(window_pref.c_str())) {
+    prefs->RegisterDictionaryPref(window_pref.c_str(),
+                                  PrefService::UNSYNCABLE_PREF);
+  }
 }
 
 void Browser::TabRestoreServiceChanged(TabRestoreService* service) {

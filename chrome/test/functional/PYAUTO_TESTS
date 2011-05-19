@@ -28,16 +28,8 @@
   'CONTINUOUS': {
     'all': [
       'autofill',
-      '-autofill.AutofillTest.testComparePhoneNumbers',
-      # crbug.com/77969
-      '-autofill.AutofillTest.testFillProfileCrazyCharacters',
-      '-autofill.AutofillTest.testNoAutofillForReadOnlyFields',
       # crbug.com/77113 - M13 feature.
       '-autofill.AutofillTest.testProfileWithEmailInOtherFieldNotSaved',
-      # crbug.com/80190
-      '-autofill.AutofillTest.testDistinguishMiddleInitialWithinName',
-      '-autofill.AutofillTest.testFormFillableOnReset',
-      '-autofill.AutofillTest.testMultipleEmailFilledByOneUserGesture',
       # crbug.com/81271
       '-autofill.AutofillTest.testMergeAggregatedProfilesWithSameAddress',
       '-autofill.AutofillTest.testProfilesNotMergedWhenNoMinAddressData',
@@ -57,17 +49,12 @@
       '-find_in_page.FindMatchTests.testLocalizationAndCaseOrder',
       'execute_javascript',
       'history',
-      'https',
-      # crbug.com/77777
-      '-imports',
+      'https',      
+      'imports',
       'infobars',
       'instant',
-      # crbug.com/76639
-      '-instant.InstantTest.testInstantLoadsFor100CharsLongQuery',
       'navigation',
       'notifications',
-      # crbug.com/80510
-      '-notifications.NotificationsTest.testKillNotificationProcess',
       'ntp',
       'omnibox',
       '-omnibox.OmniboxTest.testHistoryResult',  # crbug.com/71715
@@ -77,6 +64,8 @@
       'plugins',
       'plugins_check',
       'popups',
+      # crbug.com/82629 - real bug.
+      '-popups.PopupsTest.testPopupsLaunchUponBrowserBackButton',
       'prefs',
       'search_engines',
       'shortcuts',
@@ -95,6 +84,8 @@
       '-downloads.DownloadsTest.testZip',
       '-downloads.DownloadsTest.testRemoveDownload',
       '-prefs.PrefsTest.testDownloadDirPref',
+      # crbug.com/66072
+      '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
       # crbug.com/70694
       '-passwords.PasswordTest.testInfoBarDisappearByReload',
       '-passwords.PasswordTest.testNeverSavePasswords',
@@ -172,6 +163,7 @@
       '-passwords.PasswordTest.testNeverSavePasswords',
 
       # Deal with i18n chars.  crosbug.com/12639
+      '-autofill.AutofillTest.testFillProfileCrazyCharacters',
       '-downloads.DownloadsTest.testCrazyFilenames',
       '-omnibox.OmniboxTest.testCrazyFilenames',
 
@@ -194,10 +186,19 @@
       '-notifications.NotificationsTest.testCloseNotification',
       '-notifications.NotificationsTest.testCreateDenyCloseNotifications',
       '-notifications.NotificationsTest.testNotificationOrderAfterClosingOne',
+      '-notifications.NotificationsTest.testAllowOnPermissionInfobar',
+      '-notifications.NotificationsTest.testClosePermissionInfobar',
+      '-notifications.NotificationsTest.testCloseTabWithPermissionInfobar',
+      '-notifications.NotificationsTest.testCrashTabWithPermissionInfobar',
+      '-notifications.NotificationsTest.testDenyOnPermissionInfobar',
+      '-notifications.NotificationsTest.testExitBrowserWithInfobar',
+      '-notifications.NotificationsTest.testIncognitoNotification',
+      '-notifications.NotificationsTest.testNavigateAwayWithPermissionInfobar',
+      '-notifications.NotificationsTest.testOriginPrefsNotSavedInIncognito',
+      '-notifications.NotificationsTest.testPermissionInfobarAppears',
 
-      # sync tests cause segfault.  crosbug.com/15016
-      '-sync.SyncTest.testRestartBrowser',
-      '-sync.SyncTest.testSignInToSync',
+      # sync tests were running into a secondary passphrase. crosbug.com/15016.
+      '-sync',
     ],
   },
 

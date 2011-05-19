@@ -32,6 +32,7 @@
 #include "content/renderer/gpu_channel_host.h"
 #include "content/renderer/p2p/p2p_transport_impl.h"
 #include "content/renderer/pepper_platform_context_3d_impl.h"
+#include "content/renderer/pepper_platform_video_decoder_impl.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/render_view.h"
 #include "content/renderer/render_widget_fullscreen_pepper.h"
@@ -814,10 +815,8 @@ webkit::ppapi::PluginDelegate::PlatformContext3D*
 
 webkit::ppapi::PluginDelegate::PlatformVideoDecoder*
 PepperPluginDelegateImpl::CreateVideoDecoder(
-    PP_VideoDecoderConfig_Dev* decoder_config) {
-  // TODO(vmr): Implement.
-  NOTIMPLEMENTED();
-  return NULL;
+    media::VideoDecodeAccelerator::Client* client) {
+  return new PlatformVideoDecoderImpl(client);
 }
 
 void PepperPluginDelegateImpl::NumberOfFindResultsChanged(int identifier,
@@ -1296,4 +1295,27 @@ double PepperPluginDelegateImpl::GetLocalTimeZoneOffset(base::Time t) {
 std::string PepperPluginDelegateImpl::GetFlashCommandLineArgs() {
   return CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
       switches::kPpapiFlashArgs);
+}
+
+base::SharedMemory* PepperPluginDelegateImpl::CreateAnonymousSharedMemory(
+    uint32_t size) {
+  if (size == 0)
+    return NULL;
+  scoped_ptr<base::SharedMemory> shm(new base::SharedMemory());
+  if (shm->CreateAnonymous(size))
+    return shm.release();
+  // The sandbox can prevent CreateAnonymous from succeeding, in which case we
+  // need to IPC to the browser process.
+  base::SharedMemoryHandle handle;
+  if (!render_view_->Send(
+          new ViewHostMsg_AllocateSharedMemoryBuffer(size, &handle))) {
+    DLOG(WARNING) << "Browser allocation request message failed";
+    return NULL;
+  }
+  if (!base::SharedMemory::IsHandleValid(handle)) {
+    DLOG(WARNING) << "Browser failed to allocate shared memory";
+    return NULL;
+  }
+  shm.reset(new base::SharedMemory(handle, false));
+  return shm.release();
 }

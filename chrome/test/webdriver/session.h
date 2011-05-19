@@ -19,6 +19,7 @@
 #include "chrome/test/webdriver/web_element_id.h"
 #include "ui/gfx/point.h"
 
+class CommandLine;
 class DictionaryValue;
 class FilePath;
 class GURL;
@@ -59,11 +60,12 @@ class Session {
   // Removes this |Session| from the |SessionManager|.
   ~Session();
 
-  // Starts the session thread and a new browser, using the exe found in
-  // |browser_dir|. If |browser_dir| is empty, it will search in all the default
+  // Starts the session thread and a new browser, using the exe found at
+  // |browser_exe|. If |browser_exe| is empty, it will search in all the default
   // locations. Returns true on success. On failure, the session will delete
   // itself and return an error code.
-  ErrorCode Init(const FilePath& browser_dir);
+  ErrorCode Init(const FilePath& browser_exe,
+                 const CommandLine& options);
 
   // Terminates this session and deletes itself.
   void Terminate();
@@ -156,6 +158,17 @@ class Session {
   // session.
   bool CloseWindow();
 
+  // Gets the message of the currently active JavaScript modal dialog.
+  ErrorCode GetAlertMessage(std::string* text);
+
+  // Sets the prompt text to use when accepting or dismissing a JavaScript
+  // modal dialog.
+  ErrorCode SetAlertPromptText(const std::string& alert_prompt_text);
+
+  // Accept or dismiss the currently active JavaScript modal dialog with the
+  // previously set alert prompt text. Then clears the saved alert prompt text.
+  ErrorCode AcceptOrDismissAlert(bool accept);
+
   // Gets the version of the running browser.
   std::string GetBrowserVersion();
 
@@ -246,7 +259,9 @@ class Session {
   void RunSessionTaskOnSessionThread(
       Task* task,
       base::WaitableEvent* done_event);
-  void InitOnSessionThread(const FilePath& browser_dir, ErrorCode* code);
+  void InitOnSessionThread(const FilePath& browser_exe,
+                           const CommandLine& options,
+                           ErrorCode* code);
   void TerminateOnSessionThread();
 
   // Executes the given |script| in the context of the given frame.
@@ -301,6 +316,14 @@ class Session {
 
   // Last mouse position. Advanced APIs need this value.
   gfx::Point mouse_position_;
+
+  // Chrome does not have an individual method for setting the prompt text
+  // of an alert. Instead, when the WebDriver client wants to set the text,
+  // we store it here and pass the text when the alert is accepted or
+  // dismissed. This text should only be used if |has_alert_prompt_text_|
+  // is true, so that the default prompt text is not overridden.
+  std::string alert_prompt_text_;
+  bool has_alert_prompt_text_;
 
   DISALLOW_COPY_AND_ASSIGN(Session);
 };

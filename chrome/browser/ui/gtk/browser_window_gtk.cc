@@ -1088,6 +1088,12 @@ void BrowserWindowGtk::Paste() {
   gtk_util::DoPaste(this);
 }
 
+void BrowserWindowGtk::ToggleTabStripMode() {
+}
+
+void BrowserWindowGtk::ToggleUseCompactNavigationBar() {
+}
+
 void BrowserWindowGtk::PrepareForInstant() {
   TabContentsWrapper* contents = contents_container_->tab();
   if (contents)
@@ -1175,7 +1181,7 @@ void BrowserWindowGtk::TabSelectedAt(TabContentsWrapper* old_contents,
 
   // Update various elements that are interested in knowing the current
   // TabContents.
-  infobar_container_->ChangeTabContents(new_contents->tab_contents());
+  infobar_container_->ChangeTabContents(new_contents);
   contents_container_->SetTab(new_contents);
   UpdateDevToolsForContents(new_contents->tab_contents());
 
@@ -1512,8 +1518,9 @@ void BrowserWindowGtk::RegisterUserPrefs(PrefService* prefs) {
       !prefs->HasPrefPath(prefs::kUseCustomChromeFrame)) {
     custom_frame_default = GetCustomFramePrefDefault();
   }
-  prefs->RegisterBooleanPref(
-      prefs::kUseCustomChromeFrame, custom_frame_default);
+  prefs->RegisterBooleanPref(prefs::kUseCustomChromeFrame,
+                             custom_frame_default,
+                             PrefService::SYNCABLE_PREF);
 }
 
 void BrowserWindowGtk::BookmarkBarIsFloating(bool is_floating) {

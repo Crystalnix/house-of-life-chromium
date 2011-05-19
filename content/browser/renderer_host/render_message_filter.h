@@ -19,7 +19,6 @@
 #include "base/string16.h"
 #include "base/task.h"
 #include "build/build_config.h"
-#include "chrome/common/content_settings.h"
 #include "content/browser/browser_message_filter.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
@@ -41,15 +40,19 @@ namespace WebKit {
 struct WebScreenInfo;
 }
 
-namespace gfx {
-class Rect;
+namespace content {
+class ResourceContext;
 }
+
 namespace base {
 class SharedMemory;
 }
 
+namespace gfx {
+class Rect;
+}
+
 namespace net {
-class CookieStore;
 class URLRequestContextGetter;
 }
 
@@ -57,6 +60,10 @@ namespace webkit {
 namespace npapi {
 struct WebPluginInfo;
 }
+}
+
+namespace webkit_glue {
+struct WebCookie;
 }
 
 // This class filters out incoming IPC messages for the renderer process on the
@@ -110,7 +117,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                     IPC::Message* reply_msg);
   void OnGetRawCookies(const GURL& url,
                        const GURL& first_party_for_cookies,
-                       IPC::Message* reply_msg);
+                       std::vector<webkit_glue::WebCookie>* cookies);
   void OnDeleteCookie(const GURL& url,
                       const std::string& cookieName);
   void OnCookiesEnabled(const GURL& url,
@@ -149,7 +156,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
                        const std::string& mime_type,
                        bool* found,
                        webkit::npapi::WebPluginInfo* info,
-                       int* setting,
                        std::string* actual_mime_type);
   void OnOpenChannelToPlugin(int routing_id,
                              const GURL& url,
@@ -233,12 +239,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // access it on other threads.
   ExtensionInfoMap* extension_info_map_;
 
-  // The host content settings map. Stored separately from the profile so we can
-  // access it on other threads.
-  HostContentSettingsMap* content_settings_;
-
   // Contextual information to be used for requests created here.
   scoped_refptr<net::URLRequestContextGetter> request_context_;
+
+  // The ResourceContext which is to be used on the IO thread.
+  const content::ResourceContext& resource_context_;
 
   // A request context that holds a cookie store for chrome-extension URLs.
   scoped_refptr<net::URLRequestContextGetter> extensions_request_context_;
@@ -263,72 +268,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   int render_process_id_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderMessageFilter);
-};
-
-// These classes implement completion callbacks for getting and setting
-// cookies.
-class SetCookieCompletion : public net::CompletionCallback {
- public:
-  SetCookieCompletion(int render_process_id,
-                      int render_view_id,
-                      const GURL& url,
-                      const std::string& cookie_line,
-                      net::URLRequestContext* context);
-  virtual ~SetCookieCompletion();
-
-  virtual void RunWithParams(const Tuple1<int>& params);
-
-  int render_process_id() const {
-    return render_process_id_;
-  }
-
-  int render_view_id() const {
-    return render_view_id_;
-  }
-
- private:
-  int render_process_id_;
-  int render_view_id_;
-  GURL url_;
-  std::string cookie_line_;
-  scoped_refptr<net::URLRequestContext> context_;
-};
-
-class GetCookiesCompletion : public net::CompletionCallback {
- public:
-  GetCookiesCompletion(int render_process_id,
-                       int render_view_id,
-                       const GURL& url, IPC::Message* reply_msg,
-                       RenderMessageFilter* filter,
-                       net::URLRequestContext* context,
-                       bool raw_cookies);
-  virtual ~GetCookiesCompletion();
-
-  virtual void RunWithParams(const Tuple1<int>& params);
-
-  int render_process_id() const {
-    return render_process_id_;
-  }
-
-  int render_view_id() const {
-    return render_view_id_;
-  }
-
-  void set_cookie_store(net::CookieStore* cookie_store);
-
-  net::CookieStore* cookie_store() {
-    return cookie_store_.get();
-  }
-
- private:
-  GURL url_;
-  IPC::Message* reply_msg_;
-  scoped_refptr<RenderMessageFilter> filter_;
-  scoped_refptr<net::URLRequestContext> context_;
-  int render_process_id_;
-  int render_view_id_;
-  bool raw_cookies_;
-  scoped_refptr<net::CookieStore> cookie_store_;
 };
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_RENDER_MESSAGE_FILTER_H_

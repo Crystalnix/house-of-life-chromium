@@ -436,14 +436,24 @@ void WizardController::SkipRegistration() {
 
 // static
 void WizardController::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterBooleanPref(kOobeComplete, false);
-  local_state->RegisterIntegerPref(kDeviceRegistered, -1);
-  local_state->RegisterBooleanPref(kEulaAccepted, false);
-  local_state->RegisterStringPref(kInitialLocale, "en-US");
+  local_state->RegisterBooleanPref(kOobeComplete,
+                                   false,
+                                   PrefService::UNSYNCABLE_PREF);
+  local_state->RegisterIntegerPref(kDeviceRegistered,
+                                   -1,
+                                   PrefService::UNSYNCABLE_PREF);
+  local_state->RegisterBooleanPref(kEulaAccepted,
+                                   false,
+                                   PrefService::UNSYNCABLE_PREF);
+  local_state->RegisterStringPref(kInitialLocale,
+                                  "en-US",
+                                  PrefService::UNSYNCABLE_PREF);
   // Check if the pref is already registered in case
   // Preferences::RegisterUserPrefs runs before this code in the future.
   if (local_state->FindPreference(prefs::kAccessibilityEnabled) == NULL) {
-    local_state->RegisterBooleanPref(prefs::kAccessibilityEnabled, false);
+    local_state->RegisterBooleanPref(prefs::kAccessibilityEnabled,
+                                     false,
+                                     PrefService::UNSYNCABLE_PREF);
   }
 }
 
@@ -570,7 +580,7 @@ void WizardController::InitiateOOBEUpdate() {
 
 views::Widget* WizardController::CreateScreenWindow(
     const gfx::Rect& bounds, bool initial_show) {
-  widget_ = views::Widget::CreateWidget();
+  widget_ = new views::Widget;
   views::Widget::InitParams widget_params(
       views::Widget::InitParams::TYPE_WINDOW);
   // Window transparency makes background flicker through controls that
@@ -854,6 +864,14 @@ void WizardController::OnSetUserNamePassword(const std::string& username,
                                              const std::string& password) {
   username_ = username;
   password_ = password;
+}
+
+void WizardController::set_usage_statistics_reporting(bool val) {
+  usage_statistics_reporting_ = val;
+}
+
+bool WizardController::usage_statistics_reporting() const {
+  return usage_statistics_reporting_;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

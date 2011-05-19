@@ -89,7 +89,7 @@ cr.define('ntp4', function() {
    */
   function initialize() {
     // Load the current theme colors.
-    themeChanged(false);
+    themeChanged();
 
     dotList = getRequiredElement('dot-list');
     pageList = getRequiredElement('page-list');
@@ -352,6 +352,13 @@ cr.define('ntp4', function() {
     dotList.appendChild(newDot);
     page.navigationDot = newDot;
 
+    newDot.showPage = function() {
+      cardSlider.selectCard(dotCount, true);
+    };
+    function switchPage(e) {
+      newDot.showPage();
+      e.stopPropagation();
+    }
     // Add click handler to the dot to change the page.
     // TODO(rbyers): Perhaps this should be TouchHandler.START_EVENT_ (so we
     // don't rely on synthesized click events, and the change takes effect
@@ -359,10 +366,6 @@ cr.define('ntp4', function() {
     // region outside the border, and a 10px box is too small to require touch
     // events to fall inside of. We could get around this by adding a box around
     // the dot for accepting the touch events.
-    function switchPage(e) {
-      cardSlider.selectCard(dotCount, true);
-      e.stopPropagation();
-    }
     newDot.addEventListener('click', switchPage);
 
     // Change pages whenever an app is dragged over a dot.
@@ -672,10 +675,27 @@ cr.define('ntp4', function() {
     updateSliderCards();
   }
 
-  // TODO(estade): remove |hasAttribution|.
   // TODO(estade): rename newtab.css to new_tab_theme.css
   function themeChanged(hasAttribution) {
     $('themecss').href = 'chrome://theme/css/newtab.css?' + Date.now();
+    if (typeof hasAttribution != 'undefined')
+      document.documentElement.setAttribute('hasattribution', hasAttribution);
+    updateAttribution();
+  }
+
+  /**
+   * Sets the proper image for the logo at the bottom left.
+   */
+  function updateAttribution() {
+    // Default value for standard NTP with no theme attribution or custom logo.
+    var imageId = 'IDR_PRODUCT_LOGO';
+    // Theme attribution always overrides custom logos.
+    if (document.documentElement.getAttribute('hasattribution') == 'true')
+      imageId = 'IDR_THEME_NTP_ATTRIBUTION';
+    else if (document.documentElement.getAttribute('customlogo') == 'true')
+      imageId = 'IDR_CUSTOM_PRODUCT_LOGO';
+
+    $('attribution-img').src = 'chrome://theme/' + imageId + '?' + Date.now();
   }
 
   function setRecentlyClosedTabs(dataItems) {

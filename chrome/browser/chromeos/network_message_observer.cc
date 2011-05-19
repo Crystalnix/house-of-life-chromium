@@ -203,21 +203,19 @@ void NetworkMessageObserver::OnNetworkManagerChanged(NetworkLibrary* cros) {
       notification_connection_error_.Hide();
     notification_connection_error_.Show(l10n_util::GetStringFUTF16(
         IDS_NETWORK_CONNECTION_ERROR_MESSAGE,
-        ASCIIToUTF16(new_failed_network->name())), false, false);
+        UTF8ToUTF16(new_failed_network->name())), false, false);
   }
 }
 
 void NetworkMessageObserver::OnCellularDataPlanChanged(NetworkLibrary* cros) {
-  if (!ShouldShowMobilePlanNotifications()) {
+  if (!ShouldShowMobilePlanNotifications())
     return;
-  }
-
   const CellularNetwork* cellular = cros->cellular_network();
-  if (!cellular)
+  if (!cellular || !cellular->SupportsDataPlan())
     return;
+
   const CellularDataPlanVector* plans =
       cros->GetDataPlans(cellular->service_path());
-
   // If no plans available, check to see if we need a new plan.
   if (!plans || plans->empty()) {
     // If previously, we had low data, we know that a plan was near expiring.

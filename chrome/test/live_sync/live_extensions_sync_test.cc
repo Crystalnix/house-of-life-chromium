@@ -9,6 +9,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension.h"
 
+namespace {
+
+std::string CreateFakeExtensionName(int index) {
+  return "fakeextension" + base::IntToString(index);
+}
+
+}  // namespace
+
 LiveExtensionsSyncTest::LiveExtensionsSyncTest(TestType test_type)
     : LiveSyncTest(test_type) {}
 
@@ -22,15 +30,21 @@ bool LiveExtensionsSyncTest::SetupClients() {
   return true;
 }
 
-bool LiveExtensionsSyncTest::AllProfilesHaveSameExtensionsAsVerifier() {
+bool LiveExtensionsSyncTest::HasSameExtensionsAsVerifier(int index) {
   LiveSyncExtensionHelper::ExtensionStateMap
       verifier_extension_state_map(
           extension_helper_.GetExtensionStates(verifier()));
+  LiveSyncExtensionHelper::ExtensionStateMap
+      extension_state_map(
+          extension_helper_.GetExtensionStates(GetProfile(index)));
+  return (extension_state_map == verifier_extension_state_map);
+}
+
+bool LiveExtensionsSyncTest::AllProfilesHaveSameExtensionsAsVerifier() {
   for (int i = 0; i < num_clients(); ++i) {
-    LiveSyncExtensionHelper::ExtensionStateMap
-        extension_state_map(
-            extension_helper_.GetExtensionStates(GetProfile(i)));
-    if (extension_state_map != verifier_extension_state_map) {
+    if (!HasSameExtensionsAsVerifier(i)) {
+      LOG(ERROR) << "Profile " << i << " doesn't have the same extensions as"
+                                       " the verifier profile.";
       return false;
     }
   }
@@ -38,9 +52,14 @@ bool LiveExtensionsSyncTest::AllProfilesHaveSameExtensionsAsVerifier() {
 }
 
 void LiveExtensionsSyncTest::InstallExtension(Profile* profile, int index) {
-  std::string name = "fakeextension" + base::IntToString(index);
-  return extension_helper_.InstallExtension(
-      profile, name, Extension::TYPE_EXTENSION);
+  return extension_helper_.InstallExtension(profile,
+                                            CreateFakeExtensionName(index),
+                                            Extension::TYPE_EXTENSION);
+}
+
+void LiveExtensionsSyncTest::UninstallExtension(Profile* profile, int index) {
+  return extension_helper_.UninstallExtension(profile,
+                                              CreateFakeExtensionName(index));
 }
 
 void LiveExtensionsSyncTest::InstallExtensionsPendingForSync(

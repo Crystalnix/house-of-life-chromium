@@ -77,7 +77,7 @@ Display* GLSurfaceGLX::GetDisplay() {
 NativeViewGLSurfaceGLX::NativeViewGLSurfaceGLX(gfx::PluginWindowHandle window)
   : window_(window),
     config_(NULL),
-    glx_window_(NULL) {
+    glx_window_(0) {
 }
 
 NativeViewGLSurfaceGLX::~NativeViewGLSurfaceGLX() {
@@ -107,9 +107,10 @@ bool NativeViewGLSurfaceGLX::Initialize() {
     config_ = glXGetFBConfigFromVisualSGIX(g_display, visual_infos.get());
     if (!config_) {
       LOG(ERROR) << "glXGetFBConfigFromVisualSGIX failed.";
-      return false;
     }
-  } else {
+  }
+
+  if (!config_) {
     int config_id;
     if (glXGetConfig(g_display,
                      visual_infos.get(),
@@ -158,7 +159,7 @@ bool NativeViewGLSurfaceGLX::Initialize() {
 void NativeViewGLSurfaceGLX::Destroy() {
   if (glx_window_) {
     glXDestroyWindow(g_display, glx_window_);
-    glx_window_ = NULL;
+    glx_window_ = 0;
   }
 
   config_ = NULL;

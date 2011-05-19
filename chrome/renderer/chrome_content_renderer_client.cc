@@ -140,7 +140,7 @@ void ChromeContentRendererClient::RenderThreadStarted() {
   net_predictor_.reset(new RendererNetPredictor());
   spellcheck_.reset(new SpellCheck());
   visited_link_slave_.reset(new VisitedLinkSlave());
-  phishing_classifier_.reset(new safe_browsing::PhishingClassifierFilter);
+  phishing_classifier_.reset(safe_browsing::PhishingClassifierFilter::Create());
 
   RenderThread* thread = RenderThread::current();
   thread->AddFilter(new DevToolsAgentFilter());
@@ -186,7 +186,7 @@ void ChromeContentRendererClient::RenderViewCreated(RenderView* render_view) {
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableClientSidePhishingDetection)) {
     phishing_classifier =
-        new safe_browsing::PhishingClassifierDelegate(render_view, NULL);
+        safe_browsing::PhishingClassifierDelegate::Create(render_view, NULL);
   }
 #endif
 
@@ -198,7 +198,7 @@ void ChromeContentRendererClient::RenderViewCreated(RenderView* render_view) {
   new PrintWebViewHelper(render_view);
   new SearchBox(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
-  new safe_browsing::MalwareDOMDetails(render_view);
+  safe_browsing::MalwareDOMDetails::Create(render_view);
 
 #if defined(OS_MACOSX)
   new TextInputClientObserver(render_view);
@@ -244,21 +244,28 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       WebFrame* frame,
       const WebPluginParams& original_params) {
   bool found = false;
-  int plugin_setting = CONTENT_SETTING_DEFAULT;
   CommandLine* cmd = CommandLine::ForCurrentProcess();
   webkit::npapi::WebPluginInfo info;
   GURL url(original_params.url);
   std::string actual_mime_type;
   render_view->Send(new ViewHostMsg_GetPluginInfo(
       render_view->routing_id(), url, frame->top()->url(),
-      original_params.mimeType.utf8(), &found, &info, &plugin_setting,
-      &actual_mime_type));
+      original_params.mimeType.utf8(), &found, &info, &actual_mime_type));
 
   if (!found)
     return NULL;
-  DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
   if (!webkit::npapi::IsPluginEnabled(info))
     return NULL;
+
+  const webkit::npapi::PluginGroup* group =
+      webkit::npapi::PluginList::Singleton()->GetPluginGroup(info);
+  DCHECK(group != NULL);
+
+  ContentSetting plugin_setting = CONTENT_SETTING_DEFAULT;
+  std::string resource = group->identifier();
+  render_view->Send(new ViewHostMsg_GetPluginContentSetting(
+      frame->top()->url(), resource, &plugin_setting));
+  DCHECK(plugin_setting != CONTENT_SETTING_DEFAULT);
 
   WebPluginParams params(original_params);
   for (size_t i = 0; i < info.mime_types.size(); ++i) {
@@ -270,10 +277,6 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
       break;
     }
   }
-
-  const webkit::npapi::PluginGroup* group =
-      webkit::npapi::PluginList::Singleton()->GetPluginGroup(info);
-  DCHECK(group != NULL);
 
   ContentSetting outdated_policy = CONTENT_SETTING_ASK;
   ContentSetting authorize_policy = CONTENT_SETTING_ASK;
@@ -342,10 +345,9 @@ WebPlugin* ChromeContentRendererClient::CreatePlugin(
         frame, params, info.path, actual_mime_type);
   }
 
-  std::string resource;
-  if (cmd->HasSwitch(switches::kEnableResourceContentSettings))
-    resource = group->identifier();
-  observer->DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS, resource);
+  observer->DidBlockContentType(CONTENT_SETTINGS_TYPE_PLUGINS,
+      cmd->HasSwitch(switches::kEnableResourceContentSettings) ?
+          resource : std::string());
   if (plugin_setting == CONTENT_SETTING_ASK) {
     return CreatePluginPlaceholder(
         render_view, frame, params, *group, IDR_CLICK_TO_PLAY_PLUGIN_HTML,
@@ -461,9 +463,6 @@ bool ChromeContentRendererClient::ShouldFork(WebFrame* frame,
   // TODO(erikkay) This is happening inside of a check to is_content_initiated
   // which means that things like the back button won't trigger it.  Is that
   // OK?
-  // TODO(creis): For hosted apps, we currently only swap processes to enter
-  // the app and not exit it, since we currently lose context (e.g.,
-  // window.opener) if the window navigates back.  See crbug.com/65953.
   if (!CrossesExtensionExtents(frame, url))
     return false;
 
@@ -559,10 +558,7 @@ bool ChromeContentRendererClient::CrossesExtensionExtents(WebFrame* frame,
   if (old_url.is_empty() && frame->opener())
     old_url = frame->opener()->url();
 
-  bool old_url_is_hosted_app = extensions->GetByURL(old_url) &&
-      !extensions->GetByURL(old_url)->web_extent().is_empty();
-  return !extensions->InSameExtent(old_url, new_url) &&
-         !old_url_is_hosted_app;
+  return !extensions->InSameExtent(old_url, new_url);
 }
 
 }  // namespace chrome

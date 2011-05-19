@@ -4,6 +4,8 @@
 
 #include "webkit/quota/quota_database.h"
 
+#include <string>
+
 #include "app/sql/connection.h"
 #include "app/sql/diagnostic_error_delegate.h"
 #include "app/sql/meta_table.h"
@@ -24,6 +26,7 @@ const char kOriginsTable[] = "Origins";
 const char kHostQuotaTable[] = "HostQuotaTable";
 const char kOriginLastAccessTable[] = "OriginLastAccessTable";
 const char kGlobalQuotaKeyPrefix[] = "GlobalQuota-";
+const char kIsOriginTableBootstrapped[] = "IsOriginTableBootstrapped";
 
 const struct {
   const char* table_name;
@@ -32,12 +35,14 @@ const struct {
   { kHostQuotaTable,
     "(host TEXT NOT NULL,"
     " type INTEGER NOT NULL,"
-    " quota INTEGER)" },
+    " quota INTEGER,"
+    " UNIQUE(host, type))" },
   { kOriginLastAccessTable,
     "(origin TEXT NOT NULL,"
     " type INTEGER NOT NULL,"
     " used_count INTEGER,"
-    " last_access_time INTEGER)" },
+    " last_access_time INTEGER,"
+    " UNIQUE(origin, type))" },
 };
 
 const struct {
@@ -129,7 +134,7 @@ bool QuotaDatabase::GetHostQuota(
 
 bool QuotaDatabase::SetHostQuota(
     const std::string& host, StorageType type, int64 quota) {
-  DCHECK(quota >= 0);
+  DCHECK_GE(quota, 0);
   if (!LazyOpen(true))
     return false;
 
@@ -204,6 +209,39 @@ bool QuotaDatabase::SetOriginLastAccessTime(
   return transaction.Commit();
 }
 
+bool QuotaDatabase::RegisterOrigins(const std::set<GURL>& origins,
+                                    StorageType type,
+                                    base::Time last_access_time) {
+  if (!LazyOpen(true))
+    return false;
+
+  sql::Transaction transaction(db_.get());
+  if (!transaction.Begin())
+    return false;
+
+  sql::Statement statement;
+
+  typedef std::set<GURL>::const_iterator itr_type;
+  for (itr_type itr = origins.begin(), end = origins.end();
+       itr != end; ++itr) {
+    const char* kSql =
+        "INSERT OR IGNORE INTO OriginLastAccessTable"
+        " (used_count, last_access_time, origin, type)"
+        " VALUES (?, ?, ?, ?)";
+    if (!PrepareCachedStatement(db_.get(), SQL_FROM_HERE, kSql, &statement))
+      return false;
+
+    statement.BindInt(0, 0);  // used_count
+    statement.BindInt64(1, last_access_time.ToInternalValue());
+    statement.BindString(2, itr->spec());
+    statement.BindInt(3, static_cast<int>(type));
+    if (!statement.Run())
+      return false;
+  }
+
+  return transaction.Commit();
+}
+
 bool QuotaDatabase::DeleteHostQuota(
     const std::string& host, StorageType type) {
   if (!LazyOpen(false))
@@ -252,47 +290,48 @@ bool QuotaDatabase::SetGlobalQuota(StorageType type, int64 quota) {
   return meta_table_->SetValue(GetGlobalQuotaKey(type).c_str(), quota);
 }
 
-bool QuotaDatabase::GetLRUOrigins(
-    StorageType type, std::vector<GURL>* origins,
-    int max_used_count, int num_origins_limit) {
-  DCHECK(origins);
-  DCHECK(num_origins_limit > 0);
+bool QuotaDatabase::GetLRUOrigin(
+    StorageType type,
+    const std::set<GURL>& exceptions,
+    GURL* origin) {
+  DCHECK(origin);
   if (!LazyOpen(false))
     return false;
 
-  const char* kSqlBase =
-      "SELECT origin FROM OriginLastAccessTable"
-      " WHERE type = ?";
-
-  const char* kSqlSuffix =
-      " ORDER BY last_access_time ASC "
-      " LIMIT ?";
-
-  std::string sql(kSqlBase);
-  sql::StatementID id = SQL_FROM_HERE;
-  if (max_used_count >= 0) {
-    sql += " AND used_count <= ?";
-    id = SQL_FROM_HERE;
-  }
-  sql += kSqlSuffix;
+  const char* kSql = "SELECT origin FROM OriginLastAccessTable"
+                     " WHERE type = ?"
+                     " ORDER BY last_access_time ASC";
 
   sql::Statement statement;
-  if (!PrepareCachedStatement(db_.get(), id, sql.c_str(), &statement))
+  if (!PrepareCachedStatement(db_.get(), SQL_FROM_HERE, kSql, &statement))
+    return false;
+  statement.BindInt(0, static_cast<int>(type));
+
+  while (statement.Step()) {
+    GURL url(statement.ColumnString(0));
+    if (exceptions.find(url) == exceptions.end()) {
+      *origin = url;
+      return true;
+    }
+  }
+
+  *origin = GURL();
+  return statement.Succeeded();
+}
+
+bool QuotaDatabase::IsOriginDatabaseBootstrapped() {
+  if (!LazyOpen(true))
     return false;
 
-  int column = 0;
-  statement.BindInt(column++, static_cast<int>(type));
-  if (max_used_count >= 0)
-    statement.BindInt(column++, max_used_count);
-  statement.BindInt(column++, num_origins_limit);
+  int flag = 0;
+  return meta_table_->GetValue(kIsOriginTableBootstrapped, &flag) && flag;
+}
 
-  origins->clear();
-  while (statement.Step())
-    origins->push_back(GURL(statement.ColumnString(0)));
+bool QuotaDatabase::SetOriginDatabaseBootstrapped(bool bootstrap_flag) {
+  if (!LazyOpen(true))
+    return false;
 
-  DCHECK(origins->size() <= static_cast<size_t>(num_origins_limit));
-
-  return statement.Succeeded();
+  return meta_table_->SetValue(kIsOriginTableBootstrapped, bootstrap_flag);
 }
 
 bool QuotaDatabase::FindOriginUsedCount(
@@ -314,7 +353,7 @@ bool QuotaDatabase::FindOriginUsedCount(
   if (!statement.Step() || !statement.Succeeded())
     return false;
 
-  *used_count = statement.ColumnInt(3);
+  *used_count = statement.ColumnInt(0);
   return true;
 }
 
@@ -327,15 +366,20 @@ bool QuotaDatabase::LazyOpen(bool create_if_needed) {
   if (is_disabled_)
     return false;
 
-  if (!create_if_needed && !file_util::PathExists(db_file_path_))
+  bool in_memory_only = db_file_path_.empty();
+  if (!create_if_needed &&
+      (in_memory_only || !file_util::PathExists(db_file_path_))) {
     return false;
+  }
 
   db_.reset(new sql::Connection);
   meta_table_.reset(new sql::MetaTable);
 
   bool opened = false;
-  if (!file_util::CreateDirectory(db_file_path_.DirName())) {
-    LOG(ERROR) << "Failed to create quota database directory.";
+  if (in_memory_only) {
+    opened = db_->OpenInMemory();
+  } else if (!file_util::CreateDirectory(db_file_path_.DirName())) {
+      LOG(ERROR) << "Failed to create quota database directory.";
   } else {
     opened = db_->Open(db_file_path_);
     if (opened)

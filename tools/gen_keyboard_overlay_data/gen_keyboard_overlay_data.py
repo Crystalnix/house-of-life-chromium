@@ -283,6 +283,9 @@ def FetchKeyboardGlyphData(client):
       if 'label' in line:
         line['label'] = LABEL_MAP.get(line['label'], line['label'])
       keys[scancode] = line
+    # Add a label to space key
+    if '39' not in keys:
+      keys['39'] = {'label': 'space'}
     ret[lang]['keys'] = keys
   return ret
 
@@ -369,8 +372,13 @@ def OutputCC(hotkey_data, outfile):
   print 'Generating: %s' % outfile
   out = file(outfile, 'w')
   for (behavior, _) in hotkey_data:
+    message_name = ToMessageName(behavior)
+    # Indent the line if message_name is longer than 45 characters, which means
+    # the second line in the generated code is longer than 80 characters.
+    if len(message_name) > 45:
+      message_name = '\n          %s' % message_name
     out.write(CC_SNIPPET_TEMPLATE % (Toi18nContent(behavior),
-                                     ToMessageName(behavior)))
+                                     message_name))
 
 
 def OutputAltGr(keyboard_glyph_data, outfile):
@@ -382,15 +390,18 @@ def OutputAltGr(keyboard_glyph_data, outfile):
 
   for layout in keyboard_glyph_data.keys():
     try:
-      right_alt = keyboard_glyph_data[layout]["keys"]["E0 38"]["key"].strip()
-      if right_alt.lower() == "alt gr":
+      # If left and right alt have different values, this layout to the list of
+      # layouts that don't remap the right alt key.
+      right_alt = keyboard_glyph_data[layout]["keys"]["E0 38"]["label"].strip()
+      left_alt = keyboard_glyph_data[layout]["keys"]["38"]["label"].strip()
+      if right_alt.lower() != left_alt.lower():
         altgr_output.append('  "%s",' % layout)
     except KeyError:
       pass
 
     try:
-      caps_lock = keyboard_glyph_data[layout]["keys"]["E0 5B"]["key"].strip()
-      if caps_lock.lower() != "glyph_search":
+      caps_lock = keyboard_glyph_data[layout]["keys"]["E0 5B"]["label"].strip()
+      if caps_lock.lower() != "search":
         capslock_output.append('  "%s",' % layout)
     except KeyError:
       pass

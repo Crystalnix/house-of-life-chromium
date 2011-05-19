@@ -531,6 +531,14 @@ TEST_F(TransportSecurityStateTest, Preloaded) {
                                        "googleadservices.com",
                                        true));
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "googlecode.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "appspot.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googlesyndication.com",
+                                       true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "doubleclick.net", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state,
+                                       "googlegroups.com",
+                                       true));
 
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "gmail.com", true));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.gmail.com", true));
@@ -573,6 +581,20 @@ TEST_F(TransportSecurityStateTest, Preloaded) {
                                       false));
   EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
                                       "foo.cloudsecurityalliance.org",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "login.sapo.pt",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.login.sapo.pt",
+                                      false));
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "mattmccutchen.net",
+                                      false));
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state,
+                                      "foo.mattmccutchen.net",
                                       false));
 }
 
@@ -709,6 +731,19 @@ TEST_F(TransportSecurityStateTest, OptionalHSTSCertPins) {
   EXPECT_TRUE(state->HasPinsForHost(&domain_state,
                                     "kibbles.googlecode.com",
                                     true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "appspot.com", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state,
+                                    "googlesyndication.com",
+                                    true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "doubleclick.net", true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "ad.doubleclick.net", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state,
+                                     "learn.doubleclick.net",
+                                     true));
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "a.googlegroups.com", true));
+  EXPECT_FALSE(state->HasPinsForHost(&domain_state,
+                                     "a.googlegroups.com",
+                                     false));
 }
 
 TEST_F(TransportSecurityStateTest, ForcePreloads) {
@@ -726,6 +761,24 @@ TEST_F(TransportSecurityStateTest, ForcePreloads) {
   TransportSecurityState::DomainState domain_state;
   EXPECT_FALSE(state->HasPinsForHost(&domain_state, "docs.google.com", true));
   EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "docs.google.com", true));
+}
+
+TEST_F(TransportSecurityStateTest, OverrideBuiltins) {
+  scoped_refptr<TransportSecurityState> state(
+      new TransportSecurityState(std::string()));
+
+  TransportSecurityState::DomainState domain_state;
+  EXPECT_TRUE(state->HasPinsForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "google.com", true));
+  EXPECT_FALSE(state->IsEnabledForHost(&domain_state, "www.google.com", true));
+
+  domain_state = TransportSecurityState::DomainState();
+  const base::Time current_time(base::Time::Now());
+  const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
+  domain_state.expiry = expiry;
+  state->EnableHost("www.google.com", domain_state);
+
+  EXPECT_TRUE(state->IsEnabledForHost(&domain_state, "www.google.com", true));
 }
 
 }  // namespace net

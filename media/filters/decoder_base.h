@@ -9,6 +9,7 @@
 
 #include <deque>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/stl_util-inl.h"
 #include "base/task.h"
@@ -33,11 +34,10 @@ class DecoderBase : public Decoder {
         NewRunnableMethod(this, &DecoderBase::StopTask, callback));
   }
 
-  virtual void Seek(base::TimeDelta time,
-                    FilterCallback* callback) {
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB& cb) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &DecoderBase::SeekTask, time, callback));
+        NewRunnableMethod(this, &DecoderBase::SeekTask, time, cb));
   }
 
   // Decoder implementation.
@@ -129,8 +129,8 @@ class DecoderBase : public Decoder {
     DCHECK_LE(pending_reads_, pending_requests_);
     if (!fulfilled) {
       DCHECK_LT(pending_reads_, pending_requests_);
-      demuxer_stream_->Read(NewCallback(this, &DecoderBase::OnReadComplete));
       ++pending_reads_;
+      demuxer_stream_->Read(base::Bind(&DecoderBase::OnReadComplete, this));
     }
   }
 
@@ -169,25 +169,22 @@ class DecoderBase : public Decoder {
     }
   }
 
-  void SeekTask(base::TimeDelta time, FilterCallback* callback) {
+  void SeekTask(base::TimeDelta time, const FilterStatusCB& cb) {
     DCHECK_EQ(MessageLoop::current(), message_loop_);
     DCHECK_EQ(0u, pending_reads_) << "Pending reads should have completed";
     DCHECK_EQ(0u, pending_requests_) << "Pending requests should be empty";
 
     // Delegate to the subclass first.
-    DoSeek(time,
-           NewRunnableMethod(this, &DecoderBase::OnSeekComplete, callback));
+    DoSeek(time, NewRunnableMethod(this, &DecoderBase::OnSeekComplete, cb));
   }
 
-  void OnSeekComplete(FilterCallback* callback) {
+  void OnSeekComplete(const FilterStatusCB& cb) {
     // Flush our decoded results.
     result_queue_.clear();
 
     // Signal that we're done seeking.
-    if (callback) {
-      callback->Run();
-      delete callback;
-    }
+    if (!cb.is_null())
+      cb.Run(PIPELINE_OK);
   }
 
   void InitializeTask(DemuxerStream* demuxer_stream,
@@ -234,8 +231,8 @@ class DecoderBase : public Decoder {
 
     // Since we can't fulfill a read request now then submit a read
     // request to the demuxer stream.
-    demuxer_stream_->Read(NewCallback(this, &DecoderBase::OnReadComplete));
     ++pending_reads_;
+    demuxer_stream_->Read(base::Bind(&DecoderBase::OnReadComplete, this));
   }
 
   void ReadCompleteTask(scoped_refptr<Buffer> buffer) {

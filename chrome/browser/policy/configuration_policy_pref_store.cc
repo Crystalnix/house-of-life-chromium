@@ -263,12 +263,6 @@ const ConfigurationPolicyPrefKeeper::PolicyToPreferenceMapEntry
     prefs::kEditBookmarksEnabled },
   { Value::TYPE_BOOLEAN, kPolicyAllowFileSelectionDialogs,
     prefs::kAllowFileSelectionDialogs },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingEnabled,
-    prefs::kChromotingEnabled },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingHostEnabled,
-    prefs::kChromotingHostEnabled },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingHostFirewallTraversal,
-    prefs::kChromotingHostFirewallTraversal },
 
 #if defined(OS_CHROMEOS)
   { Value::TYPE_BOOLEAN, kPolicyChromeOsLockOnIdleSuspend,
@@ -720,6 +714,11 @@ void ConfigurationPolicyPrefKeeper::ApplyProxySettings() {
       prefs_.SetValue(prefs::kProxy, ProxyConfigDictionary::CreateAutoDetect());
       break;
     case ProxyPrefs::MODE_PAC_SCRIPT: {
+      if (!HasProxyPolicy(kPolicyProxyPacUrl)) {
+        LOG(WARNING) << "A centrally-administered policy specifies to use a "
+                     << "PAC script, but doesn't supply the PAC script URL.";
+        return;
+      }
       std::string pac_url;
       proxy_policies_[kPolicyProxyPacUrl]->GetAsString(&pac_url);
       prefs_.SetValue(prefs::kProxy,
@@ -727,6 +726,11 @@ void ConfigurationPolicyPrefKeeper::ApplyProxySettings() {
       break;
     }
     case ProxyPrefs::MODE_FIXED_SERVERS: {
+      if (!HasProxyPolicy(kPolicyProxyServer)) {
+        LOG(WARNING) << "A centrally-administered policy specifies to use a "
+                     << "fixed server, but doesn't supply the server address.";
+        return;
+      }
       std::string proxy_server;
       proxy_policies_[kPolicyProxyServer]->GetAsString(&proxy_server);
       std::string bypass_list;
@@ -1007,12 +1011,6 @@ ConfigurationPolicyPrefStore::GetChromePolicyDefinitionList() {
       key::kEditBookmarksEnabled },
     { kPolicyAllowFileSelectionDialogs, Value::TYPE_BOOLEAN,
       key::kAllowFileSelectionDialogs },
-    { kPolicyChromotingEnabled, Value::TYPE_BOOLEAN,
-      key::kChromotingEnabled },
-    { kPolicyChromotingHostEnabled, Value::TYPE_BOOLEAN,
-      key::kChromotingHostEnabled },
-    { kPolicyChromotingHostFirewallTraversal, Value::TYPE_BOOLEAN,
-      key::kChromotingHostFirewallTraversal },
 
 #if defined(OS_CHROMEOS)
     { kPolicyChromeOsLockOnIdleSuspend, Value::TYPE_BOOLEAN,
@@ -1051,7 +1049,7 @@ void ConfigurationPolicyPrefStore::Refresh() {
       provider_->IsInitializationComplete()) {
     initialization_complete_ = true;
     FOR_EACH_OBSERVER(PrefStore::Observer, observers_,
-                      OnInitializationCompleted());
+                      OnInitializationCompleted(true));
   }
 }
 

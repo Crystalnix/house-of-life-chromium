@@ -5,8 +5,10 @@
 #include <deque>
 
 #include "base/command_line.h"
+#include "base/memory/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,10 +18,12 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/in_process_browser_test.h"
 #include "chrome/test/ui_test_utils.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/common/notification_service.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -62,17 +66,37 @@ class TestPrerenderContents : public PrerenderContents {
       : PrerenderContents(prerender_manager, profile, url, referrer),
         number_of_loads_(0),
         expected_number_of_loads_(number_of_loads),
-        expected_final_status_(expected_final_status) {
+        expected_final_status_(expected_final_status),
+        new_render_view_host_(NULL),
+        was_hidden_(false),
+        was_shown_(false) {
   }
 
   virtual ~TestPrerenderContents() {
     EXPECT_EQ(expected_final_status_, final_status()) <<
         " when testing URL " << prerender_url().path();
+    // Prerendering RenderViewHosts should be hidden before the first
+    // navigation, so this should be happen for every PrerenderContents for
+    // while a RenderViewHost is created, regardless of whether or not it's
+    // used.
+    if (new_render_view_host_) {
+      EXPECT_TRUE(was_hidden_);
+    }
+
     // A used PrerenderContents will only be destroyed when we swap out
     // TabContents, at the end of a navigation caused by a call to
     // NavigateToURLImpl().
-    if (final_status() == FINAL_STATUS_USED)
-      MessageLoopForUI::current()->Quit();
+    if (final_status() == FINAL_STATUS_USED) {
+      EXPECT_TRUE(new_render_view_host_);
+      EXPECT_TRUE(was_shown_);
+    } else {
+      EXPECT_FALSE(was_shown_);
+    }
+
+    // When the PrerenderContents is destroyed, quit the UI message loop.
+    // This happens on navigation to used prerendered pages, and soon
+    // after cancellation of unused prerendered pages.
+    MessageLoopForUI::current()->Quit();
   }
 
   virtual void OnRenderViewGone(int status, int exit_code) OVERRIDE {
@@ -101,16 +125,53 @@ class TestPrerenderContents : public PrerenderContents {
     }
   }
 
-  virtual void OnDestroy() OVERRIDE {
-    // In the event we are destroyed, say if the prerender was canceled, quit
-    // the UI message loop.
-    MessageLoopForUI::current()->Quit();
+ private:
+  virtual void OnRenderViewHostCreated(
+      RenderViewHost* new_render_view_host) OVERRIDE {
+    // Used to make sure the RenderViewHost is hidden and, if used,
+    // subsequently shown.
+    notification_registrar().Add(
+        this,
+        NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED,
+        Source<RenderWidgetHost>(new_render_view_host));
+
+    new_render_view_host_ = new_render_view_host;
+
+    PrerenderContents::OnRenderViewHostCreated(new_render_view_host);
   }
 
- private:
+  virtual void Observe(NotificationType type,
+                       const NotificationSource& source,
+                       const NotificationDetails& details) OVERRIDE {
+    if (type.value ==
+        NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED) {
+      EXPECT_EQ(new_render_view_host_, Source<RenderWidgetHost>(source).ptr());
+      bool is_visible = *Details<bool>(details).ptr();
+
+      if (!is_visible) {
+        was_hidden_ = true;
+      } else if (is_visible && was_hidden_) {
+        // Once hidden, a prerendered RenderViewHost should only be shown after
+        // being removed from the PrerenderContents for display.
+        EXPECT_FALSE(render_view_host());
+        was_shown_ = true;
+      }
+      return;
+    }
+    PrerenderContents::Observe(type, source, details);
+  }
+
   int number_of_loads_;
   int expected_number_of_loads_;
   FinalStatus expected_final_status_;
+
+  // The RenderViewHost created for the prerender, if any.
+  RenderViewHost* new_render_view_host_;
+  // Set to true when the prerendering RenderWidget is hidden.
+  bool was_hidden_;
+  // Set to true when the prerendering RenderWidget is shown, after having been
+  // hidden.
+  bool was_shown_;
 };
 
 // PrerenderManager that uses TestPrerenderContents.
@@ -174,6 +235,18 @@ class PrerenderBrowserTest : public InProcessBrowserTest {
         switches::kExtraPluginDir,
         app_dir.Append(FILE_PATH_LITERAL("plugins")));
 #endif
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    // TODO(mmenke):  Once downloading is stopped earlier, remove this.
+    browser()->profile()->GetPrefs()->SetBoolean(prefs::kPromptForDownload,
+                                                 false);
+
+    ASSERT_TRUE(downloads_directory_.CreateUniqueTempDir());
+
+    browser()->profile()->GetPrefs()->SetFilePath(
+        prefs::kDownloadDefaultDirectory,
+        downloads_directory_.path());
   }
 
   // Overload for a single expected final status
@@ -357,6 +430,9 @@ class PrerenderBrowserTest : public InProcessBrowserTest {
   GURL dest_url_;
   bool use_https_src_server_;
   bool call_javascript_;
+
+  // Location of the downloads directory for these tests
+  ScopedTempDir downloads_directory_;
 };
 
 // Checks that a page is correctly prerendered in the case of a
@@ -404,7 +480,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderIframeDelayLoadPlugin) {
 // Renders a page that contains a prerender link to a page that contains an
 // iframe with a source that requires http authentication. This should not
 // prerender successfully.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHttpAuthentication) {
+// Flaky, and crbug.com was down when discovered, so no crbug entry.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       DISABLED_PrerenderHttpAuthentication) {
   PrerenderTestURL("files/prerender/prerender_http_auth_container.html",
                    FINAL_STATUS_AUTH_NEEDED,
                    1);
@@ -575,7 +653,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
 
 // Prerenders a page that contains an automatic download triggered through an
 // iframe. This should not prerender successfully.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadIFrame) {
+// Flaky: http://crbug.com/81985
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, FLAKY_PrerenderDownloadIframe) {
   PrerenderTestURL("files/prerender/prerender_download_iframe.html",
                    FINAL_STATUS_DOWNLOAD,
                    1);
@@ -583,8 +662,10 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadIFrame) {
 
 // Prerenders a page that contains an automatic download triggered through
 // Javascript changing the window.location. This should not prerender
-// successfully.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadLocation) {
+// successfully
+// Flaky: http://crbug.com/81985
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       FLAKY_PrerenderDownloadLocation) {
   PrerenderTestURL(CreateClientRedirect("files/download-test1.lib"),
                    FINAL_STATUS_DOWNLOAD,
                    1);
@@ -592,7 +673,9 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadLocation) {
 
 // Prerenders a page that contains an automatic download triggered through a
 // client-issued redirect. This should not prerender successfully.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderDownloadClientRedirect) {
+// Flaky: http://crbug.com/81985
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
+                       FLAKY_PrerenderDownloadClientRedirect) {
   PrerenderTestURL("files/prerender/prerender_download_refresh.html",
                    FINAL_STATUS_DOWNLOAD,
                    1);
@@ -633,9 +716,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderExcessiveMemory) {
 }
 
 // Checks that we don't prerender in an infinite loop.
-// TODO(dominich): fix test to work with TabContents.
-// Disabled for all as per http://crbug.com/81679
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderInfiniteLoop) {
+// crbug.com/83170
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, FLAKY_PrerenderInfiniteLoop) {
   const char* const kHtmlFileA = "files/prerender/prerender_infinite_a.html";
   const char* const kHtmlFileB = "files/prerender/prerender_infinite_b.html";
 
@@ -659,8 +741,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderInfiniteLoop) {
 
 // Checks that we don't prerender in an infinite loop and multiple links are
 // handled correctly.
-// Flaky, http://crbug.com/77323.
-// TODO(dominich): fix test to work with TabContents.
+// Flaky, http://crbug.com/77323, but failing in a CHECK so disabled.
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
                        DISABLED_PrerenderInfiniteLoopMultiple) {
   const char* const kHtmlFileA =
@@ -699,7 +780,7 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest,
   EXPECT_FALSE(UrlIsPendingInPrerenderManager(kHtmlFileC));
 }
 
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, TaskManager) {
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderTaskManager) {
   // Early out if we're not using TabContents for Prerendering.
   if (!prerender::PrerenderContents::UseTabContents()) {
     SUCCEED();
@@ -719,16 +800,14 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, TaskManager) {
   string16 prerender_title;
   int num_prerender_tabs = 0;
 
-  VLOG(1) << "After prerender:";
   for (int i = 0; i < model()->ResourceCount(); ++i) {
-    VLOG(1) << "  " << i << ": " << model()->GetResourceTitle(i);
     if (model()->GetResourceTabContents(i)) {
       prerender_title = model()->GetResourceTitle(i);
       if (StartsWith(prerender_title, prefix, true))
         ++num_prerender_tabs;
     }
   }
-  ASSERT_EQ(1, num_prerender_tabs);
+  EXPECT_EQ(1, num_prerender_tabs);
   const string16 prerender_page_title = prerender_title.substr(prefix.length());
 
   NavigateToDestURL();
@@ -737,29 +816,29 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, TaskManager) {
   const string16 tab_prefix =
       l10n_util::GetStringFUTF16(IDS_TASK_MANAGER_TAB_PREFIX, string16());
   num_prerender_tabs = 0;
-  bool found_tab_with_prerender_page_title = false;
-  VLOG(1) << "After navigate:";
+  int num_tabs_with_prerender_page_title = 0;
   for (int i = 0; i < model()->ResourceCount(); ++i) {
-    VLOG(1) << "  " << i << ": " << model()->GetResourceTitle(i);
     if (model()->GetResourceTabContents(i)) {
       string16 tab_title = model()->GetResourceTitle(i);
       if (StartsWith(tab_title, prefix, true)) {
         ++num_prerender_tabs;
       } else {
-        ASSERT_TRUE(StartsWith(tab_title, tab_prefix, true));
+        EXPECT_TRUE(StartsWith(tab_title, tab_prefix, true));
 
         // The prerender tab should now be a normal tab but the title should be
-        // the same.
+        // the same. Depending on timing, there may be more than one of these.
         const string16 tab_page_title = tab_title.substr(tab_prefix.length());
-        if (prerender_page_title.compare(tab_page_title) == 0) {
-          ASSERT_FALSE(found_tab_with_prerender_page_title);
-          found_tab_with_prerender_page_title = true;
-        }
+        if (prerender_page_title.compare(tab_page_title) == 0)
+          ++num_tabs_with_prerender_page_title;
       }
     }
   }
-  ASSERT_EQ(0, num_prerender_tabs);
-  ASSERT_TRUE(found_tab_with_prerender_page_title);
+  EXPECT_EQ(0, num_prerender_tabs);
+
+  // We may have deleted the prerender tab, but the swapped in tab should be
+  // active.
+  EXPECT_GE(num_tabs_with_prerender_page_title, 1);
+  EXPECT_LE(num_tabs_with_prerender_page_title, 2);
 }
 
 // Checks that prerenderers will terminate when an audio tag is encountered.
@@ -785,7 +864,12 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderHTML5VideoJs) {
 }
 
 // Checks that scripts can retrieve the correct window size while prerendering.
+#if defined(TOOLKIT_VIEWS)
+// TODO(beng): Widget hierarchy split causes this to fail http://crbug.com/82363
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, DISABLED_PrerenderWindowSize) {
+#else
 IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderWindowSize) {
+#endif
   PrerenderTestURL("files/prerender/prerender_size.html",
                    FINAL_STATUS_USED,
                    1);
@@ -867,7 +951,8 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderImageJpeg) {
 
 // Checks that a prerender of a CRX will result in a cancellation due to
 // download.
-IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderCrx) {
+// Flaky: http://crbug.com/81985
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, FLAKY_PrerenderCrx) {
   PrerenderTestURL("files/prerender/extension.crx", FINAL_STATUS_DOWNLOAD, 1);
 }
 
@@ -924,6 +1009,22 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderXhrDelete) {
                    1);
 }
 
+// Checks that a top-level page which would trigger an SSL error is simply
+// canceled. Note that this happens before checking the cert, since an https
+// URL should not be sent out.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorTopLevel) {
+  net::TestServer::HTTPSOptions https_options;
+  https_options.server_certificate =
+      net::TestServer::HTTPSOptions::CERT_MISMATCHED_NAME;
+  net::TestServer https_server(https_options,
+                               FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  ASSERT_TRUE(https_server.Start());
+  GURL https_url = https_server.GetURL("files/prerender/prerender_page.html");
+  PrerenderTestURL(https_url,
+                   FINAL_STATUS_HTTPS,
+                   1);
+}
+
 // Checks that an SSL error that comes from a subresource does not cancel
 // the page. Non-main-frame requests are simply cancelled if they run into
 // an SSL problem.
@@ -945,6 +1046,37 @@ IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorSubresource) {
       &replacement_path));
   PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
   NavigateToDestURL();
+}
+
+// Checks that an SSL error that comes from an iframe does not cancel
+// the page. Non-main-frame requests are simply cancelled if they run into
+// an SSL problem.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderSSLErrorIframe) {
+  net::TestServer::HTTPSOptions https_options;
+  https_options.server_certificate =
+      net::TestServer::HTTPSOptions::CERT_MISMATCHED_NAME;
+  net::TestServer https_server(https_options,
+                               FilePath(FILE_PATH_LITERAL("chrome/test/data")));
+  ASSERT_TRUE(https_server.Start());
+  GURL https_url = https_server.GetURL(
+      "files/prerender/prerender_embedded_content.html");
+  std::vector<net::TestServer::StringPair> replacement_text;
+  replacement_text.push_back(
+      std::make_pair("REPLACE_WITH_URL", https_url.spec()));
+  std::string replacement_path;
+  ASSERT_TRUE(net::TestServer::GetFilePathWithReplacements(
+      "files/prerender/prerender_with_iframe.html",
+      replacement_text,
+      &replacement_path));
+  PrerenderTestURL(replacement_path, FINAL_STATUS_USED, 1);
+  NavigateToDestURL();
+}
+
+// Checks that we cancel correctly when window.print() is called.
+IN_PROC_BROWSER_TEST_F(PrerenderBrowserTest, PrerenderPrint) {
+  PrerenderTestURL("files/prerender/prerender_print.html",
+                   FINAL_STATUS_WINDOW_PRINT,
+                   1);
 }
 
 }  // namespace prerender

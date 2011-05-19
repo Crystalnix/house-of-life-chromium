@@ -20,18 +20,8 @@ RenderViewHostDelegate::GetRendererManagementDelegate() {
   return NULL;
 }
 
-RenderViewHostDelegate::ContentSettings*
-RenderViewHostDelegate::GetContentSettingsDelegate() {
-  return NULL;
-}
-
 RenderViewHostDelegate::BookmarkDrag*
 RenderViewHostDelegate::GetBookmarkDragDelegate() {
-  return NULL;
-}
-
-RenderViewHostDelegate::SSL*
-RenderViewHostDelegate::GetSSLDelegate() {
   return NULL;
 }
 

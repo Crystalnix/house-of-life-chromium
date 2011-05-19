@@ -44,7 +44,6 @@
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/chrome_process_util.h"
-#include "chrome/test/test_launcher_utils.h"
 #include "chrome/test/test_switches.h"
 #include "content/common/debug_flags.h"
 #include "content/common/json_value_serializer.h"
@@ -113,8 +112,9 @@ UITestBase::UITestBase(MessageLoop::Type msg_loop_type)
 UITestBase::~UITestBase() {}
 
 void UITestBase::SetUp() {
-  // Some tests (e.g. SessionRestoreUITest) call SetUp() multiple times,
-  // but the ProxyLauncher should be initialized only once per instance.
+  // Tests that do a session restore (e.g. SessionRestoreUITest, StartupTest)
+  // call SetUp() multiple times because they restart the browser mid-test.
+  // We don't want to reset the ProxyLauncher's state in those cases.
   if (!launcher_.get())
     launcher_.reset(CreateProxyLauncher());
   launcher_->AssertAppNotRunning(L"Please close any other instances "
@@ -173,6 +173,17 @@ ProxyLauncher* UITestBase::CreateProxyLauncher() {
   return new AnonymousProxyLauncher(false);
 }
 
+ProxyLauncher::LaunchState UITestBase::DefaultLaunchState() {
+  FilePath browser_executable = browser_directory_.Append(
+      chrome::kBrowserProcessExecutablePath);
+  CommandLine command(browser_executable);
+  command.AppendArguments(launch_arguments_, false);
+  ProxyLauncher::LaunchState state =
+      { clear_profile_, template_user_data_, profile_type_,
+        command, include_testing_id_, show_window_ };
+  return state;
+}
+
 bool UITestBase::ShouldFilterInet() {
   return true;
 }
@@ -221,7 +232,7 @@ void UITestBase::LaunchBrowser(const CommandLine& arguments,
 bool UITestBase::LaunchAnotherBrowserBlockUntilClosed(
     const CommandLine& cmdline) {
   ProxyLauncher::LaunchState state = DefaultLaunchState();
-  state.arguments = cmdline;
+  state.command.AppendArguments(cmdline, false);
   return launcher_->LaunchAnotherBrowserBlockUntilClosed(state);
 }
 #endif
@@ -521,6 +532,8 @@ ProxyLauncher* UITest::CreateProxyLauncher() {
 }
 
 static CommandLine* CreatePythonCommandLine() {
+  // Note: Python's first argument must be the script; do not append CommandLine
+  // switches, as they would precede the script path and break this CommandLine.
   return new CommandLine(FilePath(FILE_PATH_LITERAL("python")));
 }
 
@@ -547,11 +560,13 @@ void UITest::StartHttpServer(const FilePath& root_directory) {
 
 void UITest::StartHttpServerWithPort(const FilePath& root_directory,
                                      int port) {
+  // Append CommandLine arguments after the server script, switches won't work.
   scoped_ptr<CommandLine> cmd_line(CreateHttpServerCommandLine());
   ASSERT_TRUE(cmd_line.get());
-  cmd_line->AppendSwitchASCII("server", "start");
-  cmd_line->AppendSwitch("register_cygwin");
-  cmd_line->AppendSwitchPath("root", root_directory);
+  cmd_line->AppendArg("--server=start");
+  cmd_line->AppendArg("--register_cygwin");
+  cmd_line->AppendArgNative(FILE_PATH_LITERAL("--root=") +
+                            root_directory.value());
 
   FilePath layout_tests_dir;
   PathService::Get(base::DIR_SOURCE_ROOT, &layout_tests_dir);
@@ -560,18 +575,19 @@ void UITest::StartHttpServerWithPort(const FilePath& root_directory,
                                      .AppendASCII("data")
                                      .AppendASCII("layout_tests")
                                      .AppendASCII("LayoutTests");
-  cmd_line->AppendSwitchPath("layout_tests_dir", layout_tests_dir);
+  cmd_line->AppendArgNative(FILE_PATH_LITERAL("--layout_tests_dir=") +
+                            layout_tests_dir.value());
 
   // For Windows 7, if we start the lighttpd server on the foreground mode,
   // it will mess up with the command window and cause conhost.exe to crash. To
   // work around this, we start the http server on the background mode.
 #if defined(OS_WIN)
   if (base::win::GetVersion() >= base::win::VERSION_WIN7)
-    cmd_line->AppendSwitch("run_background");
+    cmd_line->AppendArg("--run_background");
 #endif
 
   if (port)
-    cmd_line->AppendSwitchASCII("port", base::IntToString(port));
+    cmd_line->AppendArg("--port=" + base::IntToString(port));
 
 #if defined(OS_WIN)
   // TODO(phajdan.jr): is this needed?
@@ -585,9 +601,10 @@ void UITest::StartHttpServerWithPort(const FilePath& root_directory,
 }
 
 void UITest::StopHttpServer() {
+  // Append CommandLine arguments after the server script, switches won't work.
   scoped_ptr<CommandLine> cmd_line(CreateHttpServerCommandLine());
   ASSERT_TRUE(cmd_line.get());
-  cmd_line->AppendSwitchASCII("server", "stop");
+  cmd_line->AppendArg("--server=stop");
 
 #if defined(OS_WIN)
   // TODO(phajdan.jr): is this needed?

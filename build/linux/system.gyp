@@ -13,13 +13,13 @@
         'pkg-config': 'pkg-config'
       },
     }],
-    [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    [ 'os_posix==1 and OS!="mac"', {
       'variables': {
         # We use our own copy of libssl3, although we still need to link against
         # the rest of NSS.
         'use_system_ssl%': 0,
       },
-    }, {  # OS!="linux"
+    }, {
       'variables': {
         'use_system_ssl%': 1,
       },
@@ -207,6 +207,41 @@
             ],
             'libraries': [
               '<!@(<(pkg-config) --libs-only-l gconf-2.0)',
+            ],
+          },
+      }]]
+    },
+    {
+      'target_name': 'gio',
+      'type': 'settings',
+      'conditions': [
+        ['use_gio==1 and _toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags gio-2.0)',
+            ],
+            'defines': [
+              'USE_GIO',
+            ],
+            'conditions': [
+              ['linux_link_gsettings==0', {
+                'defines': ['DLOPEN_GSETTINGS'],
+              }],
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other gio-2.0)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l gio-2.0)',
+            ],
+            'conditions': [
+              ['linux_link_gsettings==0', {
+                'libraries': [
+                  '-ldl',
+                ],
+              }],
             ],
           },
       }]]

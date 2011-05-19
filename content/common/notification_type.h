@@ -131,6 +131,12 @@ class NotificationType {
     // ViewHostMsg_CreateWindow_Params object are provided.
     CREATING_NEW_WINDOW,
 
+    // A new window was requested but was not created. The source will be a
+    // Source<TabContents> corresponding to the tab the request originated from.
+    // Details are the ViewHostMsg_CreateWindow_Params object that were used in
+    // the request.
+    CREATING_NEW_WINDOW_CANCELLED,
+
     // SSL ---------------------------------------------------------------------
 
     // Updating the SSL security indicators (the lock icon and such) proceeds
@@ -408,6 +414,11 @@ class NotificationType {
     // RenderProcessHost that corresponds to the process.
     RENDERER_PROCESS_TERMINATED,
 
+    // Indicates that a render process is starting to exit, such that it should
+    // not be used for future navigations.  The source will be the
+    // RenderProcessHost that corresponds to the process.
+    RENDERER_PROCESS_CLOSING,
+
     // Indicates that a render process was closed (meaning it exited, but the
     // RenderProcessHost might be reused).  The source will be the corresponding
     // RenderProcessHost.  The details will be a RendererClosedDetails struct.
@@ -453,6 +464,10 @@ class NotificationType {
     // Note: The RenderWidgetHost may be deallocated at this point.
     // Used only in testing.
     RENDER_WIDGET_HOST_DID_RECEIVE_INPUT_EVENT_ACK,
+
+    // Sent from RenderViewHost constructor. The source is the RenderViewHost,
+    // the details unused.
+    RENDER_VIEW_HOST_CREATED,
 
     // Sent from ~RenderViewHost. The source is the RenderViewHost, the details
     // unused.
@@ -860,18 +875,6 @@ class NotificationType {
     // Extension, and the source is a Profile.
     EXTENSION_USER_SCRIPTS_UPDATED,
 
-    // Sent after a new ExtensionFunctionDispatcher is created. The details are
-    // an ExtensionFunctionDispatcher* and the source is a Profile*. This is
-    // similar in timing to EXTENSION_HOST_CREATED, but also fires when an
-    // extension view which is hosted in TabContents* is created.
-    EXTENSION_FUNCTION_DISPATCHER_CREATED,
-
-    // Sent before an ExtensionHost is destroyed. The details are
-    // an ExtensionFunctionDispatcher* and the source is a Profile*. This is
-    // similar in timing to EXTENSION_HOST_DESTROYED, but also fires when an
-    // extension view which is hosted in TabContents* is destroyed.
-    EXTENSION_FUNCTION_DISPATCHER_DESTROYED,
-
     // Sent after a new ExtensionHost is created. The details are
     // an ExtensionHost* and the source is an ExtensionProcessManager*.
     EXTENSION_HOST_CREATED,
@@ -1097,6 +1100,10 @@ class NotificationType {
     // ContentSettingsNotificationsDetails.
     GEOLOCATION_SETTINGS_CHANGED,
 
+    // Sent when content settings change for a tab. The source is a TabContents
+    // object, the details are None.
+    TAB_CONTENT_SETTINGS_CHANGED,
+
     // Sync --------------------------------------------------------------------
 
     // Sent when the syncer is blocked configuring.
@@ -1121,11 +1128,6 @@ class NotificationType {
     // Foreign sessions has been disabled. New tabs should not display foreign
     // session data.
     FOREIGN_SESSION_DISABLED,
-
-    // Sent when the set of data types that should be synced has been modified
-    // externally (eg. by the WebUI options screen).
-    // The source is the Profile, there are no details.
-    SYNC_DATA_TYPES_UPDATED,
 
     // Cookies -----------------------------------------------------------------
 
@@ -1287,6 +1289,11 @@ class NotificationType {
 
     // Sent when the applications in the NTP app launcher have been reordered.
     EXTENSION_LAUNCHER_REORDERED,
+
+#if defined(OS_CHROMEOS)
+    // Sent when WebSocketProxy started accepting connections.
+    WEB_SOCKET_PROXY_STARTED,
+#endif
 
     // Sent when a new web store promo has been loaded.
     WEB_STORE_PROMO_LOADED,

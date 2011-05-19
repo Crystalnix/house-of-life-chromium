@@ -6,15 +6,11 @@
 
 #include <algorithm>
 
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/stl_util-inl.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -311,20 +307,19 @@ int QueryParser::ParseQuery(const string16& query, string16* sqlite_query) {
   return root.AppendToSQLiteQuery(sqlite_query);
 }
 
-void QueryParser::ParseQuery(const string16& query,
-                             std::vector<QueryNode*>* nodes) {
-  QueryNodeList root;
-  if (ParseQueryImpl(base::i18n::ToLower(query), &root))
-    nodes->swap(*root.children());
-}
-
-
-void QueryParser::ExtractQueryWords(const string16& query,
-                                    std::vector<string16>* words) {
+void QueryParser::ParseQueryWords(const string16& query,
+                                  std::vector<string16>* words) {
   QueryNodeList root;
   if (!ParseQueryImpl(query, &root))
     return;
   root.AppendWords(words);
+}
+
+void QueryParser::ParseQueryNodes(const string16& query,
+                                  std::vector<QueryNode*>* nodes) {
+  QueryNodeList root;
+  if (ParseQueryImpl(base::i18n::ToLower(query), &root))
+    nodes->swap(*root.children());
 }
 
 bool QueryParser::DoesQueryMatch(const string16& text,
@@ -359,7 +354,7 @@ bool QueryParser::DoesQueryMatch(const string16& text,
 }
 
 bool QueryParser::ParseQueryImpl(const string16& query, QueryNodeList* root) {
-  base::BreakIterator iter(&query, base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(&query, base::i18n::BreakIterator::BREAK_WORD);
   // TODO(evanm): support a locale here
   if (!iter.Init())
     return false;
@@ -375,9 +370,7 @@ bool QueryParser::ParseQueryImpl(const string16& query, QueryNodeList* root) {
     // is not necessarily a word, but could also be a sequence of punctuation
     // or whitespace.
     if (iter.IsWord()) {
-      string16 word = iter.GetString();
-
-      QueryNodeWord* word_node = new QueryNodeWord(word);
+      QueryNodeWord* word_node = new QueryNodeWord(iter.GetString());
       if (in_quotes)
         word_node->set_literal(true);
       query_stack.back()->AddChild(word_node);
@@ -402,7 +395,7 @@ bool QueryParser::ParseQueryImpl(const string16& query, QueryNodeList* root) {
 
 void QueryParser::ExtractQueryWords(const string16& text,
                                     std::vector<QueryWord>* words) {
-  base::BreakIterator iter(&text, base::BreakIterator::BREAK_WORD);
+  base::i18n::BreakIterator iter(&text, base::i18n::BreakIterator::BREAK_WORD);
   // TODO(evanm): support a locale here
   if (!iter.Init())
     return;

@@ -10,13 +10,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/message_loop_proxy.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/service/service_process.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/cookie_monster.h"
-#include "net/base/cookie_policy.h"
 #include "net/base/dnsrr_resolver.h"
 #include "net/base/host_resolver.h"
 #include "net/base/ssl_config_service_defaults.h"
@@ -112,6 +111,7 @@ ServiceURLRequestContext::ServiceURLRequestContext(
       ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
   storage_.set_host_resolver(
       net::CreateSystemHostResolver(net::HostResolver::kDefaultParallelism,
+                                    net::HostResolver::kDefaultRetryAttempts,
                                     NULL));
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       net_proxy_config_service, 0u, NULL));

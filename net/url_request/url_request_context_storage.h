@@ -13,7 +13,6 @@
 namespace net {
 
 class CertVerifier;
-class CookiePolicy;
 class CookieStore;
 class DnsCertProvenanceChecker;
 class DnsRRResolver;
@@ -27,6 +26,7 @@ class ProxyService;
 class SSLConfigService;
 class TransportSecurityState;
 class URLRequestContext;
+class URLRequestJobFactory;
 
 // URLRequestContextStorage is a helper class that provides storage for unowned
 // member variables of URLRequestContext.
@@ -52,13 +52,13 @@ class URLRequestContextStorage {
   void set_ssl_config_service(SSLConfigService* ssl_config_service);
   void set_network_delegate(NetworkDelegate* network_delegate);
   void set_cookie_store(CookieStore* cookie_store);
-  void set_cookie_policy(CookiePolicy* cookie_policy);
   void set_transport_security_state(
       TransportSecurityState* transport_security_state);
   void set_http_transaction_factory(
       HttpTransactionFactory* http_transaction_factory);
   void set_ftp_transaction_factory(
       FtpTransactionFactory* ftp_transaction_factory);
+  void set_job_factory(URLRequestJobFactory* job_factory);
 
  private:
   // We use a raw pointer to prevent reference cycles, since
@@ -78,11 +78,11 @@ class URLRequestContextStorage {
   scoped_refptr<SSLConfigService> ssl_config_service_;
   scoped_ptr<NetworkDelegate> network_delegate_;
   scoped_refptr<CookieStore> cookie_store_;
-  scoped_ptr<CookiePolicy> cookie_policy_;
   scoped_refptr<TransportSecurityState> transport_security_state_;
 
   scoped_ptr<HttpTransactionFactory> http_transaction_factory_;
   scoped_ptr<FtpTransactionFactory> ftp_transaction_factory_;
+  scoped_ptr<URLRequestJobFactory> job_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestContextStorage);
 };

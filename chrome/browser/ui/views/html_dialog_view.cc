@@ -61,6 +61,7 @@ gfx::Size HtmlDialogView::GetPreferredSize() {
 bool HtmlDialogView::AcceleratorPressed(const views::Accelerator& accelerator) {
   // Pressing ESC closes the dialog.
   DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.GetKeyCode());
+  OnWindowClosed();
   OnDialogClosed(std::string());
   return true;
 }
@@ -88,8 +89,10 @@ void HtmlDialogView::WindowClosing() {
   // If we still have a delegate that means we haven't notified it of the
   // dialog closing. This happens if the user clicks the Close button on the
   // dialog.
-  if (delegate_)
+  if (delegate_) {
+    OnWindowClosed();
     OnDialogClosed("");
+  }
 }
 
 views::View* HtmlDialogView::GetContentsView() {
@@ -145,7 +148,12 @@ void HtmlDialogView::OnDialogClosed(const std::string& json_retval) {
     delegate_ = NULL;  // We will not communicate further with the delegate.
     dialog_delegate->OnDialogClosed(json_retval);
   }
-  window()->CloseWindow();
+  window()->Close();
+}
+
+void HtmlDialogView::OnWindowClosed() {
+  if (delegate_)
+      delegate_->OnWindowClosed();
 }
 
 void HtmlDialogView::OnCloseContents(TabContents* source,
@@ -185,7 +193,8 @@ void HtmlDialogView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
   DefWindowProc(event.os_event.hwnd, event.os_event.message,
                   event.os_event.wParam, event.os_event.lParam);
 #elif defined(TOOLKIT_USES_GTK)
-  views::WindowGtk* window_gtk = static_cast<views::WindowGtk*>(window());
+  views::WindowGtk* window_gtk =
+      static_cast<views::WindowGtk*>(window()->native_window());
   if (event.os_event && !event.skip_in_browser) {
     views::KeyEvent views_event(reinterpret_cast<GdkEvent*>(event.os_event));
     window_gtk->HandleKeyboardEvent(views_event);

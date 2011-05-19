@@ -38,6 +38,8 @@
 #include "chrome/browser/sync/engine/http_post_provider_factory.h"
 #include "chrome/browser/sync/js_arg_list.h"
 #include "chrome/browser/sync/js_backend.h"
+#include "chrome/browser/sync/js_directory_change_listener.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/js_event_router.h"
 #include "chrome/browser/sync/notifier/sync_notifier.h"
 #include "chrome/browser/sync/notifier/sync_notifier_observer.h"
@@ -1191,6 +1193,7 @@ class SyncManager::SyncInternal
     : public net::NetworkChangeNotifier::IPAddressObserver,
       public sync_notifier::SyncNotifierObserver,
       public browser_sync::JsBackend,
+      public browser_sync::JsEventRouter,
       public SyncEngineEventListener,
       public ServerConnectionEventListener,
       public syncable::DirectoryChangeListener {
@@ -1203,8 +1206,15 @@ class SyncManager::SyncInternal
         sync_manager_(sync_manager),
         registrar_(NULL),
         initialized_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+        method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        js_directory_change_listener_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    // Pre-fill |notification_info_map_|.
+    for (int i = syncable::FIRST_REAL_MODEL_TYPE;
+         i < syncable::MODEL_TYPE_COUNT; ++i) {
+      notification_info_map_.insert(
+          std::make_pair(syncable::ModelTypeFromInt(i), NotificationInfo()));
+    }
   }
 
   virtual ~SyncInternal() {
@@ -1414,6 +1424,15 @@ class SyncManager::SyncInternal
       const browser_sync::JsArgList& args,
       const browser_sync::JsEventHandler* sender) OVERRIDE;
 
+  // JsEventRouter implementation.
+  virtual void RouteJsEvent(
+      const std::string& name,
+      const browser_sync::JsEventDetails& details) OVERRIDE;
+  virtual void RouteJsMessageReply(
+      const std::string& name,
+      const browser_sync::JsArgList& args,
+      const browser_sync::JsEventHandler* target) OVERRIDE;
+
   ListValue* FindNodesContainingString(const std::string& query);
 
  private:
@@ -1594,8 +1613,9 @@ class SyncManager::SyncInternal
   ScopedRunnableMethodFactory<SyncManager::SyncInternal> method_factory_;
 
   // Map used to store the notification info to be displayed in about:sync page.
-  // TODO(lipalani) - prefill the map with enabled data types.
   NotificationInfoMap notification_info_map_;
+
+  browser_sync::JsDirectoryChangeListener js_directory_change_listener_;
 };
 const int SyncManager::SyncInternal::kDefaultNudgeDelayMilliseconds = 200;
 const int SyncManager::SyncInternal::kPreferencesNudgeDelayMilliseconds = 2000;
@@ -1866,7 +1886,6 @@ void SyncManager::SyncInternal::SendNotification() {
     VLOG(1) << "Not sending notification: sync_notifier_ is NULL";
     return;
   }
-  allstatus_.IncrementNotificationsSent();
   sync_notifier_->SendNotification();
 }
 
@@ -1892,7 +1911,15 @@ bool SyncManager::SyncInternal::OpenDirectory() {
 
   connection_manager()->set_client_id(lookup->cache_guid());
 
-  lookup->SetChangeListener(this);
+  // Since we own |share_|, it's okay that we don't ever remove
+  // ourselves as a listener.
+  lookup->AddChangeListener(this);
+
+  if (parent_router_) {
+    // Make sure we add the listener at most once.
+    lookup->RemoveChangeListener(&js_directory_change_listener_);
+    lookup->AddChangeListener(&js_directory_change_listener_);
+  }
   return true;
 }
 
@@ -1973,6 +2000,14 @@ void SyncManager::SyncInternal::SetUsingExplicitPassphrasePrefForMigration(
 
 void SyncManager::SyncInternal::SetPassphrase(
     const std::string& passphrase, bool is_explicit) {
+  // We do not accept empty passphrases.
+  if (passphrase.empty()) {
+    VLOG(1) << "Rejecting empty passphrase.";
+    FOR_EACH_OBSERVER(SyncManager::Observer, observers_,
+        OnPassphraseRequired(sync_api::REASON_SET_PASSPHRASE_FAILED));
+    return;
+  }
+
   // All accesses to the cryptographer are protected by a transaction.
   WriteTransaction trans(GetUserShare());
   Cryptographer* cryptographer = trans.GetCryptographer();
@@ -1989,6 +2024,8 @@ void SyncManager::SyncInternal::SetPassphrase(
     // TODO(tim): If this is the first time the user has entered a passphrase
     // since the protocol changed to store passphrase preferences in the cloud,
     // make sure we update this preference. See bug 62103.
+    // TODO(jhawkins): Verify that this logic may be removed now that the
+    // migration is no longer supported.
     if (is_explicit)
       SetUsingExplicitPassphrasePrefForMigration(&trans);
 
@@ -2167,7 +2204,6 @@ void SyncManager::SyncInternal::ReEncryptEverything(WriteTransaction* trans) {
 
   if (routes.count(syncable::PASSWORDS) > 0) {
     // Passwords are encrypted with their own legacy scheme.
-    encrypted_types.insert(syncable::PASSWORDS);
     ReadNode passwords_root(trans);
     std::string passwords_tag =
         syncable::ModelTypeToRootTag(syncable::PASSWORDS);
@@ -2510,9 +2546,6 @@ void SyncManager::SyncInternal::OnSyncEngineEvent(
       const sync_pb::NigoriSpecifics& nigori = node.GetNigoriSpecifics();
       syncable::ModelTypeSet encrypted_types =
           syncable::GetEncryptedDataTypesFromNigori(nigori);
-      // If passwords are enabled, they're automatically considered encrypted.
-      if (enabled_types.count(syncable::PASSWORDS) > 0)
-        encrypted_types.insert(syncable::PASSWORDS);
       if (!encrypted_types.empty()) {
         Cryptographer* cryptographer = trans.GetCryptographer();
         if (!cryptographer->is_ready() && !cryptographer->has_pending_keys()) {
@@ -2557,9 +2590,10 @@ void SyncManager::SyncInternal::OnSyncEngineEvent(
     // notifications.
     // TODO(chron): Consider changing this back to track has_more_to_sync
     // only notify peers if a successful commit has occurred.
-    bool new_notification =
+    bool is_notifiable_commit =
         (event.snapshot->syncer_status.num_successful_commits > 0);
-    if (new_notification) {
+    if (is_notifiable_commit) {
+      allstatus_.IncrementNotifiableCommits();
       core_message_loop_->PostTask(
           FROM_HERE,
           NewRunnableMethod(
@@ -2597,10 +2631,34 @@ void SyncManager::SyncInternal::SetParentJsEventRouter(
     browser_sync::JsEventRouter* router) {
   DCHECK(router);
   parent_router_ = router;
+
+  // We might be called before OpenDirectory() or after shutdown.
+  if (!dir_manager()) {
+    return;
+  }
+  syncable::ScopedDirLookup lookup(dir_manager(), username_for_share());
+  if (!lookup.good()) {
+    return;
+  }
+
+  // Make sure we add the listener at most once.
+  lookup->RemoveChangeListener(&js_directory_change_listener_);
+  lookup->AddChangeListener(&js_directory_change_listener_);
 }
 
 void SyncManager::SyncInternal::RemoveParentJsEventRouter() {
   parent_router_ = NULL;
+
+  // We might be called before OpenDirectory() or after shutdown.
+  if (!dir_manager()) {
+    return;
+  }
+  syncable::ScopedDirLookup lookup(dir_manager(), username_for_share());
+  if (!lookup.good()) {
+    return;
+  }
+
+  lookup->RemoveChangeListener(&js_directory_change_listener_);
 }
 
 const browser_sync::JsEventRouter*
@@ -2674,6 +2732,25 @@ void SyncManager::SyncInternal::ProcessMessage(
   }
 }
 
+void SyncManager::SyncInternal::RouteJsEvent(
+    const std::string& name,
+    const browser_sync::JsEventDetails& details) {
+  if (!parent_router_) {
+    return;
+  }
+  parent_router_->RouteJsEvent(name, details);
+}
+
+void SyncManager::SyncInternal::RouteJsMessageReply(
+      const std::string& name,
+      const browser_sync::JsArgList& args,
+      const browser_sync::JsEventHandler* target) {
+  if (!parent_router_) {
+    return;
+  }
+  parent_router_->RouteJsMessageReply(name, args, target);
+}
+
 browser_sync::JsArgList SyncManager::SyncInternal::ProcessGetNodeByIdMessage(
     const browser_sync::JsArgList& args) {
   ListValue null_return_args_list;
@@ -2724,11 +2801,10 @@ void SyncManager::SyncInternal::OnNotificationStateChange(
     syncer_thread()->set_notifications_enabled(notifications_enabled);
   }
   if (parent_router_) {
-    ListValue args;
-    args.Append(Value::CreateBooleanValue(notifications_enabled));
-    // TODO(akalin): Tidy up grammar in event names.
-    parent_router_->RouteJsEvent("onSyncNotificationStateChange",
-                                 browser_sync::JsArgList(&args));
+    DictionaryValue details;
+    details.Set("enabled", Value::CreateBooleanValue(notifications_enabled));
+    parent_router_->RouteJsEvent("onNotificationStateChange",
+                                 browser_sync::JsEventDetails(&details));
   }
 }
 
@@ -2758,9 +2834,9 @@ void SyncManager::SyncInternal::OnIncomingNotification(
   }
 
   if (parent_router_) {
-    ListValue args;
+    DictionaryValue details;
     ListValue* changed_types = new ListValue();
-    args.Append(changed_types);
+    details.Set("changedTypes", changed_types);
     for (syncable::ModelTypePayloadMap::const_iterator
              it = type_payloads.begin();
          it != type_payloads.end(); ++it) {
@@ -2768,8 +2844,8 @@ void SyncManager::SyncInternal::OnIncomingNotification(
           syncable::ModelTypeToString(it->first);
       changed_types->Append(Value::CreateStringValue(model_type_str));
     }
-    parent_router_->RouteJsEvent("onSyncIncomingNotification",
-                                 browser_sync::JsArgList(&args));
+    parent_router_->RouteJsEvent("onIncomingNotification",
+                                 browser_sync::JsEventDetails(&details));
   }
 }
 

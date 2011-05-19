@@ -10,6 +10,7 @@
 #include "base/command_line.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task.h"
@@ -203,16 +204,13 @@ void LiveSyncTest::SetUpCommandLine(CommandLine* cl) {
   if (!cl->HasSwitch(switches::kEnableSyncSessions))
     cl->AppendSwitch(switches::kEnableSyncSessions);
 
+  // TODO(sync): Remove this once typed url sync is enabled by default.
+  if (!cl->HasSwitch(switches::kEnableSyncTypedUrls))
+    cl->AppendSwitch(switches::kEnableSyncTypedUrls);
+
   // Disable non-essential access of external network resources.
   if (!cl->HasSwitch(switches::kDisableBackgroundNetworking))
     cl->AppendSwitch(switches::kDisableBackgroundNetworking);
-
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
-  // Use a basic non-encrypted password store on Linux while running tests.
-  // See http://code.google.com/p/chromium/wiki/LinuxPasswordStorage.
-  if (!cl->HasSwitch(switches::kPasswordStore))
-    cl->AppendSwitchASCII(switches::kPasswordStore, "basic");
-#endif
 }
 
 // static
@@ -261,7 +259,7 @@ bool LiveSyncTest::SetupClients() {
   // Create the required number of sync profiles and clients.
   for (int i = 0; i < num_clients_; ++i) {
     profiles_.push_back(MakeProfile(
-        StringPrintf(FILE_PATH_LITERAL("Profile%d"), i)));
+        base::StringPrintf(FILE_PATH_LITERAL("Profile%d"), i)));
     EXPECT_FALSE(GetProfile(i) == NULL) << "GetProfile(" << i << ") failed.";
     clients_.push_back(
         new ProfileSyncServiceHarness(GetProfile(i), username_, password_, i));
@@ -403,14 +401,10 @@ bool LiveSyncTest::SetUpLocalTestServer() {
   CommandLine* cl = CommandLine::ForCurrentProcess();
   CommandLine::StringType server_cmdline_string = cl->GetSwitchValueNative(
       switches::kSyncServerCommandLine);
-#if defined(OS_WIN)
-  CommandLine server_cmdline = CommandLine::FromString(server_cmdline_string);
-#else
-  std::vector<std::string> server_cmdline_vector;
-  std::string delimiters(" ");
+  CommandLine::StringVector server_cmdline_vector;
+  CommandLine::StringType delimiters(FILE_PATH_LITERAL(" "));
   Tokenize(server_cmdline_string, delimiters, &server_cmdline_vector);
   CommandLine server_cmdline(server_cmdline_vector);
-#endif
   if (!base::LaunchApp(server_cmdline, false, true, &test_server_handle_))
     LOG(ERROR) << "Could not launch local test server.";
 
