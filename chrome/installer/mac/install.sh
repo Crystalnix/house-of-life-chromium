@@ -290,7 +290,7 @@ main() {
 
   trap cleanup EXIT HUP INT QUIT TERM
 
-  readonly PRODUCT_NAME="Google Chrome"
+  readonly PRODUCT_NAME="Chromium"
   readonly APP_DIR="${PRODUCT_NAME}.app"
   readonly ALTERNATE_APP_DIR="${PRODUCT_NAME} Canary.app"
   readonly FRAMEWORK_NAME="${PRODUCT_NAME} Framework"
@@ -858,14 +858,14 @@ main() {
   note "setting permissions"
 
   local chmod_mode="a+rX,u+w,go-w"
-  if [[ -z "${system_ticket}" ]]; then
+#  if [[ -z "${system_ticket}" ]]; then
     if [[ "${installed_app:0:14}" = "/Applications/" ]] &&
        chgrp -Rh admin "${installed_app}" 2> /dev/null; then
       chmod_mode="a+rX,ug+w,o-w"
     fi
-  else
-    chown -Rh root:wheel "${installed_app}" 2> /dev/null
-  fi
+#  else
+#    chown -Rh root:wheel "${installed_app}" 2> /dev/null
+#  fi
 
   note "chmod_mode = ${chmod_mode}"
   chmod -R "${chmod_mode}" "${installed_app}" 2> /dev/null

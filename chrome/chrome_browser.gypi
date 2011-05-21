@@ -731,6 +731,8 @@
         'browser/cocoa/keystone_glue.h',
         'browser/cocoa/keystone_glue.mm',
         'browser/cocoa/scoped_authorizationref.h',
+        'browser/cocoa/version_helper.h',
+        'browser/cocoa/version_helper.mm',
         'browser/command_updater.cc',
         'browser/command_updater.h',
         'browser/content_settings/content_settings_base_provider.cc',
