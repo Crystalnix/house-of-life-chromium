@@ -8,7 +8,7 @@
   },
 
   'conditions': [
-    [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    ['os_posix == 1 and OS != "mac"', {
       'conditions': [
         ['sysroot!=""', {
           'variables': {
@@ -29,7 +29,7 @@
       ['exclude', '/(gtk|win|x11)_[^/]*\\.cc$'],
     ],
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {'sources/': [
+      ['toolkit_uses_gtk == 1', {'sources/': [
         ['include', '/gtk/'],
         ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
         ['include', '/(gtk|x11)_[^/]*\\.cc$'],
@@ -59,7 +59,7 @@
   'targets': [
     {
       'target_name': 'views',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '6F9258E5-294F-47B2-919D-17FFE7A8B751',
       'dependencies': [
         '../app/app.gyp:app_base',
@@ -360,14 +360,14 @@
         'widget/monitor_win.h',
         'widget/native_widget.h',
         'widget/native_widget_delegate.h',
+        'widget/native_widget_gtk.cc',
+        'widget/native_widget_gtk.h',
+        'widget/native_widget_win.cc',
+        'widget/native_widget_win.h',
         'widget/widget.cc',
         'widget/widget.h',
         'widget/widget_delegate.cc',
         'widget/widget_delegate.h',
-        'widget/widget_gtk.cc',
-        'widget/widget_gtk.h',
-        'widget/widget_win.cc',
-        'widget/widget_win.h',
         'window/client_view.cc',
         'window/client_view.h',
         'window/custom_frame_view.cc',
@@ -380,6 +380,10 @@
         'window/native_frame_view.h',
         'window/native_window.h',
         'window/native_window_delegate.h',
+        'window/native_window_gtk.cc',
+        'window/native_window_gtk.h',
+        'window/native_window_win.cc',
+        'window/native_window_win.h',
         'window/non_client_view.cc',
         'window/non_client_view.h',
         'window/window.cc',
@@ -387,18 +391,14 @@
         'window/window_delegate.h',
         'window/window_delegate.cc',
         'window/window_resources.h',
-        'window/window_gtk.cc',
-        'window/window_gtk.h',
         'window/window_shape.cc',
         'window/window_shape.h',
-        'window/window_win.cc',
-        'window/window_win.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/wtl/include',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../build/linux/system.gyp:x11',
@@ -417,11 +417,11 @@
             'controls/tree/tree_view.cc',
             'events/event_win.cc',
             'resize_corner.cc',
+            'widget/aero_tooltip_manager.cc',
             'widget/child_window_message_processor.cc',
             'widget/child_window_message_processor.h',
-            'widget/aero_tooltip_manager.cc',
+            'widget/native_widget_win.cc',
             'widget/root_view_drop_target.cc',
-            'widget/widget_win.cc',
             'window/hit_test.cc',
             'window/native_frame_view.cc',
           ],
@@ -513,13 +513,13 @@
         'widget/native_widget_test_utils_gtk.cc',
         'widget/native_widget_test_utils_win.cc',
         'widget/native_widget_unittest.cc',
-        'widget/widget_win_unittest.cc',
-        'window/window_win_unittest.cc',
+        'widget/native_widget_win_unittest.cc',
+        'window/native_window_win_unittest.cc',
 
         '<(SHARED_INTERMEDIATE_DIR)/app/app_resources/app_resources.rc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../chrome/chrome.gyp:packed_resources',
@@ -607,7 +607,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../chrome/chrome.gyp:packed_resources',

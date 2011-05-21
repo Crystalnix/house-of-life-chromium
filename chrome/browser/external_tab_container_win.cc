@@ -42,6 +42,7 @@
 #include "content/common/native_web_keyboard_event.h"
 #include "content/common/notification_service.h"
 #include "content/common/page_transition_types.h"
+#include "content/common/page_zoom.h"
 #include "content/common/view_messages.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -49,7 +50,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/view_prop.h"
 #include "views/layout/grid_layout.h"
-#include "views/widget/root_view.h"
 #include "views/window/window.h"
 
 using ui::ViewProp;
@@ -89,7 +89,7 @@ base::LazyInstance<ExternalTabContainer::PendingTabs>
 
 ExternalTabContainer::ExternalTabContainer(
     AutomationProvider* automation, AutomationResourceMessageFilter* filter)
-    : views::WidgetWin(new views::Widget),
+    : views::NativeWidgetWin(new views::Widget),
       automation_(automation),
       tab_contents_container_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(tab_contents_registrar_(this)),
@@ -807,10 +807,10 @@ void ExternalTabContainer::OnStartDownload(DownloadItem* download,
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// ExternalTabContainer, views::WidgetWin overrides:
+// ExternalTabContainer, views::NativeWidgetWin overrides:
 
 LRESULT ExternalTabContainer::OnCreate(LPCREATESTRUCT create_struct) {
-  LRESULT result = views::WidgetWin::OnCreate(create_struct);
+  LRESULT result = views::NativeWidgetWin::OnCreate(create_struct);
   if (result == 0) {
     // Grab a reference here which will be released in OnFinalMessage
     AddRef();
@@ -821,7 +821,7 @@ LRESULT ExternalTabContainer::OnCreate(LPCREATESTRUCT create_struct) {
 void ExternalTabContainer::OnDestroy() {
   prop_.reset();
   Uninitialize();
-  WidgetWin::OnDestroy();
+  NativeWidgetWin::OnDestroy();
   if (browser_.get()) {
     ::DestroyWindow(browser_->window()->GetNativeHandle());
   }
@@ -959,16 +959,17 @@ bool ExternalTabContainer::AcceleratorPressed(
     return false;
   }
 
+  RenderViewHost* host = tab_contents_->render_view_host();
   int command_id = iter->second;
   switch (command_id) {
     case IDC_ZOOM_PLUS:
-      tab_contents_->render_view_host()->Zoom(PageZoom::ZOOM_IN);
+      host->Send(new ViewMsg_Zoom(host->routing_id(), PageZoom::ZOOM_IN));
       break;
     case IDC_ZOOM_NORMAL:
-      tab_contents_->render_view_host()->Zoom(PageZoom::RESET);
+      host->Send(new ViewMsg_Zoom(host->routing_id(), PageZoom::RESET));
       break;
     case IDC_ZOOM_MINUS:
-      tab_contents_->render_view_host()->Zoom(PageZoom::ZOOM_OUT);
+      host->Send(new ViewMsg_Zoom(host->routing_id(), PageZoom::ZOOM_OUT));
       break;
     case IDC_DEV_TOOLS:
       DevToolsManager::GetInstance()->ToggleDevToolsWindow(

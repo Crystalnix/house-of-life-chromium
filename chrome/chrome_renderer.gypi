@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'renderer',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '9301A569-5D2B-4D11-9332-B1E30AEACB8D',
       'dependencies': [
         'common',
@@ -187,7 +187,7 @@
             '../third_party/mach_override/mach_override.gyp:mach_override',
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'conditions': [
             [ 'linux_use_tcmalloc==1', {
                 'dependencies': [
@@ -199,11 +199,6 @@
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../sandbox/sandbox.gyp:sandbox',
-          ],
-        }],
-        ['OS=="openbsd" or OS=="freebsd"', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
           ],
         }],
         ['OS=="win"', {

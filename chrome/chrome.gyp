@@ -73,6 +73,10 @@
           }],
         ],
       },],
+      ['os_posix == 1 and OS != "mac" and OS != "linux"', {
+        'platform_locale_settings_grd':
+            'app/resources/locale_settings_linux.grd',
+      },],
       ['OS=="mac"', {
         'tweak_info_plist_path': 'tools/build/mac/tweak_info_plist',
         'nacl_defines': [
@@ -412,7 +416,7 @@
     },
     {
       'target_name': 'debugger',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '57823D8C-A317-4713-9125-2C91FDFD12D6',
       'dependencies': [
         'chrome_extra_resources',
@@ -464,7 +468,7 @@
         'browser/debugger/inspectable_tab_proxy.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -473,7 +477,7 @@
     },
     {
       'target_name': 'utility',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '4D2B38E6-65FF-4F97-B88A-E441DF54EBF7',
       'dependencies': [
         '../base/base.gyp:base',
@@ -488,7 +492,7 @@
         '..',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -497,7 +501,7 @@
     },
     {
       'target_name': 'profile_import',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
       ],
@@ -511,7 +515,7 @@
       # Provides a syncapi dynamic library target from checked-in binaries,
       # or from compiling a stub implementation.
       'target_name': 'syncapi',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/engine/http_post_provider_factory.h',
         'browser/sync/engine/http_post_provider_interface.h',
@@ -549,7 +553,7 @@
     },
     {
       'target_name': 'sync',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/engine/all_status.cc',
         'browser/sync/engine/all_status.h',
@@ -709,7 +713,7 @@
             'browser/sync/util/data_encryption.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -736,7 +740,7 @@
     # A library for sending and receiving server-issued notifications.
     {
       'target_name': 'sync_notifier',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/notifier/cache_invalidation_packet_handler.cc',
         'browser/sync/notifier/cache_invalidation_packet_handler.h',
@@ -778,7 +782,7 @@
     },
     {
       'target_name': 'service',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '2DA87614-55C5-4E56-A17E-0CD099786197',
       'dependencies': [
         'chrome_strings',
@@ -840,7 +844,7 @@
             'service/cloud_print/print_system_win.cc',
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -1465,7 +1469,7 @@
         },
         {
           'target_name': 'automation',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '1556EF78-C7E6-43C8-951F-F6B43AC0DD12',
           'dependencies': [
             'theme_resources',
@@ -1528,7 +1532,7 @@
         },
       ]},  # 'targets'
     ],  # OS=="win"
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [{
         'target_name': 'packed_resources',
         'type': 'none',
@@ -1629,7 +1633,7 @@
           },
         ],
       }],  # targets
-    }],  # OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
+    }],  # os_posix == 1 and OS != "mac"
   ],  # 'conditions'
 }
 

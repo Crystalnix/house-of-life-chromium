@@ -16,6 +16,7 @@
 
 #include "base/string_tokenizer.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "content/common/content_switches.h"
@@ -53,6 +54,7 @@ bool WebGraphicsContext3DCommandBufferImpl::initialize(
     WebGraphicsContext3D::Attributes attributes,
     WebKit::WebView* web_view,
     bool render_directly_to_web_view) {
+  TRACE_EVENT0("gpu", "WebGfxCtx3DCmdBfrImpl::initialize");
   webkit_glue::BindSkiaToCommandBufferGL();
   RenderThread* render_thread = RenderThread::current();
   if (!render_thread)
@@ -312,11 +314,13 @@ void* WebGraphicsContext3DCommandBufferImpl::mapBufferSubDataCHROMIUM(
     WGC3Dintptr offset,
     WGC3Dsizeiptr size,
     WGC3Denum access) {
+  makeContextCurrent();
   return glMapBufferSubDataCHROMIUM(target, offset, size, access);
 }
 
 void WebGraphicsContext3DCommandBufferImpl::unmapBufferSubDataCHROMIUM(
     const void* mem) {
+  makeContextCurrent();
   return glUnmapBufferSubDataCHROMIUM(mem);
 }
 
@@ -336,6 +340,7 @@ void* WebGraphicsContext3DCommandBufferImpl::mapTexSubImage2DCHROMIUM(
 
 void WebGraphicsContext3DCommandBufferImpl::unmapTexSubImage2DCHROMIUM(
     const void* mem) {
+  makeContextCurrent();
   glUnmapTexSubImage2DCHROMIUM(mem);
 }
 
@@ -381,16 +386,19 @@ void WebGraphicsContext3DCommandBufferImpl::setLatchCHROMIUM(
 
 void WebGraphicsContext3DCommandBufferImpl::
     rateLimitOffscreenContextCHROMIUM() {
+  makeContextCurrent();
   glRateLimitOffscreenContextCHROMIUM();
 }
 
 WebKit::WebString WebGraphicsContext3DCommandBufferImpl::
     getRequestableExtensionsCHROMIUM() {
+  makeContextCurrent();
   return WebKit::WebString::fromUTF8(glGetRequestableExtensionsCHROMIUM());
 }
 
 void WebGraphicsContext3DCommandBufferImpl::requestExtensionCHROMIUM(
     const char* extension) {
+  makeContextCurrent();
   glRequestExtensionCHROMIUM(extension);
 }
 
@@ -398,6 +406,7 @@ void WebGraphicsContext3DCommandBufferImpl::blitFramebufferCHROMIUM(
     WGC3Dint srcX0, WGC3Dint srcY0, WGC3Dint srcX1, WGC3Dint srcY1,
     WGC3Dint dstX0, WGC3Dint dstY0, WGC3Dint dstX1, WGC3Dint dstY1,
     WGC3Dbitfield mask, WGC3Denum filter) {
+  makeContextCurrent();
   glBlitFramebufferEXT(srcX0, srcY0, srcX1, srcY1,
                        dstX0, dstY0, dstX1, dstY1,
                        mask, filter);
@@ -407,6 +416,7 @@ void WebGraphicsContext3DCommandBufferImpl::
     renderbufferStorageMultisampleCHROMIUM(
         WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat,
         WGC3Dsizei width, WGC3Dsizei height) {
+  makeContextCurrent();
   glRenderbufferStorageMultisampleEXT(target, samples, internalformat,
                                       width, height);
 }
@@ -1045,6 +1055,7 @@ void WebGraphicsContext3DCommandBufferImpl::deleteTexture(WebGLId texture) {
 
 void WebGraphicsContext3DCommandBufferImpl::copyTextureToCompositor(
     WebGLId texture, WebGLId parentTexture) {
+  TRACE_EVENT0("gpu", "WebGfxCtx3DCmdBfrImpl::copyTextureToCompositor");
   makeContextCurrent();
   glCopyTextureToParentTextureCHROMIUM(texture, parentTexture);
   glFlush();

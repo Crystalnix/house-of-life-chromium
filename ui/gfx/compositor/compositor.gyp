@@ -8,18 +8,18 @@
       ['exclude', '_(gl|win)\\.(cc?)$'],
     ],
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {'sources/': [
-        ['include', '_(gl)\\.cc$'],
-      ]}],
-      ['OS=="win"', {'sources/': [
-        ['include', '_(win)\\.cc$'],
-      ]}],
+      ['os_posix == 1 and OS != "mac"', {
+        'sources/': [['include', '_(gl)\\.cc$'],]
+      }],
+      ['OS == "win"', {
+        'sources/': [['include', '_(win)\\.cc$'],]
+      }],
     ],
   },
   'targets': [
     {
       'target_name': 'compositor',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '21CEE0E3-6F4E-4F01-B8C9-F7751CC21AA9',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
@@ -33,10 +33,15 @@
         'compositor_gl.cc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'sources!': [
             'compositor.cc',
           ],
+          'link_settings': {
+            'libraries': [
+              '-lGL',
+            ],
+          },
         }],
       ],
     },

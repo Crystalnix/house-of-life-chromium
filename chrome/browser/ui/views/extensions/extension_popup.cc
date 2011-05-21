@@ -23,10 +23,6 @@
 #include "views/widget/root_view.h"
 #include "views/window/window.h"
 
-#if defined(TOOLKIT_USES_GTK)
-#include "views/widget/widget_gtk.h"
-#endif
-
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/wm_ipc.h"
 #include "third_party/cros/chromeos_wm_ipc_enums.h"
@@ -190,7 +186,7 @@ ExtensionPopup* ExtensionPopup::Show(
   if (!manager)
     return NULL;
 
-  ExtensionHost* host = manager->CreatePopup(url, browser);
+  ExtensionHost* host = manager->CreatePopupHost(url, browser);
   views::Widget* frame = BrowserView::GetBrowserViewForNativeWindow(
       browser->window()->GetNativeHandle())->GetWidget();
   ExtensionPopup* popup = new ExtensionPopup(host, frame, relative_to,

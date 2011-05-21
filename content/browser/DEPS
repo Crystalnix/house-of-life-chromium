@@ -62,6 +62,7 @@ include_rules = [
 
   # http://crbug.com/77090
   "+chrome/browser/prerender/prerender_manager.h",
+  "+chrome/browser/prerender/prerender_tracker.h",
 
   # http://crbug.com/76788
   "+chrome/browser/profiles/profile.h",
@@ -93,7 +94,6 @@ include_rules = [
   "+chrome/browser/ui/app_modal_dialogs/message_box_handler.h",
   "+chrome/browser/ui/browser_dialogs.h",
   "+chrome/browser/ui/crypto_module_password_dialog.h",
-  "+chrome/browser/ui/find_bar/find_bar_controller.h",
   "+chrome/browser/ui/login/login_prompt.h",
 
   "+chrome/common/chrome_constants.h",
@@ -101,7 +101,6 @@ include_rules = [
   "+chrome/common/chrome_paths.h",
   "+chrome/common/logging_chrome.h",
   "+chrome/common/render_messages.h",
-  "+chrome/common/url_constants.h",
 
   "+chrome/common/net/url_fetcher.h",
 
@@ -121,4 +120,5 @@ include_rules = [
   "+chrome/browser/ui/cocoa/find_pasteboard.h",
   "+chrome/browser/ui/tab_contents/tab_contents_wrapper.h",
   "+chrome/common/net/test_url_fetcher_factory.h",
+  "+chrome/common/url_constants.h",
 ]

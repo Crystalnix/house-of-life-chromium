@@ -336,8 +336,9 @@ void ExtensionHost::InsertInfobarCSS() {
       ResourceBundle::GetSharedInstance().GetRawDataResource(
       IDR_EXTENSIONS_INFOBAR_CSS));
 
-  render_view_host()->InsertCSSInWebFrame(
-      L"", css.as_string(), "InfobarThemeCSS");
+  render_view_host()->Send(new ViewMsg_CSSInsertRequest(
+      render_view_host()->routing_id(), L"", css.as_string(),
+      "InfobarThemeCSS"));
 }
 
 void ExtensionHost::DisableScrollbarsForSmallWindows(
@@ -350,6 +351,7 @@ void ExtensionHost::DidStopLoading() {
   bool notify = !did_stop_loading_;
   did_stop_loading_ = true;
   if (extension_host_type_ == ViewType::EXTENSION_POPUP ||
+      extension_host_type_ == ViewType::EXTENSION_DIALOG ||
       extension_host_type_ == ViewType::EXTENSION_INFOBAR) {
 #if defined(TOOLKIT_VIEWS)
     if (view_.get())
@@ -363,6 +365,9 @@ void ExtensionHost::DidStopLoading() {
         Details<ExtensionHost>(this));
     if (extension_host_type_ == ViewType::EXTENSION_BACKGROUND_PAGE) {
       UMA_HISTOGRAM_TIMES("Extensions.BackgroundPageLoadTime",
+                          since_created_.Elapsed());
+    } else if (extension_host_type_ == ViewType::EXTENSION_DIALOG) {
+      UMA_HISTOGRAM_TIMES("Extensions.DialogLoadTime",
                           since_created_.Elapsed());
     } else if (extension_host_type_ == ViewType::EXTENSION_POPUP) {
       UMA_HISTOGRAM_TIMES("Extensions.PopupLoadTime",
@@ -475,6 +480,7 @@ void ExtensionHost::SetSuppressMessageBoxes(bool suppress_message_boxes) {
 
 void ExtensionHost::Close(RenderViewHost* render_view_host) {
   if (extension_host_type_ == ViewType::EXTENSION_POPUP ||
+      extension_host_type_ == ViewType::EXTENSION_DIALOG ||
       extension_host_type_ == ViewType::EXTENSION_INFOBAR) {
     NotificationService::current()->Notify(
         NotificationType::EXTENSION_HOST_VIEW_SHOULD_CLOSE,
@@ -507,6 +513,7 @@ WebPreferences ExtensionHost::GetWebkitPrefs() {
   webkit_prefs.javascript_enabled = true;
 
   if (extension_host_type_ == ViewType::EXTENSION_POPUP ||
+      extension_host_type_ == ViewType::EXTENSION_DIALOG ||
       extension_host_type_ == ViewType::EXTENSION_INFOBAR)
     webkit_prefs.allow_scripts_to_close_windows = true;
 
@@ -577,6 +584,8 @@ void ExtensionHost::ShowCreatedWindow(int route_id,
         false);  // Match incognito exactly.
     TabContentsWrapper* wrapper = new TabContentsWrapper(contents);
     browser::NavigateParams params(browser, wrapper);
+    if (!browser)
+      params.profile = contents->profile();
     params.disposition = NEW_POPUP;
     params.window_bounds = initial_pos;
     params.window_action = browser::NavigateParams::SHOW_WINDOW;
@@ -776,8 +785,9 @@ void ExtensionHost::RenderViewCreated(RenderViewHost* render_view_host) {
 
   if (extension_host_type_ == ViewType::EXTENSION_POPUP ||
       extension_host_type_ == ViewType::EXTENSION_INFOBAR) {
-    render_view_host->EnablePreferredSizeChangedMode(
-        kPreferredSizeWidth | kPreferredSizeHeightThisIsSlow);
+    render_view_host->Send(new ViewMsg_EnablePreferredSizeChangedMode(
+        render_view_host->routing_id(),
+        kPreferredSizeWidth | kPreferredSizeHeightThisIsSlow));
   }
 }
 
@@ -786,6 +796,7 @@ int ExtensionHost::GetBrowserWindowID() const {
   // those mentioned below, and background pages.
   int window_id = extension_misc::kUnknownWindowId;
   if (extension_host_type_ == ViewType::EXTENSION_POPUP ||
+      extension_host_type_ == ViewType::EXTENSION_DIALOG ||
       extension_host_type_ == ViewType::EXTENSION_INFOBAR) {
     // If the host is bound to a browser, then extract its window id.
     // Extensions hosted in ExternalTabContainer objects may not have

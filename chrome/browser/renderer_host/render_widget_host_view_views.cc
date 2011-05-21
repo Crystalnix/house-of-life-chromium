@@ -30,9 +30,8 @@
 #include "ui/gfx/gtk_native_view_id_manager.h"
 #include "views/events/event.h"
 #include "views/ime/input_method.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 static const int kMaxWindowWidth = 4000;
 static const int kMaxWindowHeight = 4000;
@@ -170,7 +169,7 @@ void RenderWidgetHostViewViews::InitAsPopup(
   // to tell the parent it's showing a popup so that it doesn't respond to
   // blurs.
   parent->is_showing_popup_menu_ = true;
-  views::RootView* root_view = GetWidget()->GetRootView();
+  views::View* root_view = GetWidget()->GetRootView();
   // TODO(fsamuel): WebKit is computing the screen coordinates incorrectly.
   // Fixing this is a long and involved process, because WebKit needs to know
   // how to direct an IPC at a particular View. For now, we simply convert
@@ -436,11 +435,11 @@ gfx::PluginWindowHandle RenderWidgetHostViewViews::GetCompositingSurface() {
 
 gfx::NativeView RenderWidgetHostViewViews::GetInnerNativeView() const {
   // TODO(sad): Ideally this function should be equivalent to GetNativeView, and
-  // WidgetGtk-specific function call should not be necessary.
+  // NativeWidgetGtk-specific function call should not be necessary.
   const views::Widget* widget = GetWidget();
   const views::NativeWidget* native = widget ? widget->native_widget() : NULL;
-  return native ?
-      static_cast<const views::WidgetGtk*>(native)->window_contents() : NULL;
+  return native ? static_cast<const views::NativeWidgetGtk*>(native)->
+      window_contents() : NULL;
 }
 
 std::string RenderWidgetHostViewViews::GetClassName() const {

@@ -333,6 +333,11 @@ class Browser : public TabHandlerDelegate,
   // cleanup.
   void OnWindowClosing();
 
+  // OnWindowActivationChanged handling ///////////////////////////////////////
+
+  // Invoked when the window containing us is activated.
+  void OnWindowActivated();
+
   // In-progress download termination handling /////////////////////////////////
 
   // Are normal and/or incognito downloads in progress?
@@ -655,6 +660,9 @@ class Browser : public TabHandlerDelegate,
   // specified.
   GURL GetHomePage() const;
 
+  // Shows the cookies collected in the tab contents.
+  void ShowCollectedCookiesDialog(TabContents* tab_contents);
+
   // Interface implementations ////////////////////////////////////////////////
 
   // Overridden from PageNavigator:
@@ -825,7 +833,6 @@ class Browser : public TabHandlerDelegate,
                                         bool* is_keyboard_shortcut);
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
   virtual bool ShouldAddNavigationToHistory(
       const history::HistoryAddPageArgs& add_page_args,
       NavigationType::Type navigation_type);

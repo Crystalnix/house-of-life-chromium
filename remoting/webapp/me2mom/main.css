@@ -61,7 +61,7 @@ h1 {
   overflow: auto;
   font-family: monospace;
   font-weight: bold;
-  line-height: 0.5em;
+  font-size: small;
   border: 2px solid #ffffff;
   display: none;
   opacity: 0.9;
@@ -78,19 +78,6 @@ h1 {
   line-height: 0.8em;
   float: right;
  }
-
-.local_login_panel {
-  -webkit-user-select: none;
-  font-family: arial,sans-serif;
-  position: absolute;
-  display: none;
-  z-index: 1;
-  top: 50%;
-  left: 45%;
-  border: 2px solid #e8eefa;
-  margin-left: auto;
-  margin-right: auto;
-}
 
 .plugin-scroll-panel {
   -webkit-user-select: none;

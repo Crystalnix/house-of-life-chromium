@@ -12,7 +12,6 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/color_utils.h"
 #include "views/layout/fill_layout.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/client_view.h"
 #include "views/window/window.h"
@@ -122,9 +121,9 @@ void Bubble::AnimationProgressed(const ui::Animation* animation) {
 Bubble::Bubble()
     :
 #if defined(OS_WIN)
-      views::WidgetWin(new views::Widget),
+      views::NativeWidgetWin(new views::Widget),
 #elif defined(TOOLKIT_USES_GTK)
-      views::WidgetGtk(new views::Widget),
+      views::NativeWidgetGtk(new views::Widget),
 #endif
 #if defined(TOOLKIT_USES_GTK)
       border_contents_(NULL),
@@ -147,7 +146,7 @@ Bubble::Bubble()
 #if defined(OS_CHROMEOS)
 Bubble::Bubble(views::Widget::InitParams::Type type,
                bool show_while_screen_is_locked)
-    : views::WidgetGtk(new views::Widget),
+    : views::NativeWidgetGtk(new views::Widget),
       border_contents_(NULL),
       delegate_(NULL),
       show_status_(kOpen),
@@ -345,9 +344,9 @@ void Bubble::DoClose(bool closed_by_escape) {
   border_->Close();
 #endif
 #if defined(OS_WIN)
-  WidgetWin::Close();
+  NativeWidgetWin::Close();
 #elif defined(TOOLKIT_USES_GTK)
-  WidgetGtk::Close();
+  NativeWidgetGtk::Close();
 #endif
 }
 

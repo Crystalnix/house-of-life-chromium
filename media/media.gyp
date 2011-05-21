@@ -10,7 +10,7 @@
   'targets': [
     {
       'target_name': 'media',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'yuv_convert',
         '../base/base.gyp:base',
@@ -181,6 +181,8 @@
         'video/capture/linux/video_capture_device_linux.h',
         'video/capture/video_capture.h',
         'video/capture/video_capture_device.h',
+        'video/capture/video_capture_device_dummy.cc',
+        'video/capture/video_capture_device_dummy.h',
         'video/capture/video_capture_types.h',
         'video/ffmpeg_video_allocator.cc',
         'video/ffmpeg_video_allocator.h',
@@ -235,6 +237,12 @@
             'omx_wrapper',
           ]
         }],
+        ['OS=="linux"', {
+          'sources!': [
+            'video/capture/video_capture_device_dummy.cc',
+            'video/capture/video_capture_device_dummy.h',
+          ],
+        }],
         ['OS=="mac"', {
           'link_settings': {
             'libraries': [
@@ -248,7 +256,7 @@
     },
     {
       'target_name': 'cpu_features',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -270,7 +278,7 @@
     },
     {
       'target_name': 'yuv_convert',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -297,7 +305,7 @@
     },
     {
       'target_name': 'yuv_convert_sse2',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -437,7 +445,7 @@
     },
     {
       'target_name': 'media_test_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'media',
         '../base/base.gyp:base',
@@ -702,7 +710,7 @@
         },
         {
           'target_name': 'omx_wrapper',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
             '../third_party/openmax/openmax.gyp:il',

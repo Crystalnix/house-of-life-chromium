@@ -49,6 +49,8 @@
           'compiler_specific.h',
           'cpu.cc',
           'cpu.h',
+          'debug/alias.cc',
+          'debug/alias.h',
           'debug/debug_on_start_win.cc',
           'debug/debug_on_start_win.h',
           'debug/debugger.cc',
@@ -138,13 +140,9 @@
           'memory/ref_counted_memory.h',
           'memory/scoped_callback_factory.h',
           'memory/scoped_handle.h',
-          'memory/scoped_native_library.cc',
-          'memory/scoped_native_library.h',
           'memory/scoped_nsobject.h',
           'memory/scoped_open_process.h',
           'memory/scoped_ptr.h',
-          'memory/scoped_temp_dir.cc',
-          'memory/scoped_temp_dir.h',
           'memory/scoped_vector.h',
           'memory/singleton.h',
           'memory/weak_ptr.cc',
@@ -205,6 +203,10 @@
           'safe_strerror_posix.cc',
           'safe_strerror_posix.h',
           'scoped_ptr.h',
+          'scoped_native_library.cc',
+          'scoped_native_library.h',
+          'scoped_temp_dir.cc',
+          'scoped_temp_dir.h',
           'sha1.h',
           'sha1_portable.cc',
           'sha1_win.cc',
@@ -602,7 +604,7 @@
       'targets': [
         {
           'target_name': 'base_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': 'CEE1F794-DC70-4FED-B7C4-4C12986672FE',
           'variables': {
             'base_target': 1,
@@ -636,7 +638,7 @@
       'targets': [
         {
           'target_name': 'symbolize',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'chromium_code': 0,
           },
@@ -661,7 +663,7 @@
         },
         {
           'target_name': 'xdg_mime',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'chromium_code': 0,
           },

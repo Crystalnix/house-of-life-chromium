@@ -14,6 +14,7 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
+#include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper_delegate.h"
@@ -52,6 +53,9 @@ const int kPeriodicCleanupIntervalMs = 1000;
 
 // Time interval before a new prerender is allowed.
 const int kMinTimeBetweenPrerendersMs = 500;
+
+// Time window for which we record old navigations, in milliseconds.
+const int kNavigationRecordWindowMs = 5000;
 
 // Valid HTTP methods for prerendering.
 const char* const kValidHttpMethods[] = {
@@ -141,6 +145,15 @@ struct PrerenderManager::PrerenderContentsData {
   PrerenderContentsData(PrerenderContents* contents, base::Time start_time)
       : contents_(contents),
         start_time_(start_time) {
+  }
+};
+
+struct PrerenderManager::NavigationRecord {
+  GURL url_;
+  base::TimeTicks time_;
+  NavigationRecord(const GURL& url, base::TimeTicks time)
+      : url_(url),
+        time_(time) {
   }
 };
 
@@ -378,9 +391,7 @@ void PrerenderManager::DeleteOldEntries() {
     PrerenderContentsData data = prerender_list_.front();
     if (IsPrerenderElementFresh(data.start_time_))
       return;
-    prerender_list_.pop_front();
-    data.contents_->set_final_status(FINAL_STATUS_TIMED_OUT);
-    delete data.contents_;
+    data.contents_->Destroy(FINAL_STATUS_TIMED_OUT);
   }
   MaybeStopSchedulingPeriodicCleanups();
 }
@@ -427,6 +438,16 @@ bool PrerenderManager::MaybeUsePreloadedPageOld(TabContents* tab_contents,
     return false;
   }
 
+  int child_id, route_id;
+  CHECK(prerender_contents->GetChildId(&child_id));
+  CHECK(prerender_contents->GetRouteId(&route_id));
+
+  // Try to set the prerendered page as used, so any subsequent attempts to
+  // cancel on other threads will fail.  If this fails because the prerender
+  // was already cancelled, possibly on another thread, fail.
+  if (!PrerenderTracker::GetInstance()->TryUse(child_id, route_id))
+    return false;
+
   if (!prerender_contents->load_start_time().is_null())
     RecordTimeUntilUsed(GetCurrentTimeTicks() -
                         prerender_contents->load_start_time());
@@ -434,11 +455,6 @@ bool PrerenderManager::MaybeUsePreloadedPageOld(TabContents* tab_contents,
   UMA_HISTOGRAM_COUNTS("Prerender.PrerendersPerSessionCount",
                        ++prerenders_per_session_count_);
   prerender_contents->set_final_status(FINAL_STATUS_USED);
-
-  int child_id;
-  int route_id;
-  CHECK(prerender_contents->GetChildId(&child_id));
-  CHECK(prerender_contents->GetRouteId(&route_id));
 
   RenderViewHost* render_view_host =
       prerender_contents->render_view_host_mutable();
@@ -519,6 +535,16 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
     return false;
   }
 
+  int child_id, route_id;
+  CHECK(prerender_contents->GetChildId(&child_id));
+  CHECK(prerender_contents->GetRouteId(&route_id));
+
+  // Try to set the prerendered page as used, so any subsequent attempts to
+  // cancel on other threads will fail.  If this fails because the prerender
+  // was already cancelled, possibly on another thread, fail.
+  if (!PrerenderTracker::GetInstance()->TryUse(child_id, route_id))
+    return false;
+
   if (!prerender_contents->load_start_time().is_null())
     RecordTimeUntilUsed(GetCurrentTimeTicks() -
                         prerender_contents->load_start_time());
@@ -526,11 +552,6 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
   UMA_HISTOGRAM_COUNTS("Prerender.PrerendersPerSessionCount",
                        ++prerenders_per_session_count_);
   prerender_contents->set_final_status(FINAL_STATUS_USED);
-
-  int child_id;
-  int route_id;
-  CHECK(prerender_contents->GetChildId(&child_id));
-  CHECK(prerender_contents->GetRouteId(&route_id));
 
   RenderViewHost* render_view_host =
       prerender_contents->prerender_contents()->render_view_host();
@@ -553,6 +574,16 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
       false);
   old_tab_contents->delegate()->SwapTabContents(old_tab_contents,
                                                 new_tab_contents);
+  prerender_contents->CommitHistory(new_tab_contents->tab_contents());
+
+  GURL icon_url = prerender_contents->icon_url();
+  if (!icon_url.is_empty()) {
+    std::vector<FaviconURL> urls;
+    urls.push_back(FaviconURL(icon_url, FaviconURL::FAVICON));
+    new_tab_contents->favicon_tab_helper()->OnUpdateFaviconURL(
+        prerender_contents->page_id(),
+        urls);
+  }
 
   // See if we have any pending prerender requests for this routing id and start
   // the preload if we do.
@@ -916,6 +947,40 @@ bool PrerenderManager::WouldTabContentsBePrerendered(
     TabContents* tab_contents) const {
   DCHECK(CalledOnValidThread());
   return would_be_prerendered_tab_contents_set_.count(tab_contents) > 0;
+}
+
+void PrerenderManager::RecordNavigation(const GURL& url) {
+  DCHECK(CalledOnValidThread());
+
+  navigations_.push_back(NavigationRecord(url, GetCurrentTimeTicks()));
+  CleanUpOldNavigations();
+}
+
+bool PrerenderManager::HasRecentlyBeenNavigatedTo(const GURL& url) {
+  DCHECK(CalledOnValidThread());
+
+  CleanUpOldNavigations();
+  for (std::list<NavigationRecord>::const_iterator it = navigations_.begin();
+       it != navigations_.end();
+       ++it) {
+    if (it->url_ == url)
+      return true;
+  }
+
+  return false;
+}
+
+void PrerenderManager::CleanUpOldNavigations() {
+  DCHECK(CalledOnValidThread());
+
+  // Cutoff.  Navigations before this cutoff can be discarded.
+  base::TimeTicks cutoff = GetCurrentTimeTicks() -
+      base::TimeDelta::FromMilliseconds(kNavigationRecordWindowMs);
+  while (!navigations_.empty()) {
+    if (navigations_.front().time_ > cutoff)
+      break;
+    navigations_.pop_front();
+  }
 }
 
 }  // namespace prerender

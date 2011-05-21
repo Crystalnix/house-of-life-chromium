@@ -35,13 +35,8 @@
 #include "ui/gfx/canvas_skia.h"
 #include "views/events/event.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/window.h"
-
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#endif
 
 #if defined(TOOLKIT_USES_GTK)
 #include <gdk/gdk.h>  // NOLINT

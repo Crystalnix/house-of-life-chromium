@@ -268,6 +268,7 @@ const char Extension::kClipboardWritePermission[] = "clipboardWrite";
 const char Extension::kContextMenusPermission[] = "contextMenus";
 const char Extension::kContentSettingsPermission[] = "contentSettings";
 const char Extension::kCookiePermission[] = "cookies";
+const char Extension::kChromePrivatePermission[] = "chromePrivate";
 const char Extension::kChromeosInfoPrivatePermission[] = "chromeosInfoPrivate";
 const char Extension::kDebuggerPermission[] = "debugger";
 const char Extension::kExperimentalPermission[] = "experimental";
@@ -291,6 +292,7 @@ const char Extension::kWebSocketProxyPrivatePermission[] =
 const Extension::Permission Extension::kPermissions[] = {
   { kBackgroundPermission,            PermissionMessage::ID_NONE },
   { kBookmarkPermission,              PermissionMessage::ID_BOOKMARKS },
+  { kChromePrivatePermission,         PermissionMessage::ID_NONE },
   { kChromeosInfoPrivatePermission,   PermissionMessage::ID_NONE },
   { kClipboardReadPermission,         PermissionMessage::ID_CLIPBOARD },
   { kClipboardWritePermission,        PermissionMessage::ID_NONE },
@@ -302,8 +304,8 @@ const Extension::Permission Extension::kPermissions[] = {
   { kFileBrowserHandlerPermission,    PermissionMessage::ID_NONE },
   { kFileBrowserPrivatePermission,    PermissionMessage::ID_NONE },
   { kGeolocationPermission,           PermissionMessage::ID_GEOLOCATION },
-  { kIdlePermission,                  PermissionMessage::ID_NONE },
   { kHistoryPermission,               PermissionMessage::ID_BROWSING_HISTORY },
+  { kIdlePermission,                  PermissionMessage::ID_NONE },
   { kManagementPermission,            PermissionMessage::ID_MANAGEMENT },
   { kNotificationPermission,          PermissionMessage::ID_NONE },
   { kProxyPermission,                 PermissionMessage::ID_NONE },
@@ -316,6 +318,7 @@ const size_t Extension::kNumPermissions = arraysize(Extension::kPermissions);
 
 const char* const Extension::kHostedAppPermissionNames[] = {
   Extension::kBackgroundPermission,
+  Extension::kChromePrivatePermission,
   Extension::kGeolocationPermission,
   Extension::kNotificationPermission,
   Extension::kUnlimitedStoragePermission,
@@ -1178,7 +1181,7 @@ bool Extension::LoadIsApp(const DictionaryValue* manifest,
 
 bool Extension::LoadExtent(const DictionaryValue* manifest,
                            const char* key,
-                           ExtensionExtent* extent,
+                           URLPatternSet* extent,
                            const char* list_error,
                            const char* value_error,
                            URLPattern::ParseOption parse_strictness,
@@ -1566,7 +1569,7 @@ bool Extension::FormatPEMForFileOutput(const std::string& input,
 // static
 bool Extension::IsPrivilegeIncrease(const bool granted_full_access,
                                     const std::set<std::string>& granted_apis,
-                                    const ExtensionExtent& granted_extent,
+                                    const URLPatternSet& granted_extent,
                                     const Extension* new_extension) {
   // If the extension had native code access, we don't need to go any further.
   // Things can't get any worse.
@@ -1583,7 +1586,7 @@ bool Extension::IsPrivilegeIncrease(const bool granted_full_access,
     if (new_extension->HasEffectiveAccessToAllHosts())
       return true;
 
-    const ExtensionExtent new_extent =
+    const URLPatternSet new_extent =
         new_extension->GetEffectiveHostPermissions();
 
     if (IsElevatedHostList(granted_extent.patterns(), new_extent.patterns()))
@@ -2736,7 +2739,14 @@ bool Extension::HasApiPermission(
 bool Extension::HasHostPermission(const GURL& url) const {
   for (URLPatternList::const_iterator host = host_permissions().begin();
        host != host_permissions().end(); ++host) {
-    if (host->MatchesUrl(url))
+    // Non-component extensions can only access chrome://favicon and no other
+    // chrome:// scheme urls.
+    if (url.SchemeIs(chrome::kChromeUIScheme) &&
+        url.host() != chrome::kChromeUIFaviconHost &&
+        location() != Extension::COMPONENT)
+      return false;
+
+    if (host->MatchesURL(url))
       return true;
   }
   return false;
@@ -2760,7 +2770,7 @@ void Extension::InitEffectiveHostPermissions() {
   for (UserScriptList::const_iterator content_script =
            content_scripts().begin();
        content_script != content_scripts().end(); ++content_script) {
-    UserScript::PatternList::const_iterator pattern =
+    URLPatternList::const_iterator pattern =
         content_script->url_patterns().begin();
     for (; pattern != content_script->url_patterns().end(); ++pattern)
       effective_host_permissions_.AddPattern(*pattern);
@@ -2811,14 +2821,18 @@ bool Extension::CanExecuteScriptOnPage(const GURL& page_url,
     return false;
   }
 
+  if (page_url.SchemeIs(chrome::kChromeUIScheme) &&
+      !CanExecuteScriptEverywhere())
+    return false;
+
   // If a script is specified, use its matches.
   if (script)
-    return script->MatchesUrl(page_url);
+    return script->MatchesURL(page_url);
 
   // Otherwise, see if this extension has permission to execute script
   // programmatically on pages.
   for (size_t i = 0; i < host_permissions_.size(); ++i) {
-    if (host_permissions_[i].MatchesUrl(page_url))
+    if (host_permissions_[i].MatchesURL(page_url))
       return true;
   }
 
@@ -2832,7 +2846,7 @@ bool Extension::CanExecuteScriptOnPage(const GURL& page_url,
 
 // static
 bool Extension::HasEffectiveAccessToAllHosts(
-    const ExtensionExtent& effective_host_permissions,
+    const URLPatternSet& effective_host_permissions,
     const std::set<std::string>& api_permissions) {
   const URLPatternList patterns = effective_host_permissions.patterns();
   for (URLPatternList::const_iterator host = patterns.begin();
@@ -2924,7 +2938,7 @@ bool Extension::OverlapsWithOrigin(const GURL& origin) const {
   origin_only_pattern.set_host(origin.host());
   origin_only_pattern.SetPath("/*");
 
-  ExtensionExtent origin_only_pattern_list;
+  URLPatternSet origin_only_pattern_list;
   origin_only_pattern_list.AddPattern(origin_only_pattern);
 
   return web_extent().OverlapsWith(origin_only_pattern_list);

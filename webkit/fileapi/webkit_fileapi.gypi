@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'fileapi',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '40B53211-03ED-4932-8D53-52B172599DFE',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
@@ -44,8 +44,6 @@
         'file_system_types.h',
         'file_system_url_request_job.cc',
         'file_system_url_request_job.h',
-        'file_system_url_request_job_base.cc',
-        'file_system_url_request_job_base.h',
         'file_system_url_request_job_factory.cc',
         'file_system_url_request_job_factory.h',
         'file_system_usage_cache.cc',

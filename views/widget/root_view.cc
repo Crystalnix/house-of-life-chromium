@@ -22,6 +22,7 @@
 #endif
 
 namespace views {
+namespace internal {
 
 // static
 const char RootView::kViewClassName[] = "views/RootView";
@@ -399,35 +400,6 @@ void RootView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_APPLICATION;
 }
 
-#if defined(TOUCH_UI)
-namespace {
-// Always show the mouse cursor, useful when debugging touch builds
-bool keep_mouse_cursor;
-}
-
-void RootView::SetKeepMouseCursor(bool keep) {
-  keep_mouse_cursor = keep;
-}
-
-bool RootView::GetKeepMouseCursor() {
-  return keep_mouse_cursor;
-}
-
-#endif
-
-namespace {
-// Set to true if a pure Views implementation is preferred
-bool use_pure_views;
-}
-
-void RootView::SetPureViews(bool pure) {
-  use_pure_views = pure;
-}
-
-bool RootView::IsPureViews() {
-  return use_pure_views;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // RootView, protected:
 
@@ -481,4 +453,6 @@ void RootView::SetMouseLocationAndFlags(const MouseEvent& event) {
   last_mouse_event_y_ = event.y();
 }
 
+}  // namespace internal
 }  // namespace views
+

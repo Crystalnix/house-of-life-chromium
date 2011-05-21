@@ -7,7 +7,7 @@
     {
       'target_name': 'content_renderer',
       'msvs_guid': '9AAA8CF2-9B3D-4895-8CB9-D70BBD125EAD',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'content_common',
         '../jingle/jingle.gyp:jingle_glue',
@@ -175,7 +175,7 @@
             'renderer/command_buffer_proxy.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],

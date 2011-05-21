@@ -1241,7 +1241,7 @@
       {
         "name": "captureVisibleTab",
         "type": "function",
-        "description": "Captures the visible area of the currently selected tab in the specified window.",
+        "description": "Captures the visible area of the currently selected tab in the specified window. You must have <a href='manifest.html#permissions'>host permission</a> for the URL displayed by the tab.",
         "parameters": [
           {
             "type": "integer",
@@ -1254,7 +1254,6 @@
             "type": "object",
             "name": "options",
             "optional": true,
-            "min_version": "5.0.372.0",
             "description": "Set parameters of image capture, such as the format of the resulting image.",
             "properties": {
               "format": {
@@ -3295,6 +3294,30 @@
       }
     ],
     "events": []
+  },
+  {
+    "namespace": "chromePrivate",
+    "nodoc": "true",
+    "functions": [
+      {
+        "name": "decodeJPEG",
+        "description": "Decodes JPEG image array to raw bitmap array",
+        "parameters": [
+          {
+            "name": "jpeg_image",
+            "type": "array",
+            "optional": false,
+            "description": "The JPEG image bytes array",
+            "items": {"type": "number"}
+          }
+        ],
+        "returns": {
+          "type": "array",
+          "description": "Decoded bitmap RGB array formatted as (B | G << 8 | R << 16)",
+          "items": {"type": "number"}
+        }
+      }
+    ]
   },
   {
     "namespace": "chromeosInfoPrivate",

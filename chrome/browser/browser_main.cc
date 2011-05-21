@@ -144,7 +144,6 @@
 #include "chrome/browser/chromeos/metrics_cros_settings_provider.h"
 #include "chrome/browser/chromeos/net/network_change_notifier_chromeos.h"
 #include "chrome/browser/chromeos/system_key_event_listener.h"
-#include "chrome/browser/chromeos/web_socket_proxy_controller.h"
 #include "chrome/browser/oom_priority_manager.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
 #endif
@@ -190,8 +189,9 @@
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/views/chrome_views_delegate.h"
 #include "views/focus/accelerator_handler.h"
+#include "views/widget/widget.h"
 #if defined(TOOLKIT_USES_GTK)
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 #endif
 #endif
 
@@ -199,8 +199,8 @@
 #include "ui/gfx/gtk_util.h"
 #endif
 
-#if defined(TOUCH_UI) || defined(TOOLKIT_VIEWS)
-#include "views/widget/root_view.h"
+#if defined(TOUCH_UI) && defined(HAVE_XINPUT2)
+#include "views/touchui/touch_factory.h"
 #endif
 
 // BrowserMainParts ------------------------------------------------------------
@@ -530,6 +530,9 @@ void BrowserMainParts::MainMessageLoopStart() {
   // TODO(viettrungluu): should these really go before setting the thread name?
   system_monitor_.reset(new base::SystemMonitor);
   hi_res_timer_manager_.reset(new HighResolutionTimerManager);
+
+  InitializeMainThread();
+
 #if defined(OS_CHROMEOS)
   // TODO(zelidrag): We need to move cros library glue code outside of
   // chrome/browser directory to avoid check_deps issues and then migrate
@@ -539,7 +542,6 @@ void BrowserMainParts::MainMessageLoopStart() {
 #else
   network_change_notifier_.reset(net::NetworkChangeNotifier::Create());
 #endif
-  InitializeMainThread();
 
   PostMainMessageLoopStart();
   Profiling::MainMessageLoopStarted();
@@ -1004,7 +1006,7 @@ void InitializeToolkit(const MainFunctionParams& parameters) {
 #if defined(TOOLKIT_USES_GTK)
   // TODO(beng): Move to WidgetImpl and implement on Windows too!
   if (parameters.command_line_.HasSwitch(switches::kDebugViewsPaint))
-    views::WidgetGtk::EnableDebugPaint();
+    views::NativeWidgetGtk::EnableDebugPaint();
 #endif
 #endif
 
@@ -1384,6 +1386,10 @@ int BrowserMain(const MainFunctionParams& parameters) {
   if (!parsed_command_line.HasSwitch(switches::kNoErrorDialogs))
     WarnAboutMinimumSystemRequirements();
 
+  // Convert active labs into switches. Modifies the current command line.
+  about_flags::ConvertFlagsToSwitches(local_state,
+                                      CommandLine::ForCurrentProcess());
+
   InitializeNetworkOptions(parsed_command_line);
 
   // Initialize histogram synchronizer system. This is a singleton and is used
@@ -1397,10 +1403,6 @@ int BrowserMain(const MainFunctionParams& parameters) {
   // WatchDogThread to keep track of information about threads that are being
   // watched.
   scoped_ptr<ThreadWatcherList> thread_watcher_list(new ThreadWatcherList());
-
-  // Convert active labs into switches. Modifies the current command line.
-  about_flags::ConvertFlagsToSwitches(local_state,
-                                      CommandLine::ForCurrentProcess());
 
   // Now the command line has been mutated based on about:flags, we can
   // set up metrics and initialize field trials.
@@ -1751,13 +1753,13 @@ int BrowserMain(const MainFunctionParams& parameters) {
   }
 #endif
 
-#if defined(TOUCH_UI)
-  views::RootView::SetKeepMouseCursor(
+#if defined(TOUCH_UI) && defined(HAVE_XINPUT2)
+  views::TouchFactory::GetInstance()->set_keep_mouse_cursor(
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kKeepMouseCursor));
 #endif
 
 #if defined(TOOLKIT_VIEWS)
-  views::RootView::SetPureViews(
+  views::Widget::SetPureViews(
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kUsePureViews));
 #endif
 

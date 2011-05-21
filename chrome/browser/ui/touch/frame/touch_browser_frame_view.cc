@@ -18,6 +18,7 @@
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_type.h"
+#include "content/common/view_messages.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
@@ -300,7 +301,8 @@ void TouchBrowserFrameView::AnimationEnded(const ui::Animation* animation) {
     // the renderer scrolls when necessary to keep the textfield visible.
     RenderViewHost* host =
         browser_view()->browser()->GetSelectedTabContents()->render_view_host();
-    host->ScrollFocusedEditableNodeIntoView();
+    host->Send(new ViewMsg_ScrollFocusedEditableNodeIntoView(
+        host->routing_id()));
   }
   SchedulePaint();
 }

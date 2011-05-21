@@ -85,7 +85,6 @@ class FileSystemOperation {
       const GURL& path,
       int file_flags,
       base::ProcessHandle peer_handle);
-  void GetLocalPath(const GURL& path);
 
   // Try to cancel the current operation [we support cancelling write or
   // truncate only].  Report failure for the current operation, then tell the
@@ -104,6 +103,7 @@ class FileSystemOperation {
   friend class FileSystemOperationTest;
   friend class FileSystemOperationWriteTest;
   friend class FileWriterDelegateTest;
+  friend class FileSystemTestOriginHelper;
 
   bool GetUsageAndQuotaThenCallback(
       const GURL& origin_url,
@@ -155,8 +155,6 @@ class FileSystemOperation {
       base::PlatformFileError rv,
       base::PassPlatformFile file,
       bool created);
-  void DidGetLocalPath(base::PlatformFileError rv,
-                       const FilePath& local_path);
 
   // Helper for Write().
   void OnFileOpenedForWrite(

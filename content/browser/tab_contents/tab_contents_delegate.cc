@@ -4,7 +4,7 @@
 
 #include "content/browser/tab_contents/tab_contents_delegate.h"
 
-#include "chrome/common/url_constants.h"
+#include "content/common/url_constants.h"
 #include "ui/gfx/rect.h"
 
 std::string TabContentsDelegate::GetNavigationHeaders(const GURL& url) {
@@ -148,10 +148,6 @@ void TabContentsDelegate::DragEnded() {
 }
 
 void TabContentsDelegate::ShowRepostFormWarningDialog(
-    TabContents* tab_contents) {
-}
-
-void TabContentsDelegate::ShowCollectedCookiesDialog(
     TabContents* tab_contents) {
 }
 

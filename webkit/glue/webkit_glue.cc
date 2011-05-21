@@ -14,6 +14,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/string_piece.h"
 #include "base/string_tokenizer.h"
 #include "base/string_util.h"
@@ -270,7 +271,7 @@ bool DecodeImage(const std::string& image_data, SkBitmap* image) {
   if (web_image.isNull())
     return false;
 
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) && !defined(USE_SKIA)
   *image = gfx::CGImageToSkBitmap(web_image.getCGImageRef());
 #else
   *image = web_image.getSkBitmap();
@@ -391,11 +392,6 @@ const std::string& GetUserAgent(const GURL& url) {
 }
 
 void SetForcefullyTerminatePluginProcess(bool value) {
-  if (IsPluginRunningInRendererProcess()) {
-    // Ignore this quirk when the plugins are not running in their own process.
-    return;
-  }
-
   g_forcefully_terminate_plugin_process = value;
 }
 

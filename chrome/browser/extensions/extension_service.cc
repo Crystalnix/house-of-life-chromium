@@ -25,8 +25,8 @@
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/debugger/devtools_manager.h"
-#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/apps_promo.h"
+#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_accessibility_api.h"
 #include "chrome/browser/extensions/extension_bookmarks_module.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
@@ -179,6 +179,11 @@ class ExtensionServiceBackend
   // (presumably into memory) without installing it.
   void LoadSingleExtension(const FilePath &path);
 
+  // Update the PluginList after NaCl modules are loaded or unloaded. Since
+  // this could cause file IO, make this a back end task.
+  void UpdatePluginListWithNaClModules(
+    const ExtensionService::NaClModuleInfoList& nacl_module_list);
+
  private:
   friend class base::RefCountedThreadSafe<ExtensionServiceBackend>;
 
@@ -251,6 +256,34 @@ void ExtensionServiceBackend::LoadSingleExtension(const FilePath& path_in) {
     NOTREACHED();
 }
 
+void ExtensionServiceBackend::UpdatePluginListWithNaClModules(
+    const ExtensionService::NaClModuleInfoList& nacl_module_list) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  FilePath path;
+  PathService::Get(chrome::FILE_NACL_PLUGIN, &path);
+
+  webkit::npapi::PluginList::Singleton()->UnregisterInternalPlugin(path);
+
+  const PepperPluginInfo* pepper_info =
+      PepperPluginRegistry::GetInstance()->GetInfoForPlugin(path);
+  webkit::npapi::WebPluginInfo info = pepper_info->ToWebPluginInfo();
+
+  DCHECK(nacl_module_list.size() <= 1);
+  for (ExtensionService::NaClModuleInfoList::const_iterator iter =
+      nacl_module_list.begin(); iter != nacl_module_list.end(); ++iter) {
+    webkit::npapi::WebPluginMimeType mime_type_info;
+    mime_type_info.mime_type = iter->mime_type;
+    mime_type_info.additional_param_names.push_back(UTF8ToUTF16("nacl"));
+    mime_type_info.additional_param_values.push_back(
+        UTF8ToUTF16(iter->url.spec()));
+    info.mime_types.push_back(mime_type_info);
+  }
+
+  webkit::npapi::PluginList::Singleton()->RefreshPlugins();
+  webkit::npapi::PluginList::Singleton()->RegisterInternalPlugin(info);
+}
+
 void ExtensionServiceBackend::ReportExtensionLoadError(
     const FilePath& extension_path, const std::string &error) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -279,7 +312,19 @@ void ExtensionService::CheckExternalUninstall(const std::string& id) {
       return;  // Yup, known extension, don't uninstall.
   }
 
-  // This is an external extension that we don't have registered.  Uninstall.
+  // We get the list of external extensions to check from preferences.
+  // It is possible that an extension has preferences but is not loaded.
+  // For example, an extension that requires experimental permissions
+  // will not be loaded if the experimental command line flag is not used.
+  // In this case, do not uninstall.
+  const Extension* extension = GetInstalledExtension(id);
+  if (!extension) {
+    // We can't call UninstallExtension with an unloaded/invalid
+    // extension ID.
+    LOG(WARNING) << "Attempted uninstallation of unloaded/invalid extension "
+                 << "with id: " << id;
+    return;
+  }
   UninstallExtension(id, true, NULL);
 }
 
@@ -833,7 +878,7 @@ void ExtensionService::GrantPermissions(const Extension* extension) {
   // We only maintain the granted permissions prefs for INTERNAL extensions.
   CHECK_EQ(Extension::INTERNAL, extension->location());
 
-  ExtensionExtent effective_hosts = extension->GetEffectiveHostPermissions();
+  URLPatternSet effective_hosts = extension->GetEffectiveHostPermissions();
   extension_prefs_->AddGrantedPermissions(extension->id(),
                                           extension->HasFullPermissions(),
                                           extension->api_permissions(),
@@ -1186,8 +1231,15 @@ void ExtensionService::NotifyExtensionLoaded(const Extension* extension) {
     nacl_modules_changed = true;
   }
 
-  if (nacl_modules_changed)
-    UpdatePluginListWithNaClModules();
+  if (nacl_modules_changed) {
+    if (!BrowserThread::PostTask(
+            BrowserThread::FILE, FROM_HERE,
+            NewRunnableMethod(
+                backend_.get(),
+                &ExtensionServiceBackend::UpdatePluginListWithNaClModules,
+                nacl_module_list_)))
+      NOTREACHED();
+  }
 
   if (plugins_changed || nacl_modules_changed)
     PluginService::GetInstance()->PurgePluginListCache(false);
@@ -1251,8 +1303,15 @@ void ExtensionService::NotifyExtensionUnloaded(
     nacl_modules_changed = true;
   }
 
-  if (nacl_modules_changed)
-    UpdatePluginListWithNaClModules();
+  if (nacl_modules_changed) {
+    if (!BrowserThread::PostTask(
+            BrowserThread::FILE, FROM_HERE,
+            NewRunnableMethod(
+                backend_.get(),
+                &ExtensionServiceBackend::UpdatePluginListWithNaClModules,
+                nacl_module_list_)))
+      NOTREACHED();
+  }
 
   if (plugins_changed || nacl_modules_changed)
     PluginService::GetInstance()->PurgePluginListCache(false);
@@ -1291,6 +1350,11 @@ Profile* ExtensionService::profile() {
 
 ExtensionPrefs* ExtensionService::extension_prefs() {
   return extension_prefs_;
+}
+
+ExtensionContentSettingsStore*
+    ExtensionService::GetExtensionContentSettingsStore() {
+  return extension_prefs()->content_settings_store();
 }
 
 ExtensionUpdater* ExtensionService::updater() {
@@ -1762,7 +1826,7 @@ void ExtensionService::DisableIfPrivilegeIncrease(const Extension* extension) {
                                                   true, true, false);
   bool granted_full_access;
   std::set<std::string> granted_apis;
-  ExtensionExtent granted_extent;
+  URLPatternSet granted_extent;
 
   bool is_extension_upgrade = old != NULL;
   bool is_privilege_increase = false;
@@ -1969,7 +2033,7 @@ const Extension* ExtensionService::GetExtensionByURL(const GURL& url) {
 
 const Extension* ExtensionService::GetExtensionByWebExtent(const GURL& url) {
   for (size_t i = 0; i < extensions_.size(); ++i) {
-    if (extensions_[i]->web_extent().ContainsURL(url))
+    if (extensions_[i]->web_extent().MatchesURL(url))
       return extensions_[i];
   }
   return NULL;
@@ -1986,7 +2050,7 @@ bool ExtensionService::ExtensionBindingsAllowed(const GURL& url) {
 }
 
 const Extension* ExtensionService::GetExtensionByOverlappingWebExtent(
-    const ExtensionExtent& extent) {
+    const URLPatternSet& extent) {
   for (size_t i = 0; i < extensions_.size(); ++i) {
     if (extensions_[i]->web_extent().OverlapsWith(extent))
       return extensions_[i];
@@ -2199,31 +2263,6 @@ void ExtensionService::UnregisterNaClModule(const GURL& url) {
   NaClModuleInfoList::iterator iter = FindNaClModule(url);
   DCHECK(iter != nacl_module_list_.end());
   nacl_module_list_.erase(iter);
-}
-
-void ExtensionService::UpdatePluginListWithNaClModules() {
-  FilePath path;
-  PathService::Get(chrome::FILE_NACL_PLUGIN, &path);
-
-  webkit::npapi::PluginList::Singleton()->UnregisterInternalPlugin(path);
-
-  const PepperPluginInfo* pepper_info =
-      PepperPluginRegistry::GetInstance()->GetInfoForPlugin(path);
-  webkit::npapi::WebPluginInfo info = pepper_info->ToWebPluginInfo();
-
-  DCHECK(nacl_module_list_.size() <= 1);
-  for (NaClModuleInfoList::iterator iter = nacl_module_list_.begin();
-       iter != nacl_module_list_.end(); ++iter) {
-    webkit::npapi::WebPluginMimeType mime_type_info;
-    mime_type_info.mime_type = iter->mime_type;
-    mime_type_info.additional_param_names.push_back(UTF8ToUTF16("nacl"));
-    mime_type_info.additional_param_values.push_back(
-        UTF8ToUTF16(iter->url.spec()));
-    info.mime_types.push_back(mime_type_info);
-  }
-
-  webkit::npapi::PluginList::Singleton()->RefreshPlugins();
-  webkit::npapi::PluginList::Singleton()->RegisterInternalPlugin(info);
 }
 
 ExtensionService::NaClModuleInfoList::iterator

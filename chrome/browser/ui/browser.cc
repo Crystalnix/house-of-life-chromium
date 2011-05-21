@@ -118,6 +118,8 @@
 #include "content/common/content_restriction.h"
 #include "content/common/notification_service.h"
 #include "content/common/page_transition_types.h"
+#include "content/common/page_zoom.h"
+#include "content/common/view_messages.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -575,7 +577,7 @@ TabContents* Browser::OpenApplicationWindow(
   GURL url;
   if (!url_input.is_empty()) {
     if (extension)
-      DCHECK(extension->web_extent().ContainsURL(url_input));
+      DCHECK(extension->web_extent().MatchesURL(url_input));
     url = url_input;
   } else {
     DCHECK(extension);  // Empty url and no extension.  Nothing to open.
@@ -972,6 +974,19 @@ void Browser::OnWindowClosing() {
       Details<bool>(&exiting));
 
   CloseAllTabs();
+}
+
+void Browser::OnWindowActivated() {
+  // On some platforms we want to automatically reload tabs that are
+  // killed when the user selects them.
+  TabContents* contents = GetSelectedTabContents();
+  if (contents && contents->crashed_status() ==
+     base::TERMINATION_STATUS_PROCESS_WAS_KILLED) {
+    if (CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kReloadKilledTabs)) {
+      Reload(CURRENT_TAB);
+    }
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1763,14 +1778,15 @@ void Browser::FindPrevious() {
 
 void Browser::Zoom(PageZoom::Function zoom_function) {
   static const UserMetricsAction kActions[] = {
-                      UserMetricsAction("ZoomMinus"),
-                      UserMetricsAction("ZoomNormal"),
-                      UserMetricsAction("ZoomPlus")
-                      };
+      UserMetricsAction("ZoomMinus"),
+      UserMetricsAction("ZoomNormal"),
+      UserMetricsAction("ZoomPlus")
+      };
 
   UserMetrics::RecordAction(kActions[zoom_function - PageZoom::ZOOM_OUT]);
   TabContentsWrapper* tab_contents = GetSelectedTabContentsWrapper();
-  tab_contents->render_view_host()->Zoom(zoom_function);
+  RenderViewHost* host = tab_contents->render_view_host();
+  host->Send(new ViewMsg_Zoom(host->routing_id(), zoom_function));
 }
 
 void Browser::FocusToolbar() {
@@ -2218,7 +2234,7 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
                              true,
                              PrefService::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kWebKitAllowRunningInsecureContent,
-                             false,
+                             true,
                              PrefService::UNSYNCABLE_PREF);
   prefs->RegisterBooleanPref(prefs::kWebKitAllowDisplayingInsecureContent,
                              true,
@@ -3064,7 +3080,8 @@ void Browser::AddNewContents(TabContents* source,
       return;
     }
 
-    new_contents->DisassociateFromPopupCount();
+    RenderViewHost* view = new_contents->render_view_host();
+    view->Send(new ViewMsg_DisassociateFromPopupCount(view->routing_id()));
   }
 
   browser::NavigateParams params(this, new_wrapper);
@@ -3808,6 +3825,7 @@ void Browser::InitCommandState() {
   command_updater_.UpdateCommandEnabled(IDC_SHOW_DOWNLOADS, true);
   command_updater_.UpdateCommandEnabled(IDC_HELP_PAGE, true);
   command_updater_.UpdateCommandEnabled(IDC_IMPORT_SETTINGS, true);
+  command_updater_.UpdateCommandEnabled(IDC_BOOKMARKS_MENU, true);
 
 #if defined(OS_CHROMEOS)
   command_updater_.UpdateCommandEnabled(IDC_FILE_MANAGER, true);

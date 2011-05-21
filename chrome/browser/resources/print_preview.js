@@ -64,7 +64,7 @@ function onLoad() {
       onPageSelectionMayHaveChanged();
   });
   $('individual-pages').addEventListener('focus', addTimerToPageRangeField);
-  $('individual-pages').addEventListener('input', pageRangesFieldChanged);
+  $('individual-pages').addEventListener('input', resetPageRangeFieldTimer);
   $('two-sided').addEventListener('click', handleTwoSidedClick)
   $('landscape').addEventListener('click', onLayoutModeToggle);
   $('portrait').addEventListener('click', onLayoutModeToggle);
@@ -77,6 +77,7 @@ function onLoad() {
   $('decrement').addEventListener('click',
                                   function() { onCopiesButtonsClicked(-1); });
   $('controls').onsubmit = function() { return false; };
+  $('dancing-dots').classList.remove('invisible');
   chrome.send('getPrinters');
 }
 
@@ -100,15 +101,8 @@ function showSystemDialog() {
  * @param {string} initiatorTabURL The URL of the initiator tab.
  */
 function onInitiatorTabClosed(initiatorTabURL) {
-  if (isPreviewStillLoading)
-    displayErrorMessage(localStrings.getStringF('initiatorTabClosed',
-                                                initiatorTabURL));
-
-  var controlIDs = ['landscape', 'portrait', 'all-pages', 'print-pages',
-                    'individual-pages', 'printer-list'];
-  var controlCount = controlIDs.length;
-  for (var i = 0; i < controlCount; i++)
-    $(controlIDs[i]).disabled = true;
+  displayErrorMessage(localStrings.getStringF('initiatorTabClosed',
+                                              initiatorTabURL));
 }
 
 /**
@@ -340,16 +334,18 @@ function setPrinters(printers, defaultPrinterIndex) {
   var printerList = $('printer-list');
   for (var i = 0; i < printers.length; ++i) {
     addDestinationListOption(printers[i].printerName, printers[i].deviceName,
-                             i == defaultPrinterIndex);
+                             i == defaultPrinterIndex, false);
   }
+  addDestinationListOption('','',false, true);
 
   // Adding option for saving PDF to disk.
   addDestinationListOption(localStrings.getString('printToPDF'),
-                           PRINT_TO_PDF, false);
+                           PRINT_TO_PDF, false, false);
+  addDestinationListOption('','',false, true);
 
   // Add an option to manage printers.
   addDestinationListOption(localStrings.getString('managePrinters'),
-                           MANAGE_PRINTERS, false);
+                           MANAGE_PRINTERS, false, false);
 
   printerList.disabled = false;
   updateControlsWithSelectedPrinterCapabilities();
@@ -359,15 +355,17 @@ function setPrinters(printers, defaultPrinterIndex) {
  * Adds an option to the printer destination list.
  * @param {String} optionText specifies the option text content.
  * @param {String} optionValue specifies the option value.
- * @param {boolean} is_default is true if the option needs to be selected.
+ * @param {boolean} isDefault is true if the option needs to be selected.
+ * @param {boolean} isDisabled is true if the option needs to be disabled.
  */
-function addDestinationListOption(optionText, optionValue, is_default) {
+function addDestinationListOption(optionText, optionValue, isDefault,
+    isDisabled) {
   var option = document.createElement('option');
   option.textContent = optionText;
   option.value = optionValue;
   $('printer-list').add(option);
-  if (is_default)
-    option.selected = true;
+  option.selected = isDefault;
+  option.disabled = isDisabled;
 }
 
 /**
@@ -532,8 +530,8 @@ function copiesFieldChanged() {
 }
 
 /**
- * Executes whenever an input event occurs on the 'individual-pages'
- * field. It takes care of
+ * Executes whenever a blur event occurs on the 'individual-pages'
+ * field or when the timer expires. It takes care of
  * 1) showing/hiding warnings/suggestions
  * 2) updating print button/summary
  */
@@ -580,16 +578,17 @@ function pageRangesFieldChanged() {
  * 'copies' value.
  */
 function updateCopiesButtonsState() {
+  var copiesField = $('copies');
   if (!isNumberOfCopiesValid()) {
-    $('copies').classList.add('invalid');
-    $('increment').disabled = true;
-    $('decrement').disabled = true;
+    copiesField.classList.add('invalid');
+    $('increment').disabled = false;
+    $('decrement').disabled = false;
     showInvalidHint($('copies-hint'));
   }
   else {
-    $('copies').classList.remove('invalid');
-    $('increment').disabled = false;
-    $('decrement').disabled = false;
+    copiesField.classList.remove('invalid');
+    $('increment').disabled = (getCopies() == copiesField.max) ? true : false;
+    $('decrement').disabled = (getCopies() == copiesField.min) ? true : false;
     hideInvalidHint($('copies-hint'));
   }
 }
@@ -655,7 +654,6 @@ function handleTwoSidedClick() {
  * clicked.
  */
 function handleIndividualPagesCheckbox() {
-  onPageSelectionMayHaveChanged();
   $('individual-pages').focus();
 }
 
@@ -854,6 +852,8 @@ function resetPageRangeFieldTimer() {
  * 2) The newly selected pages differ from the previously selected.
  */
 function onPageSelectionMayHaveChanged() {
+  if ($('print-pages').checked)
+    pageRangesFieldChanged();
   var validityLevel = getSelectedPagesValidityLevel();
   var currentlySelectedPages = getSelectedPagesSet();
 
@@ -887,9 +887,15 @@ function areArraysEqual(array1, array2) {
  * Executed when the 'increment' or 'decrement' button is clicked.
  */
 function onCopiesButtonsClicked(sign) {
-  if($('copies').value == 1 && (sign == -1))
-    return;
-  $('copies').value = getCopies() + sign * 1;
+  var copiesField = $('copies');
+  if (!isNumberOfCopiesValid())
+    copiesField.value = 1;
+  else {
+    var newValue = getCopies() + sign * 1;
+    if (newValue < copiesField.min || newValue > copiesField.max)
+      return;
+    copiesField.value = newValue;
+  }
   copiesFieldChanged();
 }
 

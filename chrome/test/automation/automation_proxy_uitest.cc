@@ -10,7 +10,7 @@
 #include "base/file_util.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/sys_info.h"
@@ -30,8 +30,8 @@
 #include "chrome/test/automation/proxy_launcher.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
-#include "chrome/test/ui_test_utils.h"
 #include "chrome/test/ui/ui_test.h"
+#include "chrome/test/ui_test_utils.h"
 #include "content/common/json_value_serializer.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_util.h"
@@ -66,7 +66,7 @@ class ExternalTabUITestMockLauncher : public ProxyLauncher {
 
   void InitializeConnection(const LaunchState& state,
                             bool wait_for_initial_loads) {
-    LaunchBrowserAndServer(state, wait_for_initial_loads);
+    ASSERT_TRUE(LaunchBrowserAndServer(state, wait_for_initial_loads));
   }
 
   void TerminateConnection() {
@@ -170,13 +170,18 @@ TEST_F(AutomationProxyVisibleTest, MAYBE_WindowGetViewBounds) {
     }
     EXPECT_EQ(bounds2.y(), bounds.y());
 
-    gfx::Rect urlbar_bounds;
-    ASSERT_TRUE(window->GetViewBounds(VIEW_ID_LOCATION_BAR, &urlbar_bounds,
-                                      false));
-    EXPECT_GT(urlbar_bounds.x(), 0);
-    EXPECT_GT(urlbar_bounds.y(), 0);
-    EXPECT_GT(urlbar_bounds.width(), 0);
-    EXPECT_GT(urlbar_bounds.height(), 0);
+    // Sometimes tests start the browser in full screen mode. Don't check the
+    // location bar in such a case.
+    bool fullscreen = false;
+    if (browser->IsFullscreen(&fullscreen) && !fullscreen) {
+      gfx::Rect urlbar_bounds;
+      ASSERT_TRUE(window->GetViewBounds(VIEW_ID_LOCATION_BAR, &urlbar_bounds,
+                                        false));
+      EXPECT_GT(urlbar_bounds.x(), 0);
+      EXPECT_GT(urlbar_bounds.y(), 0);
+      EXPECT_GT(urlbar_bounds.width(), 0);
+      EXPECT_GT(urlbar_bounds.height(), 0);
+    }
 
     /*
 

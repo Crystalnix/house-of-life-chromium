@@ -37,6 +37,7 @@ body #main:after {
 
 .sidebar {
   -webkit-user-select: none;
+  border: 1px solid #a0a0a0;
   background: white;
   height: 100%;
   overflow-x: hidden;
@@ -116,14 +117,13 @@ body header > h1 {
 }
 
 #print-header {
-  -webkit-padding-end: 16px;
+  -webkit-padding-start: 16px;
   font-size: 13px;
   line-height: 22px;
   margin-bottom: 10px;
   margin-top: 10px;
   max-width: 616px;
   position: relative;
-  text-align: center;
 }
 
 p {
@@ -498,9 +498,9 @@ select {
   -webkit-padding-end: 34px;
   -webkit-padding-start: 14px;
   -webkit-user-select: none;
-  background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABMAAAAHCAYAAADqF3ZBAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAEtJREFUeNpi/P//PwO1AAuIYGRkJGgi0FJGQmqYoAobCRjUSJTTQN6E4gYQFx2DxJHU4MXoAg3kGoTNMLiBpBqEyzAGcgwCYYAAAwBwTuKv+cnjcAAAAABJRU5ErkJggg==),
+  background-image: url('./print_preview/black_arrow.png'),
                     -webkit-linear-gradient(#fafafa, #dcdcdc);
-  background-position: 100% 50%, left top;
+  background-position: 95% 55%, left top;
   background-repeat: no-repeat, repeat;
   border-radius: 3px;
   border: 1px solid #a0a0a0;
@@ -514,19 +514,19 @@ select {
 }
 
 html[dir='rtl'] select {
-  background-position: 5% 50%, right top;
+  background-position: 5% 55%, right top;
 }
 
 select:disabled,
 select.disabled {
-  background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABMAAAAHCAYAAADqF3ZBAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAE9JREFUeNpi/P//PwO1ACPIsMbGRoIm1tfXMxJSwwRV2EjAoEZiXAY2DOiyBlwaQOIgeaINw2UgKQahGIZuIKkGgQEoArDgBhzieDFAgAEAkxBfTunDjHwAAAAASUVORK5CYII=),
+  background-image: url('./print_preview/gray_arrow.png'),
                     -webkit-linear-gradient(#fafafa, #dcdcdc);
 }
 
 select:not(:disabled):not(.disabled):hover {
   -webkit-box-shadow: inset 0 1px 2px white,
                       0 2px 4px rgba(0, 0, 0, .2);
-  background-image: url(_images/combo-box-triangle.png),
+  background-image: url('./print_preview/black_arrow.png'),
                     -webkit-linear-gradient(#fff, #e6e6e6);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 1);
 }
@@ -636,6 +636,7 @@ select {
 
 #mainview {
   -webkit-box-flex: 1;
+  -webkit-user-select: none;
   background-color: #ccc;
   position: relative;
 }
@@ -687,12 +688,16 @@ html[dir='rtl'] .messages {
 
 @-webkit-keyframes dancing-dots-jump {
   0% { top: 0; }
-  35% { top: 0; }
+  55% { top: 0; }
   60% { top: -10px; }
   80% { top: 3px; }
   90% { top: -2px; }
   95% { top: 1px; }
   100% { top: 0; }
+}
+
+#loading {
+  -webkit-margin-end: -3px;
 }
 
 #dancing-dots-text span span {

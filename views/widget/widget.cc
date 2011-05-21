@@ -16,6 +16,12 @@
 
 namespace views {
 
+namespace {
+// Set to true if a pure Views implementation is preferred
+bool use_pure_views = false;
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, InitParams:
 
@@ -76,6 +82,16 @@ Widget::~Widget() {
 
   if (!delete_on_destroy_)
     delete native_widget_;
+}
+
+// static
+void Widget::SetPureViews(bool pure) {
+  use_pure_views = pure;
+}
+
+// static
+bool Widget::IsPureViews() {
+  return use_pure_views;
 }
 
 void Widget::Init(const InitParams& params) {
@@ -206,7 +222,7 @@ void Widget::SetAlwaysOnTop(bool on_top) {
   native_widget_->SetAlwaysOnTop(on_top);
 }
 
-RootView* Widget::GetRootView() {
+View* Widget::GetRootView() {
   if (!root_view_.get()) {
     // First time the root view is being asked for, create it now.
     root_view_.reset(CreateRootView());
@@ -291,7 +307,7 @@ void Widget::ResetLastMouseMoveFlag() {
 }
 
 FocusTraversable* Widget::GetFocusTraversable() {
-  return root_view_.get();
+  return static_cast<internal::RootView*>(root_view_.get());
 }
 
 void Widget::ThemeChanged() {
@@ -381,7 +397,7 @@ void Widget::OnNativeWidgetPaint(gfx::Canvas* canvas) {
 }
 
 bool Widget::OnKeyEvent(const KeyEvent& event) {
-  return GetRootView()->OnKeyEvent(event);
+  return static_cast<internal::RootView*>(GetRootView())->OnKeyEvent(event);
 }
 
 bool Widget::OnMouseEvent(const MouseEvent& event) {
@@ -468,20 +484,20 @@ View* Widget::GetFocusTraversableParentView() {
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, protected:
 
-RootView* Widget::CreateRootView() {
-  return new RootView(this);
+internal::RootView* Widget::CreateRootView() {
+  return new internal::RootView(this);
 }
 
 void Widget::DestroyRootView() {
   root_view_.reset();
 
   // Defer focus manager's destruction. This is for the case when the
-  // focus manager is referenced by a child WidgetGtk (e.g. TabbedPane in a
-  // dialog). When gtk_widget_destroy is called on the parent, the destroy
+  // focus manager is referenced by a child NativeWidgetGtk (e.g. TabbedPane in
+  // a dialog). When gtk_widget_destroy is called on the parent, the destroy
   // signal reaches parent first and then the child. Thus causing the parent
-  // WidgetGtk's dtor executed before the child's. If child's view hierarchy
-  // references this focus manager, it crashes. This will defer focus manager's
-  // destruction after child WidgetGtk's dtor.
+  // NativeWidgetGtk's dtor executed before the child's. If child's view
+  // hierarchy references this focus manager, it crashes. This will defer focus
+  // manager's destruction after child NativeWidgetGtk's dtor.
   FocusManager* focus_manager = focus_manager_.release();
   if (focus_manager)
     MessageLoop::current()->DeleteSoon(FROM_HERE, focus_manager);

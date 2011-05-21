@@ -32,12 +32,8 @@
 #include "views/window/window.h"
 #include "views/window/window_delegate.h"
 
-#if defined(OS_WIN)
-#include "views/widget/widget_win.h"
-#include "views/window/window_win.h"
-#elif defined(OS_LINUX)
+#if defined(OS_LINUX)
 #include "ui/base/keycodes/keyboard_code_conversion_gtk.h"
-#include "views/window/window_gtk.h"
 #endif
 
 namespace {
@@ -271,12 +267,12 @@ class BorderView : public NativeViewHost {
 
   virtual ~BorderView() {}
 
-  virtual RootView* GetContentsRootView() {
-    return widget_->GetRootView();
+  virtual internal::RootView* GetContentsRootView() {
+    return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
   virtual FocusTraversable* GetFocusTraversable() {
-    return widget_->GetRootView();
+    return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
   virtual void ViewHierarchyChanged(bool is_add, View *parent, View *child) {
@@ -287,7 +283,7 @@ class BorderView : public NativeViewHost {
         widget_ = new Widget;
         Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
 #if defined(OS_WIN)
-        params.parent = parent->GetRootView()->GetWidget()->GetNativeView();
+        params.parent = parent->GetWidget()->GetNativeView();
 #elif defined(TOOLKIT_USES_GTK)
         params.parent = native_view();
 #endif
@@ -299,8 +295,8 @@ class BorderView : public NativeViewHost {
       // We have been added to a view hierarchy, attach the native view.
       Attach(widget_->GetNativeView());
       // Also update the FocusTraversable parent so the focus traversal works.
-      widget_->GetRootView()->SetFocusTraversableParent(
-          GetWidget()->GetFocusTraversable());
+      static_cast<internal::RootView*>(widget_->GetRootView())->
+          SetFocusTraversableParent(GetWidget()->GetFocusTraversable());
     }
   }
 
@@ -1500,7 +1496,7 @@ class MessageTrackingView : public View {
 #if defined(OS_WIN)
 // This test is now Windows only. Linux Views port does not handle accelerator
 // keys in AcceleratorHandler anymore. The logic has been moved into
-// WidgetGtk::OnKeyEvent().
+// NativeWidgetGtk::OnKeyEvent().
 // Tests that the keyup messages are eaten for accelerators.
 TEST_F(FocusManagerTest, IgnoreKeyupForAccelerators) {
   FocusManager* focus_manager = GetFocusManager();
@@ -1681,7 +1677,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
     }
 
     virtual ~WindowDtorTracked() {
-      dtor_tracker_->push_back("WindowGtkDtorTracked");
+      dtor_tracker_->push_back("WindowDtorTracked");
     }
 
     FocusManagerDtorTracked* tracked_focus_manager_;
@@ -1690,7 +1686,7 @@ class FocusManagerDtorTest : public FocusManagerTest {
 
  public:
   virtual void SetUp() {
-    // Create WindowGtkDtorTracked that uses FocusManagerDtorTracked.
+    // Create WindowDtorTracked that uses FocusManagerDtorTracked.
     window_ = new WindowDtorTracked(this, &dtor_tracker_);
     ASSERT_TRUE(GetFocusManager() == static_cast<WindowDtorTracked*>(
         window_)->tracked_focus_manager_);

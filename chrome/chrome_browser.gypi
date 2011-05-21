@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'browser',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '5BF908A7-68FB-4A4B-99E3-8C749F1FE4EA',
       'dependencies': [
         'app/policy/cloud_policy_codegen.gyp:policy',
@@ -149,6 +149,8 @@
         'browser/autofill/autofill_country.h',
         'browser/autofill/autofill_download.cc',
         'browser/autofill/autofill_download.h',
+        'browser/autofill/autofill_ecml.cc',
+        'browser/autofill/autofill_ecml.h',
         'browser/autofill/autofill_field.cc',
         'browser/autofill/autofill_field.h',
         'browser/autofill/autofill_ie_toolbar_import_win.cc',
@@ -738,17 +740,22 @@
         'browser/content_settings/content_settings_base_provider.cc',
         'browser/content_settings/content_settings_base_provider.h',
         'browser/content_settings/content_settings_details.h',
-        'browser/content_settings/content_settings_pattern.cc',
-        'browser/content_settings/content_settings_pattern.h',
-        'browser/content_settings/content_settings_provider.h',
-        'browser/content_settings/host_content_settings_map.cc',
-        'browser/content_settings/host_content_settings_map.h',
+        'browser/content_settings/content_settings_extension_provider.cc',
+        'browser/content_settings/content_settings_extension_provider.h',
         'browser/content_settings/content_settings_notification_provider.cc',
         'browser/content_settings/content_settings_notification_provider.h',
+        'browser/content_settings/content_settings_pattern.cc',
+        'browser/content_settings/content_settings_pattern.h',
+        'browser/content_settings/content_settings_pattern_parser.cc',
+        'browser/content_settings/content_settings_pattern_parser.h',
         'browser/content_settings/content_settings_policy_provider.cc',
         'browser/content_settings/content_settings_policy_provider.h',
         'browser/content_settings/content_settings_pref_provider.cc',
         'browser/content_settings/content_settings_pref_provider.h',
+        'browser/content_settings/content_settings_provider.cc',
+        'browser/content_settings/content_settings_provider.h',
+        'browser/content_settings/host_content_settings_map.cc',
+        'browser/content_settings/host_content_settings_map.h',
         'browser/content_settings/tab_specific_content_settings.cc',
         'browser/content_settings/tab_specific_content_settings.h',
         'browser/cookies_tree_model.cc',
@@ -808,8 +815,9 @@
         'browser/download/download_request_limiter.h',
         'browser/download/download_safe_browsing_client.cc',
         'browser/download/download_safe_browsing_client.h',
-        'browser/download/download_shelf.cc',
         'browser/download/download_shelf.h',
+        'browser/download/download_shelf_context_menu.cc',
+        'browser/download/download_shelf_context_menu.h',
         'browser/download/download_started_animation.h',
         'browser/download/download_status_updater.cc',
         'browser/download/download_status_updater.h',
@@ -860,6 +868,12 @@
         'browser/extensions/extension_browser_actions_api.h',
         'browser/extensions/extension_browser_event_router.cc',
         'browser/extensions/extension_browser_event_router.h',
+        'browser/extensions/extension_content_settings_api_constants.cc',
+        'browser/extensions/extension_content_settings_api_constants.h',
+        'browser/extensions/extension_content_settings_helpers.cc',
+        'browser/extensions/extension_content_settings_helpers.h',
+        'browser/extensions/extension_content_settings_store.cc',
+        'browser/extensions/extension_content_settings_store.h',
         'browser/extensions/extension_context_menu_api.cc',
         'browser/extensions/extension_context_menu_api.h',
         'browser/extensions/extension_context_menu_model.cc',
@@ -1641,6 +1655,8 @@
         'browser/prerender/prerender_render_view_host_observer.h',
         'browser/prerender/prerender_render_widget_host_view.cc',
         'browser/prerender/prerender_render_widget_host_view.h',
+        'browser/prerender/prerender_tracker.cc',
+        'browser/prerender/prerender_tracker.h',
         'browser/printing/background_printing_manager.cc',
         'browser/printing/background_printing_manager.h',
         'browser/printing/cloud_print/cloud_print_proxy_service.cc',
@@ -2635,6 +2651,8 @@
         'browser/ui/gtk/download/download_in_progress_dialog_gtk.h',
         'browser/ui/gtk/download/download_item_gtk.cc',
         'browser/ui/gtk/download/download_item_gtk.h',
+        'browser/ui/gtk/download/download_shelf_context_menu_gtk.cc',
+        'browser/ui/gtk/download/download_shelf_context_menu_gtk.h',
         'browser/ui/gtk/download/download_shelf_gtk.cc',
         'browser/ui/gtk/download/download_shelf_gtk.h',
         'browser/ui/gtk/download/download_started_animation_gtk.cc',
@@ -2901,6 +2919,8 @@
         'browser/ui/views/bookmarks/bookmark_editor_view.h',
         'browser/ui/views/bookmarks/bookmark_menu_controller_views.cc',
         'browser/ui/views/bookmarks/bookmark_menu_controller_views.h',
+        'browser/ui/views/bookmarks/bookmark_menu_delegate.cc',
+        'browser/ui/views/bookmarks/bookmark_menu_delegate.h',
         'browser/ui/views/browser_actions_container.cc',
         'browser/ui/views/browser_actions_container.h',
         'browser/ui/views/browser_bubble.cc',
@@ -2972,6 +2992,8 @@
         'browser/ui/views/extensions/browser_action_drag_data.h',
         'browser/ui/views/extensions/browser_action_overflow_menu_controller.cc',
         'browser/ui/views/extensions/browser_action_overflow_menu_controller.h',
+        'browser/ui/views/extensions/extension_dialog.cc',
+        'browser/ui/views/extensions/extension_dialog.h',
         'browser/ui/views/extensions/extension_install_dialog_view.cc',
         'browser/ui/views/extensions/extension_installed_bubble.cc',
         'browser/ui/views/extensions/extension_installed_bubble.h',
@@ -3226,6 +3248,8 @@
         'browser/ui/webui/chrome_url_data_manager_backend.h',
         'browser/ui/webui/chrome_url_data_manager.cc',
         'browser/ui/webui/chrome_url_data_manager.h',
+        'browser/ui/webui/chrome_web_ui_data_source.cc',
+        'browser/ui/webui/chrome_web_ui_data_source.h',
         'browser/ui/webui/chrome_web_ui_factory.cc',
         'browser/ui/webui/chrome_web_ui_factory.h',
         'browser/ui/webui/chromeos/choose_mobile_network_ui.cc',
@@ -3580,7 +3604,7 @@
             ['exclude', '^browser/chromeos/input_method/candidate_window.h'],
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:dbus-glib',
             '../build/linux/system.gyp:gconf',
@@ -3648,21 +3672,13 @@
               ],
             }],
           ],
-        }, {  # OS != "linux"
+        }, {  # toolkit_uses_gtk != 1
           'sources!': [
             # TODO(mattm): Cert manager stuff is really !USE_NSS.
             'browser/certificate_manager_model.cc',
             'browser/certificate_manager_model.h',
             'browser/ui/webui/options/certificate_manager_handler.cc',
             'browser/ui/webui/options/certificate_manager_handler.h',
-          ],
-        }],
-        ['OS=="freebsd" or OS=="openbsd"', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:gtkprint',
-            '../build/linux/system.gyp:nss',
-            '../build/linux/system.gyp:x11',
           ],
         }],
         ['OS=="mac"', {
@@ -3996,6 +4012,8 @@
                 ['include', '^browser/ui/views/bookmarks/bookmark_context_menu_controller_views.cc'],
                 ['include', '^browser/ui/views/bookmarks/bookmark_context_menu_controller_views.h'],
                 ['include', '^browser/ui/views/bookmarks/bookmark_menu_controller_views.cc'],
+                ['include', '^browser/ui/views/bookmarks/bookmark_menu_delegate.cc'],
+                ['include', '^browser/ui/views/bookmarks/bookmark_menu_delegate.h'],
                 ['include', '^browser/ui/views/browser_actions_container.cc'],
                 ['include', '^browser/ui/views/browser_actions_container.h'],
                 ['include', '^browser/ui/views/browser_bubble.cc'],
@@ -4047,6 +4065,8 @@
                 ['include', '^browser/ui/views/extensions/browser_action_drag_data.h'],
                 ['include', '^browser/ui/views/extensions/browser_action_overflow_menu_controller.cc'],
                 ['include', '^browser/ui/views/extensions/browser_action_overflow_menu_controller.h'],
+                ['include', '^browser/ui/views/extensions/extension_dialog.cc'],
+                ['include', '^browser/ui/views/extensions/extension_dialog.h'],
                 ['include', '^browser/ui/views/extensions/extension_install_dialog_view.cc'],
                 ['include', '^browser/ui/views/extensions/extension_installed_bubble.cc'],
                 ['include', '^browser/ui/views/extensions/extension_installed_bubble.h'],
@@ -4268,14 +4288,14 @@
             }],
             # Exclude extension_input_ui_api again
             # (Required because of the '^browser/extensions/' include abrove)
-            ['OS=="linux" and ( touchui==0 or chromeos==0 )', {
+            ['toolkit_uses_gtk == 1 and ( touchui == 0 or chromeos == 0 )', {
               'sources/': [
                 ['exclude', '^browser/extensions/extension_input_ui_api.cc'],
                 ['exclude', '^browser/extensions/extension_input_ui_api.h'],
               ],
             }],
             # GTK build only
-            ['OS=="linux" and toolkit_views==0', {
+            ['toolkit_uses_gtk == 1 and toolkit_views == 0', {
               'sources/': [
                 ['include', '^browser/printing/print_dialog_gtk.cc'],
                 ['include', '^browser/printing/print_dialog_gtk.h'],
@@ -4363,7 +4383,7 @@
                 },
               ],
             }],
-            ['OS=="linux" and gcc_version==45', {
+            ['os_posix == 1 and OS != "mac" and gcc_version == 45', {
               # Avoid gcc 4.5 miscompilation of template_url.cc
               # as per http://crbug.com/41887
               'cflags': [
@@ -4558,7 +4578,7 @@
     },
     {
       'target_name': 'in_memory_url_index_cache_proto_cpp',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         '<(protoc_out_dir)/chrome/browser/history/in_memory_url_index_cache.pb.cc',
         '<(protoc_out_dir)/chrome/browser/history/in_memory_url_index_cache.pb.h',

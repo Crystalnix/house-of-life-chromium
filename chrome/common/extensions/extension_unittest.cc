@@ -48,7 +48,7 @@ void CompareLists(const std::vector<std::string>& expected,
   }
 }
 
-static void AddPattern(ExtensionExtent* extent, const std::string& pattern) {
+static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
   int schemes = URLPattern::SCHEME_ALL;
   extent->AddPattern(URLPattern(schemes, pattern));
 }
@@ -847,65 +847,65 @@ static scoped_refptr<Extension> LoadManifest(const std::string& dir,
 
 TEST(ExtensionTest, EffectiveHostPermissions) {
   scoped_refptr<Extension> extension;
-  ExtensionExtent hosts;
+  URLPatternSet hosts;
 
   extension = LoadManifest("effective_host_permissions", "empty.json");
   EXPECT_EQ(0u, extension->GetEffectiveHostPermissions().patterns().size());
-  EXPECT_FALSE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "one_host.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
-  EXPECT_FALSE(hosts.ContainsURL(GURL("https://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("https://www.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "one_host_wildcard.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://foo.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://foo.google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "two_hosts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.reddit.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.reddit.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "https_not_considered.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("https://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("https://google.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions",
                            "two_content_scripts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://google.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.reddit.com")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://news.ycombinator.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.reddit.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://news.ycombinator.com")));
   EXPECT_FALSE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_FALSE(hosts.ContainsURL(GURL("https://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("https://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts2.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 
   extension = LoadManifest("effective_host_permissions", "all_hosts3.json");
   hosts = extension->GetEffectiveHostPermissions();
-  EXPECT_FALSE(hosts.ContainsURL(GURL("http://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("https://test/")));
-  EXPECT_TRUE(hosts.ContainsURL(GURL("http://www.google.com")));
+  EXPECT_FALSE(hosts.MatchesURL(GURL("http://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("https://test/")));
+  EXPECT_TRUE(hosts.MatchesURL(GURL("http://www.google.com")));
   EXPECT_TRUE(extension->HasEffectiveAccessToAllHosts());
 }
 
@@ -980,7 +980,7 @@ TEST(ExtensionTest, IsPrivilegeIncrease) {
     for (size_t j = 0; kTests[i].granted_apis[j] != NULL; ++j)
       granted_apis.insert(kTests[i].granted_apis[j]);
 
-    ExtensionExtent granted_hosts;
+    URLPatternSet granted_hosts;
     for (size_t j = 0; kTests[i].granted_hosts[j] != NULL; ++j)
       AddPattern(&granted_hosts, kTests[i].granted_hosts[j]);
 
@@ -1034,6 +1034,7 @@ TEST(ExtensionTest, PermissionMessages) {
   // These are private.
   skip.insert(Extension::kWebstorePrivatePermission);
   skip.insert(Extension::kFileBrowserPrivatePermission);
+  skip.insert(Extension::kChromePrivatePermission);
   skip.insert(Extension::kChromeosInfoPrivatePermission);
   skip.insert(Extension::kWebSocketProxyPrivatePermission);
 
@@ -1297,6 +1298,154 @@ TEST(ExtensionTest, WantsFileAccess) {
   EXPECT_FALSE(extension->CanExecuteScriptOnPage(
       file_url, &extension->content_scripts()[0], NULL));
 }
+
+// Base class for testing the CanExecuteScriptOnPage and CanCaptureVisiblePage
+// methods of Extension for extensions with various permissions.
+class ExtensionScriptAndCaptureVisibleTest : public testing::Test {
+ public:
+  ExtensionScriptAndCaptureVisibleTest() {
+    PathService::Get(chrome::DIR_TEST_DATA, &dirpath_);
+  }
+
+  scoped_refptr<Extension> MakeExtension(const std::string& permissions,
+                                         Extension::Location location) {
+    // Replace single-quotes with double-quotes in permissions, since JSON
+    // mandates double-quotes.
+    std::string munged_permissions = permissions;
+    ReplaceSubstringsAfterOffset(&munged_permissions, 0, "'", "\"");
+
+    DictionaryValue dictionary;
+    dictionary.SetString(keys::kName, "permission test");
+    dictionary.SetString(keys::kVersion, "1");
+    std::string error;
+    JSONStringValueSerializer serializer(munged_permissions);
+    scoped_ptr<Value> permission_value(serializer.Deserialize(NULL, &error));
+    EXPECT_EQ("", error);
+    if (!permission_value.get())
+      return NULL;
+    EXPECT_TRUE(permission_value->IsType(Value::TYPE_LIST));
+    dictionary.Set(keys::kPermissions, permission_value.release());
+
+    FilePath dirpath;
+    PathService::Get(chrome::DIR_TEST_DATA, &dirpath);
+    dirpath = dirpath.AppendASCII("extensions").AppendASCII("permissions");
+
+    scoped_refptr<Extension> extension =  Extension::Create(
+        dirpath,
+        location,
+        dictionary,
+        Extension::STRICT_ERROR_CHECKS,
+        &error);
+    if (!extension)
+      VLOG(1) << error;
+    return extension;
+  }
+
+  bool Allowed(const Extension* extension, const GURL& url) {
+    return (extension->CanExecuteScriptOnPage(url, NULL, NULL) &&
+            extension->CanCaptureVisiblePage(url, NULL));
+  }
+
+  bool CaptureOnly(const Extension* extension, const GURL& url) {
+    return !extension->CanExecuteScriptOnPage(url, NULL, NULL) &&
+        extension->CanCaptureVisiblePage(url, NULL);
+  }
+
+  bool Blocked(const Extension* extension, const GURL& url) {
+    return !(extension->CanExecuteScriptOnPage(url, NULL, NULL) ||
+             extension->CanCaptureVisiblePage(url, NULL));
+  }
+
+ protected:
+  FilePath dirpath_;
+};
+
+TEST_F(ExtensionScriptAndCaptureVisibleTest, Permissions) {
+  scoped_refptr<Extension> extension;
+  // URLs that are "safe" to provide scripting and capture visible tab access
+  // to if the permissions allow it.
+  GURL http_url("http://www.google.com");
+  GURL https_url("https://www.google.com");
+  GURL file_url("file:///foo/bar");
+
+  // We should allow host permission but not scripting permission for favicon
+  // urls.
+  GURL favicon_url("chrome://favicon/http://www.google.com");
+
+  std::string dummy_id =
+      Extension::GenerateIdForPath(FilePath(FILE_PATH_LITERAL("whatever")));
+
+  // URLs that regular extensions should never get access to.
+  GURL extension_url("chrome-extension://" + dummy_id);
+  GURL settings_url("chrome://settings");
+  GURL about_url("about:flags");
+
+  // Test <all_urls> for regular extensions.
+  extension = MakeExtension("['tabs','<all_urls>']", Extension::INTERNAL);
+  EXPECT_TRUE(Allowed(extension, http_url));
+  EXPECT_TRUE(Allowed(extension, https_url));
+  EXPECT_TRUE(Blocked(extension, file_url));
+  EXPECT_TRUE(Blocked(extension, settings_url));
+  EXPECT_TRUE(CaptureOnly(extension, favicon_url));
+  EXPECT_TRUE(Blocked(extension, about_url));
+  EXPECT_TRUE(Blocked(extension, extension_url));
+
+  EXPECT_FALSE(extension->HasHostPermission(settings_url));
+  EXPECT_FALSE(extension->HasHostPermission(about_url));
+  EXPECT_TRUE(extension->HasHostPermission(favicon_url));
+
+  // Test * for scheme, which implies just the http/https schemes.
+  extension = MakeExtension("['tabs','*://*/']", Extension::INTERNAL);
+  EXPECT_TRUE(Allowed(extension, http_url));
+  EXPECT_TRUE(Allowed(extension, https_url));
+  EXPECT_TRUE(Blocked(extension, settings_url));
+  EXPECT_TRUE(Blocked(extension, about_url));
+  EXPECT_TRUE(Blocked(extension, file_url));
+  EXPECT_TRUE(Blocked(extension, favicon_url));
+  extension = MakeExtension("['tabs','*://settings/*']", Extension::INTERNAL);
+  EXPECT_TRUE(Blocked(extension, settings_url));
+
+  // Having chrome://*/ should not work for regular extensions. Note that
+  // for favicon access, we require the explicit pattern chrome://favicon/*.
+  extension = MakeExtension("['tabs','chrome://*/']",
+                            Extension::INTERNAL);
+  EXPECT_TRUE(extension == NULL);
+
+  // Having chrome://favicon/* should not give you chrome://*
+  extension = MakeExtension("['tabs','chrome://favicon/*']",
+                            Extension::INTERNAL);
+  EXPECT_TRUE(Blocked(extension, settings_url));
+  EXPECT_TRUE(CaptureOnly(extension, favicon_url));
+  EXPECT_TRUE(Blocked(extension, about_url));
+  EXPECT_TRUE(extension->HasHostPermission(favicon_url));
+
+  // Having http://favicon should not give you chrome://favicon
+  extension = MakeExtension("['tabs', 'http://favicon/']", Extension::INTERNAL);
+  EXPECT_TRUE(Blocked(extension, settings_url));
+  EXPECT_TRUE(Blocked(extension, favicon_url));
+
+  // Component extensions with <all_urls> should get everything.
+  extension = MakeExtension("['tabs','<all_urls>']", Extension::COMPONENT);
+  EXPECT_TRUE(Allowed(extension, http_url));
+  EXPECT_TRUE(Allowed(extension, https_url));
+  EXPECT_TRUE(Allowed(extension, settings_url));
+  EXPECT_TRUE(Allowed(extension, about_url));
+  EXPECT_TRUE(Allowed(extension, favicon_url));
+  EXPECT_TRUE(extension->HasHostPermission(favicon_url));
+
+  // Component extensions should only get access to what they ask for.
+  extension = MakeExtension("['tabs', 'http://www.google.com/']",
+                            Extension::COMPONENT);
+  EXPECT_TRUE(Allowed(extension, http_url));
+  EXPECT_TRUE(Blocked(extension, https_url));
+  EXPECT_TRUE(Blocked(extension, file_url));
+  EXPECT_TRUE(Blocked(extension, settings_url));
+  EXPECT_TRUE(Blocked(extension, favicon_url));
+  EXPECT_TRUE(Blocked(extension, about_url));
+  EXPECT_TRUE(Blocked(extension, extension_url));
+  EXPECT_FALSE(extension->HasHostPermission(settings_url));
+}
+
 
 TEST(ExtensionTest, GetDistinctHostsForDisplay) {
   std::vector<std::string> expected;

@@ -13,7 +13,8 @@
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
+// GET_X_LPARAM, et al.
+#include <windowsx.h>
 #endif
 
 namespace {
@@ -354,7 +355,8 @@ void BaseTabStrip::ContinueDrag(const views::MouseEvent& event) {
     if (drag_controller_->started_drag() && !started_drag) {
       // The drag just started. Redirect mouse events to us to that the tab that
       // originated the drag can be safely deleted.
-      GetRootView()->SetMouseHandler(this);
+      static_cast<views::internal::RootView*>(GetWidget()->GetRootView())->
+          SetMouseHandler(this);
     }
   }
 }
@@ -386,6 +388,24 @@ void BaseTabStrip::Layout() {
   if (last_layout_size_ == size())
     return;
   DoLayout();
+}
+
+// Overridden to support automation. See automation_proxy_uitest.cc.
+const views::View* BaseTabStrip::GetViewByID(int view_id) const {
+  if (tab_count() > 0) {
+    if (view_id == VIEW_ID_TAB_LAST) {
+      return base_tab_at_tab_index(tab_count() - 1);
+    } else if ((view_id >= VIEW_ID_TAB_0) && (view_id < VIEW_ID_TAB_LAST)) {
+      int index = view_id - VIEW_ID_TAB_0;
+      if (index >= 0 && index < tab_count()) {
+        return base_tab_at_tab_index(index);
+      } else {
+        return NULL;
+      }
+    }
+  }
+
+  return View::GetViewByID(view_id);
 }
 
 bool BaseTabStrip::OnMouseDragged(const views::MouseEvent&  event) {

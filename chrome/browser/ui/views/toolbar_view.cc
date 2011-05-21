@@ -40,7 +40,6 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/update_library.h"
-#include "views/controls/menu/menu_2.h"
 #endif
 #include "chrome/browser/ui/views/wrench_menu.h"
 
@@ -640,8 +639,9 @@ bool ToolbarView::ShouldShowIncompatibilityWarning() {
 int ToolbarView::PopupTopSpacing() const {
   // TODO(beng): For some reason GetWindow() returns NULL here in some
   //             unidentified circumstances on ChromeOS. This means GetWidget()
-  //             succeeded but we were (probably) unable to locate a WidgetGtk*
-  //             on it using NativeWidget::GetNativeWidgetForNativeView.
+  //             succeeded but we were (probably) unable to locate a
+  //             NativeWidgetGtk* on it using
+  //             NativeWidget::GetNativeWidgetForNativeView.
   //             I am throwing in a NULL check for now to stop the hurt, but
   //             it's possible the crash may just show up somewhere else.
   const views::Window* window = GetWindow();

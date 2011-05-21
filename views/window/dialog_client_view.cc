@@ -23,6 +23,7 @@
 #include "ui/gfx/font.h"
 #include "views/controls/button/native_button.h"
 #include "views/layout/layout_constants.h"
+#include "views/widget/root_view.h"
 #include "views/window/dialog_delegate.h"
 #include "views/window/window.h"
 
@@ -30,8 +31,8 @@
 #include "ui/gfx/native_theme.h"
 #else
 #include "ui/gfx/skia_utils_gtk.h"
-#include "views/window/hit_test.h"
 #include "views/widget/widget.h"
+#include "views/window/hit_test.h"
 #endif
 
 using ui::MessageBoxFlags;
@@ -256,9 +257,10 @@ void DialogClientView::SetBottomView(View* bottom_view) {
 ///////////////////////////////////////////////////////////////////////////////
 // DialogClientView, View overrides:
 
-void DialogClientView::NativeViewHierarchyChanged(bool attached,
-                                                  gfx::NativeView native_view,
-                                                  RootView* root_view) {
+void DialogClientView::NativeViewHierarchyChanged(
+    bool attached,
+    gfx::NativeView native_view,
+    internal::RootView* root_view) {
   if (attached) {
     UpdateFocusListener();
   }
@@ -396,7 +398,7 @@ gfx::Size DialogClientView::GetPreferredSize() {
 
 bool DialogClientView::AcceleratorPressed(const Accelerator& accelerator) {
   // We only expect Escape key.
-  DCHECK(accelerator.GetKeyCode() == ui::VKEY_ESCAPE);
+  DCHECK(accelerator.key_code() == ui::VKEY_ESCAPE);
   Close();
   return true;
 }

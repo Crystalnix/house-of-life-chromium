@@ -87,7 +87,7 @@ bool View::IsHotTracked() const {
 
 // FATE TBD --------------------------------------------------------------------
 
-Widget* View::child_widget() {
+Widget* View::GetChildWidget() {
   return NULL;
 }
 
@@ -230,12 +230,6 @@ bool View::ContainsNativeView(gfx::NativeView native_view) const {
       return true;
   }
   return false;
-}
-
-// TODO(beng): remove
-RootView* View::GetRootView() {
-  Widget* widget = GetWidget();
-  return widget ? widget->GetRootView() : NULL;
 }
 
 // Size and disposition --------------------------------------------------------
@@ -419,8 +413,22 @@ void View::SetTransform(const ui::Transform& transform) {
     SchedulePaint();
   } else {
     transform_.reset(new ui::Transform(transform));
-    // TODO: this needs to trigger a paint on the widget. It shouldn't use
-    // SchedulePaint as we don't want to mark the views dirty.
+#if defined(COMPOSITOR_2)
+    if (!texture_.get()) {
+      // We don't yet have a texture. SchedulePaint so one is created.
+      SchedulePaint();
+    } else {
+      // We have a texture. When the transform changes and the texture is up to
+      // date we don't want to SchedulePaint as it'll trigger painting to the
+      // texture. Instead we tell the Widget to paint, which makes the
+      // compositor draw using the existing texture.
+      // We schedule paint the complete bounds as compositor generally don't
+      // support partial painting.
+      Widget* widget = GetWidget();
+      if (widget)
+        widget->SchedulePaintInRect(widget->GetRootView()->bounds());
+    }
+#endif
   }
 }
 
@@ -672,6 +680,7 @@ void View::Paint(gfx::Canvas* canvas) {
         SK_ColorBLACK, SkXfermode::kClear_Mode);
     texture_canvas->TranslateInt(-dirty_rect.x(), -dirty_rect.y());
     canvas = texture_canvas.get();
+    texture_rect = dirty_rect;
     // TODO: set texture_needs_updating_ to false.
 #endif
   } else {
@@ -1086,7 +1095,7 @@ void View::VisibilityChanged(View* starting_from, bool is_visible) {
 
 void View::NativeViewHierarchyChanged(bool attached,
                                       gfx::NativeView native_view,
-                                      RootView* root_view) {
+                                      internal::RootView* root_view) {
   FocusManager* focus_manager = GetFocusManager();
   if (!accelerator_registration_delayed_ &&
       accelerator_focus_manager_ &&
@@ -1174,9 +1183,19 @@ void View::PaintToTexture(const gfx::Rect& dirty_region) {
     return;
 
   if (ShouldPaintToTexture() && texture_needs_updating_) {
-    texture_clip_rect_ = dirty_region;
-    Paint(NULL);
-    texture_clip_rect_.SetRect(0, 0, 0, 0);
+    if (!texture_.get()) {
+      // If we have no texture paint the whole view. We do this to handle two
+      // cases:
+      // . Workaround for WidgetWin/WindowWin. In particular its possible to
+      //   create the rootview at the non-client size, even though we'll never
+      //   paint at that size.
+      // . In case the texture is recreated and a partial paint was scheduled.
+      Paint(NULL);
+    } else {
+      texture_clip_rect_ = dirty_region;
+      Paint(NULL);
+      texture_clip_rect_.SetRect(0, 0, 0, 0);
+    }
   } else {
     // Forward to all children as a descendant may be dirty and have a texture.
     for (int i = child_count() - 1; i >= 0; --i) {
@@ -1360,7 +1379,7 @@ void View::PropagateAddNotifications(View* parent, View* child) {
 
 void View::PropagateNativeViewHierarchyChanged(bool attached,
                                                gfx::NativeView native_view,
-                                               RootView* root_view) {
+                                               internal::RootView* root_view) {
   for (int i = 0, count = child_count(); i < count; ++i)
     GetChildViewAt(i)->PropagateNativeViewHierarchyChanged(attached,
                                                            native_view,
@@ -1517,19 +1536,18 @@ void View::RemoveDescendantToNotify(View* view) {
 
 bool View::GetTransformRelativeTo(const View* ancestor,
                                   ui::Transform* transform) const {
-  if (this == ancestor)
-    return true;
-  bool ret_value = false;
-  if (parent_) {
-    ret_value = parent_->GetTransformRelativeTo(ancestor, transform);
-  } else if (transform_.get()) {
-    *transform = *transform_;
+  const View* p = this;
+
+  while (p && p != ancestor) {
+    if (p->transform_.get())
+      transform->ConcatTransform(*p->transform_);
+    transform->ConcatTranslate(static_cast<float>(p->GetMirroredX()),
+                               static_cast<float>(p->y()));
+
+    p = p->parent_;
   }
-  transform->ConcatTranslate(static_cast<float>(GetMirroredX()),
-                             static_cast<float>(y()));
-  if (transform_.get())
-    transform->ConcatTransform(*transform_);
-  return ret_value;
+
+  return p == ancestor;
 }
 
 // Coordinate conversion -------------------------------------------------------
@@ -1677,9 +1695,10 @@ void View::RegisterPendingAccelerators() {
     // focus manager (see bug #1291225).  This should never be the case, just
     // making sure we don't crash.
 
-    // TODO(jcampan): This fails for a view under WidgetGtk with TYPE_CHILD.
-    // (see http://crbug.com/21335) reenable NOTREACHED assertion and
-    // verify accelerators works as expected.
+    // TODO(jcampan): This fails for a view under NativeWidgetGtk with
+    //                TYPE_CHILD. (see http://crbug.com/21335) reenable
+    //                NOTREACHED assertion and verify accelerators works as
+    //                expected.
 #if defined(OS_WIN)
     NOTREACHED();
 #endif
@@ -1831,7 +1850,11 @@ std::string View::PrintViewGraph(bool first) {
   result.append("\"");
   if (!parent())
     result.append(", shape=box");
+#if defined(COMPOSITOR_2)
+  if (texture_.get())
+#else
   if (canvas_.get())
+#endif
     result.append(", color=green");
   result.append("]\n");
 

@@ -15,6 +15,7 @@
 #include "chrome/browser/prerender/prerender_render_view_host_observer.h"
 #include "chrome/browser/tab_contents/render_view_host_delegate_helper.h"
 #include "chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h"
+#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/tab_contents/tab_contents_observer.h"
 #include "content/common/notification_registrar.h"
@@ -51,7 +52,8 @@ class PrerenderContents : public RenderViewHostDelegate,
                           public RenderViewHostDelegate::View,
                           public NotificationObserver,
                           public TabContentsObserver,
-                          public JavaScriptAppModalDialogDelegate {
+                          public JavaScriptAppModalDialogDelegate,
+                          public DownloadTabHelperDelegate {
  public:
   // PrerenderContents::Create uses the currently registered Factory to create
   // the PrerenderContents. Factory is intended for testing.
@@ -218,6 +220,11 @@ class PrerenderContents : public RenderViewHostDelegate,
   virtual void RendererUnresponsive(RenderViewHost* render_view_host,
                                     bool is_during_unload) OVERRIDE;
 
+  // DownloadTabHelperDelegate implementation.
+  virtual bool CanDownload(int request_id) OVERRIDE;
+  virtual void OnStartDownload(DownloadItem* download,
+                               TabContentsWrapper* tab) OVERRIDE;
+
   // Adds an alias URL, for one of the many redirections. If the URL can not
   // be prerendered - for example, it's an ftp URL - |this| will be destroyed
   // and false is returned. Otherwise, true is returned and the alias is
@@ -243,6 +250,10 @@ class PrerenderContents : public RenderViewHostDelegate,
     return true;
   }
 
+  // Applies all the URL history encountered during prerendering to the
+  // new tab.
+  void CommitHistory(TabContents* tc);
+
  protected:
   PrerenderContents(PrerenderManager* prerender_manager,
                     Profile* profile,
@@ -260,6 +271,8 @@ class PrerenderContents : public RenderViewHostDelegate,
   virtual void OnRenderViewHostCreated(RenderViewHost* new_render_view_host);
 
  private:
+  class TabContentsDelegateImpl;
+
   // Needs to be able to call the constructor.
   friend class PrerenderContentsFactoryImpl;
 
@@ -317,6 +330,8 @@ class PrerenderContents : public RenderViewHostDelegate,
 
   bool has_stopped_loading_;
 
+  // This must be the same value as the PrerenderTracker has recorded for
+  // |this|, when |this| has a RenderView.
   FinalStatus final_status_;
 
   bool prerendering_has_started_;
@@ -334,6 +349,12 @@ class PrerenderContents : public RenderViewHostDelegate,
   scoped_ptr<TabContentsWrapper> prerender_contents_;
 
   scoped_ptr<PrerenderRenderViewHostObserver> render_view_host_observer_;
+
+  scoped_ptr<TabContentsDelegateImpl> tab_contents_delegate_;
+
+  // These are -1 before a RenderView is created.
+  int child_id_;
+  int route_id_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderContents);
 };

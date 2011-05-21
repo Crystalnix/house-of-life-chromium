@@ -9,9 +9,9 @@
 
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/stringprintf.h"
 #include "base/task.h"
@@ -281,8 +281,7 @@ bool CrxInstaller::AllowInstall(const Extension* extension,
       pattern.set_host(original_url_.host());
       pattern.set_match_subdomains(true);
 
-      ExtensionExtent::PatternList patterns =
-          extension_->web_extent().patterns();
+      URLPatternList patterns = extension_->web_extent().patterns();
       for (size_t i = 0; i < patterns.size(); ++i) {
         if (!pattern.MatchesHost(patterns[i].host())) {
           *error = base::StringPrintf(
