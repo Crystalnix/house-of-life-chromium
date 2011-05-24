@@ -4254,12 +4254,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_FLAGS_PPAPI_FLASH_IN_PROCESS_DESCRIPTION" desc="Description for the flag to run the custom flash in-process">
         If the PPAPI version of Flash is in use, run it in each renderer process rather than in a dedicated plugin process.
       </message>
-      <message name="IDS_FLAGS_LINUX_GLOBAL_MENUBAR_NAME" desc="Title for the flag to show a global menu bar on linux.">
-        Experimental GNOME menu bar support.
-      </message>
-      <message name="IDS_FLAGS_LINUX_GLOBAL_MENUBAR_DESCRIPTION" desc="Description for the flag to show a global menu bar on linux.">
-        Newer versions of Unity and GNOME (including the upcoming Ubuntu Natty Narwhal) show an OSX style menubar across the top of the screen.
-      </message>
       <message name="IDS_FLAGS_ENABLE_VPN_NAME" desc="Title for the flag to enable VPN support">
         VPN support
       </message>
@@ -4277,6 +4271,12 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_FLAGS_RESTRICT_INSTANT_TO_SEARCH_DESCRIPTION" desc="Description for the flag to restrict Instant to search">
         Restrict Instant to loading only search pages.
+      </message>
+      <message name="IDS_FLAGS_INDEXEDDB_USE_LEVELDB_NAME" desc="Title for the flag to use the LevelDB back-end for IndexedDB">
+        IndexedDB use LevelDB.
+      </message>
+      <message name="IDS_FLAGS_INDEXEDDB_USE_LEVELDB_DESCRIPTION" desc="Description for the flag to use the LevelDB back-end for IndexedDB">
+        Enable the experimental LevelDB back-end for IndexedDB.
       </message>
 
       <!-- Crashes -->
@@ -4768,6 +4768,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
           Never Saved
         </message>
       </if>
+      <message name="IDS_PASSWORDS_PAGE_SEARCH_PASSWORDS" desc="Placeholder text shown in password table search box">
+        Search passwords
+      </message>
       <message name="IDS_PASSWORDS_PAGE_VIEW_SITE_COLUMN" desc="Password table view Site column title">
         Site
       </message>
@@ -5359,7 +5362,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Site
       </message>
       <message name="IDS_EXCEPTIONS_PATTERN_HEADER" desc="A column header for the pattern column of the cookie/image/javascript/plugins exceptions dialog">
-        Pattern
+        Hostname Pattern
       </message>
       <message name="IDS_EXCEPTIONS_ACTION_HEADER" desc="A column header for the action column of the cookie/image/javascript/plugins exceptions dialog">
         Behavior
@@ -5395,7 +5398,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         [*.]example.com
       </message>
       <message name="IDS_EXCEPTIONS_ADD_NEW_INSTRUCTIONS" desc="Placeholder text before the user adds a new exception" >
-        Add a new exception pattern
+        Add a new hostname pattern
       </message>
       <message name="IDS_EXCEPTIONS_NOT_SET_BUTTON" desc="A label to display in the exception page's action column when a site's content setting has not yet been set for a given domain.">
         Not set
@@ -5426,7 +5429,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
 
       <!-- Cookie/Images/JavaScript/Plugins/Pop-ups/Location exception editor dialogs -->
       <message name="IDS_EXCEPTION_EDITOR_PATTERN_TITLE" desc="Title of the pattern field in the exception editor">
-        Pattern:
+        Hostname Pattern:
       </message>
       <message name="IDS_EXCEPTION_EDITOR_OTR_TITLE" desc="Title of the incognito checkbox in the exception editor">
         Only apply to this incognito session
@@ -5557,7 +5560,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Print preview
       </message>
       <message name="IDS_PRINT_PREVIEW_TITLE_FORMAT" desc="The format for the print preview page title.">
-        Print Preview - <ph name="PREVIEW_TAB_TITLE">$1<ex>Google Search</ex></ph>
+        Print preview - <ph name="PREVIEW_TAB_TITLE">$1<ex>Google Search</ex></ph>
       </message>
       <message name="IDS_PRINT_PREVIEW_LOADING_PRINTERS" desc="Message to display while the print preview is still loading the printer list.">
         Loading additional printers
@@ -5568,11 +5571,17 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_PRINT_PREVIEW_FAILED" desc="Message to display when print preview fails.">
         Print preview failed.
       </message>
-      <message name="IDS_PRINT_PREVIEW_INITIATOR_TAB_CLOSED" desc="Message to display when print preview fails, because the user closed the tab that initiated the print preview before the preview was generated.">
-        Print preview failed because the page you are trying to print has been closed. Please click &lt;a href="<ph name="INITIATOR_TAB_URL">$1<ex>http://www.google.com</ex></ph>"&gt;here&lt;/a&gt; to reopen the page and try printing again.
+      <message name="IDS_PRINT_PREVIEW_INITIATOR_TAB_CLOSED" desc="Error message displayed when print preview fails because the user closed the tab that initiated the print preview.">
+        Print preview failed because the page you were trying to print has been closed.
+      </message>
+      <message name="IDS_PRINT_PREVIEW_REOPEN_PAGE" desc="Text for button displayed when print preview fails because the user closed the tab that initiated the print preview. Clicking the button reopens the page that was closed.">
+        Reopen the page
       </message>
       <message name="IDS_PRINT_PREVIEW_PRINT_BUTTON" desc="Print button.">
         Print
+      </message>
+      <message name="IDS_PRINT_PREVIEW_PRINTING" desc="Text shown after the user clicks on the print button and before the print preview tab is closed to let him know that printing is in progress.">
+        Printing...
       </message>
       <message name="IDS_PRINT_PREVIEW_CANCEL_BUTTON" desc="Cancel button.">
         Cancel
@@ -5618,10 +5627,6 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_PRINT_PREVIEW_PAGE_RANGE_RADIO" desc="Aria-label page range radio.">
         page range radio button
-      </message>
-      <message name="IDS_PRINT_PREVIEW_INVALID_PAGE_RANGE"
-               desc="Warning message shown when the text entered by the user does not represent a valid page range.">
-        Invalid page range
       </message>
       <message name="IDS_PRINT_PREVIEW_INVALID_NUMBER_OF_COPIES"
                desc="Warning message shown when the text entered by the user does not represent a valid number of copies.">
@@ -5685,7 +5690,7 @@ Keep your key file in a safe place. You will need it to create new versions of y
         Advanced…
       </message>
       <message name="IDS_PRINT_PREVIEW_PAGE_RANGE_INSTRUCTION" desc="Instruction shown when the user enters an invalid page range.">
-        Use page ranges, <ph name="EXAMPLE_PAGE_RANGE">$1<ex>e.g. 1-5, 8, 11-13</ex></ph>
+        Invalid page range, use <ph name="EXAMPLE_PAGE_RANGE">$1<ex>e.g. 1-5, 8, 11-13</ex></ph>
       </message>
       <message name="IDS_PRINT_PREVIEW_COPIES_INSTRUCTION" desc="Instruction shown when the user enters an invalid number of copies.">
         Use a number to indicate how many copies to print (1 or more).
@@ -7686,6 +7691,9 @@ Keep your key file in a safe place. You will need it to create new versions of y
       <message name="IDS_COOKIES_WEBSITE_PERMISSIONS_WINDOW_TITLE" desc="The title of the redesigned Cookies Window that lets you manage cookies, storage quota for websites and other permissions per-website">
         Cookies and Other Data
       </message>
+      <message name="IDS_COOKIES_SEARCH_COOKIES" desc="Placeholder text shown in the search box in the Cookies Window">
+        Search cookies
+      </message>
       <message name="IDS_COOKIES_REMOVE_LABEL" desc="The label of the 'Remove' button in the Cookies Window">
         Remove
       </message>
@@ -8764,6 +8772,10 @@ Keep your key file in a safe place. You will need it to create new versions of y
       </message>
       <message name="IDS_SYNC_ACCOUNT_SYNCED_TO_USER_WITH_TIME" desc="The message that appears in the options dialog indicating that account is synced to a user with the given email address. The last sync also appears in the message.">
         Synced to <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. Last synced: <ph name="LAST_SYNC_TIME">$2<ex>12 seconds ago</ex></ph>
+      </message>
+      <message name="IDS_SYNC_ACCOUNT_SYNCING_TO_USER" desc="The message that appears in the options dialog indicating that account is syncing to a user with the given email address.">
+        Last synced to <ph name="USER_EMAIL_ADDRESS">$1<ex>foo@gmail.com</ex></ph>. 
+        Manage sync data on <ph name="BEGIN_LINK">&lt;a href="$2"&gt;</ph>Google Dashboard<ph name="END_LINK">&lt;/a&gt;</ph>
       </message>
       <message name="IDS_SYNC_ACCOUNT_DETAILS_NOT_ENTERED" desc="The sync setup is underway and the user has not yet entered credentials.">
         Account sign-in details are not yet entered.

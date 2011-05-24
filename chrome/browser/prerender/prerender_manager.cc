@@ -14,6 +14,7 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
+#include "chrome/browser/prerender/prerender_observer.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
@@ -424,11 +425,19 @@ PrerenderContents* PrerenderManager::GetEntry(const GURL& url) {
 }
 
 bool PrerenderManager::MaybeUsePreloadedPageOld(TabContents* tab_contents,
-                                                const GURL& url) {
+                                                const GURL& url,
+                                                bool has_opener_set) {
   DCHECK(CalledOnValidThread());
   scoped_ptr<PrerenderContents> prerender_contents(GetEntry(url));
   if (prerender_contents.get() == NULL)
     return false;
+
+  // Do not use the prerendered version if the opener window.property was
+  // supposed to be set.
+  if (has_opener_set) {
+    prerender_contents.release()->Destroy(FINAL_STATUS_WINDOW_OPENER);
+    return false;
+  }
 
   // If we are just in the control group (which can be detected by noticing
   // that prerendering hasn't even started yet), record that |tab_contents| now
@@ -515,10 +524,12 @@ bool PrerenderManager::MaybeUsePreloadedPageOld(TabContents* tab_contents,
 }
 
 bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
-                                             const GURL& url) {
+                                             const GURL& url,
+                                             bool has_opener_set) {
   if (!PrerenderContents::UseTabContents()) {
     VLOG(1) << "Checking for prerender with LEGACY code";
-    return PrerenderManager::MaybeUsePreloadedPageOld(tab_contents, url);
+    return PrerenderManager::MaybeUsePreloadedPageOld(tab_contents, url,
+                                                      has_opener_set);
   }
   VLOG(1) << "Checking for prerender with NEW code";
   DCHECK(CalledOnValidThread());
@@ -526,6 +537,19 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
       GetEntryButNotSpecifiedTC(url, tab_contents));
   if (prerender_contents.get() == NULL)
     return false;
+
+  // Do not use the prerendered version if the opener window.property was
+  // supposed to be set.
+  if (has_opener_set) {
+    prerender_contents.release()->Destroy(FINAL_STATUS_WINDOW_OPENER);
+    return false;
+  }
+
+  if (prerender_contents->starting_page_id() <=
+      tab_contents->GetMaxPageID()) {
+    prerender_contents.release()->Destroy(FINAL_STATUS_PAGE_ID_CONFLICT);
+    return false;
+  }
 
   // If we are just in the control group (which can be detected by noticing
   // that prerendering hasn't even started yet), record that |tab_contents| now
@@ -584,6 +608,14 @@ bool PrerenderManager::MaybeUsePreloadedPage(TabContents* tab_contents,
         prerender_contents->page_id(),
         urls);
   }
+
+  // Update PPLT metrics:
+  // If the tab has finished loading, record a PPLT of 0.
+  // If the tab is still loading, reset its start time to the current time.
+  PrerenderObserver* prerender_observer =
+      new_tab_contents->prerender_observer();
+  DCHECK(prerender_observer != NULL);
+  prerender_observer->PrerenderSwappedIn();
 
   // See if we have any pending prerender requests for this routing id and start
   // the preload if we do.

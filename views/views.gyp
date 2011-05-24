@@ -440,25 +440,16 @@
                 ['exclude', 'touchui/touch_factory.h'],
               ],
             }],
-            ['use_ibus==1', {
-              'dependencies': [
-                '../build/linux/system.gyp:ibus',
-              ],
-              'sources/': [
-                ['exclude', 'ime/input_method_gtk.cc'],
-                ['exclude', 'ime/input_method_gtk.h'],
-              ],
-            }, { # else: use_ibus != 1
-              'sources/': [
-                ['exclude', 'ime/input_method_ibus.cc'],
-                ['exclude', 'ime/input_method_ibus.h'],
-              ],
-            }],
           ],
-        }, { # else: touchui != 1
-          'sources!': [
-            'ime/input_method_ibus.cc',
-            'ime/input_method_ibus.h',
+        }],
+        ['use_ibus==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:ibus',
+          ],
+        }, { # else: use_ibus != 1
+          'sources/': [
+            ['exclude', 'ime/input_method_ibus.cc'],
+            ['exclude', 'ime/input_method_ibus.h'],
           ],
         }],
         ['OS=="win"', {

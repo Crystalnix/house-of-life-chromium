@@ -15,7 +15,8 @@ remoting.scaleToFit = false;
 
 // Default to trying to sandboxed connections.
 remoting.connectMethod = 'sandboxed';
-remoting.httpXmppProxy = 'https://chromoting-httpxmpp-dev.corp.google.com';
+remoting.httpXmppProxy =
+    'https://chromoting-httpxmpp-oauth2-dev.corp.google.com';
 
 // This executes a poll loop on the server for more Iq packets, and feeds them
 // to the plugin.
@@ -67,7 +68,7 @@ function registerConnection() {
   }
   xhr.send('host_jid=' + encodeURIComponent(remoting.hostjid) +
            '&username=' + encodeURIComponent(remoting.username) +
-           '&password=' + encodeURIComponent(remoting.xmppAuthToken));
+           '&password=' + encodeURIComponent(remoting.oauth2.getAccessToken()));
   setClientStateMessage('Connecting');
 }
 
@@ -155,10 +156,9 @@ function toggleScaleToFit() {
 /**
  * This is the callback method that the plugin calls to request username and
  * password for logging into the remote host. For Me2Mom we are pre-authorized
- * so this should never be called.
+ * so this is a no-op.
  */
 function loginChallengeCallback() {
-  console.log("loginChallengeCallback called unexpectedly!");
 }
 
 /**

@@ -236,8 +236,19 @@ void PersonalOptionsHandler::OnStateChanged() {
   DCHECK(service);
   bool managed = service->IsManaged();
   bool sync_setup_completed = service->HasSyncSetupCompleted();
-  bool status_has_error = sync_ui_util::GetStatusLabels(service,
-      &status_label, &link_label) == sync_ui_util::SYNC_ERROR;
+  bool status_has_error = sync_ui_util::GetStatusLabels(
+      service, &status_label, &link_label) == sync_ui_util::SYNC_ERROR;
+  browser_sync::SyncBackendHost::StatusSummary summary =
+      service->QuerySyncStatusSummary();
+
+  if (!status_has_error &&
+      summary == browser_sync::SyncBackendHost::Status::SYNCING) {
+    string16 user_name(service->GetAuthenticatedUsername());
+    status_label.assign(l10n_util::GetStringFUTF16(
+        IDS_SYNC_ACCOUNT_SYNCING_TO_USER,
+        user_name,
+        ASCIIToUTF16(chrome::kSyncGoogleDashboardURL)));
+  }
 
   string16 start_stop_button_label;
   bool is_start_stop_button_visible = false;
@@ -374,20 +385,20 @@ void PersonalOptionsHandler::Initialize() {
 void PersonalOptionsHandler::ShowSyncActionDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowErrorUI();
+  service->ShowErrorUI(web_ui_);
 }
 
 void PersonalOptionsHandler::ShowSyncLoginDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowLoginDialog();
+  service->ShowLoginDialog(web_ui_);
   ProfileSyncService::SyncEvent(ProfileSyncService::START_FROM_OPTIONS);
 }
 
 void PersonalOptionsHandler::ShowCustomizeSyncDialog(const ListValue* args) {
   ProfileSyncService* service = web_ui_->GetProfile()->GetProfileSyncService();
   DCHECK(service);
-  service->ShowConfigure(false);
+  service->ShowConfigure(web_ui_, false);
 }
 
 void PersonalOptionsHandler::ThemesReset(const ListValue* args) {
@@ -420,5 +431,4 @@ void PersonalOptionsHandler::LoadAccountPicture(const ListValue* args) {
                                     image_url);
   }
 }
-
 #endif

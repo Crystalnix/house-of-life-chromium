@@ -26,8 +26,8 @@ void TabContentsObserver::Registrar::Observe(TabContents* tab) {
 }
 
 void TabContentsObserver::NavigateToPendingEntry(
-      const GURL& url,
-      NavigationController::ReloadType reload_type) {
+    const GURL& url,
+    NavigationController::ReloadType reload_type) {
 }
 
 void TabContentsObserver::DidNavigateMainFramePostCommit(
@@ -48,7 +48,9 @@ void TabContentsObserver::DidStartProvisionalLoadForFrame(
     RenderViewHost* render_view_host) {
 }
 
-void TabContentsObserver::ProvisionalChangeToMainFrameUrl(const GURL& url) {
+void TabContentsObserver::ProvisionalChangeToMainFrameUrl(
+    const GURL& url,
+    bool has_opener_set) {
 }
 
 void TabContentsObserver::DidCommitProvisionalLoadForFrame(

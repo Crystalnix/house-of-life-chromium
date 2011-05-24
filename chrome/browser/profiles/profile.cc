@@ -143,6 +143,11 @@ void Profile::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kSelectFileLastDirectory,
                             "",
                             PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDoublePref(prefs::kDefaultZoomLevel,
+                            0.0,
+                            PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterDictionaryPref(prefs::kPerHostZoomLevels,
+                                PrefService::UNSYNCABLE_PREF);
 #if defined(OS_CHROMEOS)
   // TODO(dilmah): For OS_CHROMEOS we maintain kApplicationLocale in both
   // local state and user's profile.  For other platforms we maintain
@@ -479,7 +484,7 @@ class OffTheRecordProfileImpl : public Profile,
 
   virtual HostZoomMap* GetHostZoomMap() {
     if (!host_zoom_map_)
-      host_zoom_map_ = new HostZoomMap(this);
+      host_zoom_map_ = new HostZoomMap();
     return host_zoom_map_.get();
   }
 

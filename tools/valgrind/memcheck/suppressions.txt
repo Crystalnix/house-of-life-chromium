@@ -2625,10 +2625,7 @@
    fun:_Znw*
    ...
    fun:*InotifyReaderTask3RunEv
-   fun:_ZN11MessageLoop7RunTaskERKNS_11PendingTaskE
-   fun:_ZN11MessageLoop21DeferOrRunPendingTaskERKNS_11PendingTaskE
-   fun:_ZN11MessageLoop6DoWorkEv
-   fun:_ZN4base18MessagePumpDefault3RunEPNS_11MessagePump8DelegateE
+   ...
    fun:_ZN11MessageLoop11RunInternalEv
    fun:_ZN11MessageLoop10RunHandlerEv
 }
@@ -3865,9 +3862,9 @@
    bug_75023
    Memcheck:Leak
    fun:_Znw*
-   fun:_ZN*TabContentsView*CreateView*
+   fun:_ZN5views6Widget21OnNativeWidgetCreatedEv
    ...
-   fun:_ZN18TabContentsView*CreateView*
+   fun:_ZN*TabContentsView*CreateView*
    fun:_ZN11TabContentsC2EP7ProfileP12SiteInstanceiPKS_P23SessionStorageNamespace
    fun:_ZN15TestTabContentsC1EP7ProfileP12SiteInstance
    fun:_ZN25RenderViewHostTestHarness21CreateTestTabContentsEv
@@ -4562,7 +4559,6 @@
    ...
    fun:_ZN21RenderViewHostManager8NavigateERK15NavigationEntry
    fun:_ZN11TabContents15NavigateToEntryERK15NavigationEntryN20NavigationController10ReloadTypeE
-   fun:_ZN11TabContents22NavigateToPendingEntryEN20NavigationController10ReloadTypeE
 }
 {
    bug_82719
@@ -4588,6 +4584,7 @@
    bug_83343
    Memcheck:Leak
    fun:_Znw*
+   ...
    fun:_ZN13ThreadWatcher13StartWatchingERKN13BrowserThread2IDERKSsRKN4base9TimeDeltaES9_
    fun:_ZN17ThreadWatcherList16StartWatchingAllEv
    fun:_Z18DispatchToFunctionIPFvvEEvT_RK6Tuple0
@@ -4609,6 +4606,42 @@
    fun:_ZN4base8internal8Invoker1ILb0ENS0_15InvokerStorage1IMN12_GLOBAL__N_118TaskClosureAdapterEFvvEPS4_EES6_E8DoInvokeEPNS0_18InvokerStorageBaseE
    fun:_ZNK4base8CallbackIFvvEE3RunEv
    fun:_ZN11MessageLoop7RunTaskERKNS_11PendingTaskE
+}
+{
+   bug_83609
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base4BindIMN12_GLOBAL__N_118TaskClosureAdapterEFvvEPS2_EENS_8internal20InvokerStorageHolderINS6_15InvokerStorage1IT_T0_EEEES9_RKSA_
+   fun:_ZN11MessageLoop15PostDelayedTaskERKN15tracked_objects8LocationEP4Taskx
+   fun:_ZN13BrowserThread14PostTaskHelperENS_2IDERKN15tracked_objects8LocationEP4Taskxb
+   fun:_ZN13BrowserThread8PostTaskENS_2IDERKN15tracked_objects8LocationEP4Task
+}
+{
+   bug_83626a
+   Memcheck:Cond
+   fun:_ZNK2v88internal9SparseSet8ContainsEi
+   fun:_ZN2v88internal9SparseSet3AddEi
+   ...
+   fun:_ZN2v88internal20HGlobalValueNumberer41CollectSideEffectsOnPathsToDominatedBlockEPNS0_11HBasicBlockES3_
+   fun:_ZN2v88internal20HGlobalValueNumberer12AnalyzeBlockEPNS0_11HBasicBlockEPNS0_9HValueMapE
+}
+{
+   bug_83626b
+   Memcheck:Value4
+   fun:_ZNK2v88internal9SparseSet8ContainsEi
+   fun:_ZN2v88internal9SparseSet3AddEi
+   ...
+   fun:_ZN2v88internal20HGlobalValueNumberer41CollectSideEffectsOnPathsToDominatedBlockEPNS0_11HBasicBlockES3_
+   fun:_ZN2v88internal20HGlobalValueNumberer12AnalyzeBlockEPNS0_11HBasicBlockEPNS0_9HValueMapE
+}
+{
+   bug_83638
+   Memcheck:Leak
+   fun:_Znw*
+   fun:*DownloadManagerTest_*_Test8TestBodyEv
+   fun:_ZN7testing8internal38HandleSehExceptionsInMethodIfSupportedINS_4TestEvEET0_PT_MS4_FS3_vEPKc
+   fun:_ZN7testing8internal35HandleExceptionsInMethodIfSupportedINS_4TestEvEET0_PT_MS4_FS3_vEPKc
+
 }
 #-----------------------------------------------------------------------
 # These only occur on our Google workstations

@@ -47,7 +47,7 @@ function onLoad() {
   $('cancel-button').addEventListener('click', handleCancelButtonClick);
 
   if (!checkCompatiblePluginExists()) {
-    displayErrorMessage(localStrings.getString('noPlugin'));
+    displayErrorMessage(localStrings.getString('noPlugin'), false);
     $('mainview').parentElement.removeChild($('dummy-viewer'));
     return;
   }
@@ -101,8 +101,10 @@ function showSystemDialog() {
  * @param {string} initiatorTabURL The URL of the initiator tab.
  */
 function onInitiatorTabClosed(initiatorTabURL) {
-  displayErrorMessage(localStrings.getStringF('initiatorTabClosed',
-                                              initiatorTabURL));
+  $('reopen-page').addEventListener('click', function() {
+      window.location = initiatorTabURL;
+  });
+  displayErrorMessage(localStrings.getString('initiatorTabClosed'), true);
 }
 
 /**
@@ -288,12 +290,8 @@ function getDuplexMode() {
  * @return {string} JSON string with print job settings.
  */
 function getSettingsJSON() {
-  var printerList = $('printer-list')
-  var selectedPrinter = printerList.selectedIndex;
-  var deviceName = '';
-  if (selectedPrinter >= 0)
-    deviceName = printerList.options[selectedPrinter].value;
   var printAll = $('all-pages').checked;
+  var deviceName = getSelectedPrinterName();
   var printToPDF = (deviceName == PRINT_TO_PDF);
 
   return JSON.stringify({'deviceName': deviceName,
@@ -308,10 +306,31 @@ function getSettingsJSON() {
 }
 
 /**
+ * Returns the name of the selected printer or the empty string if no
+ * printer is selected.
+ */
+function getSelectedPrinterName() {
+  var printerList = $('printer-list')
+  var selectedPrinter = printerList.selectedIndex;
+  var deviceName = '';
+  if (selectedPrinter >= 0)
+    deviceName = printerList.options[selectedPrinter].value;
+  return deviceName;
+}
+
+/**
  * Asks the browser to print the preview PDF based on current print settings.
  */
 function printFile() {
-  chrome.send('print', [getSettingsJSON()]);
+  $('print-button').classList.add('loading');
+  $('cancel-button').classList.add('loading');
+  $('print-summary').innerHTML = localStrings.getString('printing');
+
+  if (getSelectedPrinterName() != PRINT_TO_PDF) {
+    window.setTimeout(function() { chrome.send('print', [getSettingsJSON()]); },
+                      1000);
+  } else
+    chrome.send('print', [getSettingsJSON()]);
 }
 
 /**
@@ -336,12 +355,14 @@ function setPrinters(printers, defaultPrinterIndex) {
     addDestinationListOption(printers[i].printerName, printers[i].deviceName,
                              i == defaultPrinterIndex, false);
   }
-  addDestinationListOption('','',false, true);
+
+  if (printers.length != 0)
+    addDestinationListOption('', '', false, true);
 
   // Adding option for saving PDF to disk.
   addDestinationListOption(localStrings.getString('printToPDF'),
                            PRINT_TO_PDF, false, false);
-  addDestinationListOption('','',false, true);
+  addDestinationListOption('', '', false, true);
 
   // Add an option to manage printers.
   addDestinationListOption(localStrings.getString('managePrinters'),
@@ -383,14 +404,21 @@ function setColor(color) {
 
 /**
  * Display an error message in the center of the preview area.
- * @param (string) errorMessage The error message to be displayed.
+ * @param {string} errorMessage The error message to be displayed.
+ * @param {boolean} showButton Indivates whether the "Reopen the page" button
+ * should be displayed.
  */
-function displayErrorMessage(errorMessage) {
+function displayErrorMessage(errorMessage, showButton) {
   isPreviewStillLoading = false;
   $('dancing-dots').classList.remove('invisible');
   $('dancing-dots-text').classList.add('hidden');
   $('error-text').innerHTML = errorMessage;
   $('error-text').classList.remove('hidden');
+  if (showButton)
+    $('reopen-page').classList.remove('hidden');
+  else
+    $('reopen-page').classList.add('hidden');
+
   setControlsDisabled(true);
 
   var pdfViewer = $('pdf-viewer');
@@ -403,7 +431,7 @@ function displayErrorMessage(errorMessage) {
  * Called from PrintPreviewMessageHandler::OnPrintPreviewFailed().
  */
 function printPreviewFailed() {
-  displayErrorMessage(localStrings.getString('previewFailed'));
+  displayErrorMessage(localStrings.getString('previewFailed'), false);
 }
 
 /**
@@ -607,7 +635,7 @@ function updatePrintSummary() {
   }
 
   if (getSelectedPagesValidityLevel() != 1) {
-    printSummary.innerHTML = localStrings.getString('invalidPageRange');
+    printSummary.innerHTML = '';
     return;
   }
 

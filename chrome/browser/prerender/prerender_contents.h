@@ -254,6 +254,8 @@ class PrerenderContents : public RenderViewHostDelegate,
   // new tab.
   void CommitHistory(TabContents* tc);
 
+  int32 starting_page_id() { return starting_page_id_; }
+
  protected:
   PrerenderContents(PrerenderManager* prerender_manager,
                     Profile* profile,
@@ -281,6 +283,7 @@ class PrerenderContents : public RenderViewHostDelegate,
   // Message handlers.
   void OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                          bool main_frame,
+                                         bool has_opener_set,
                                          const GURL& url);
   void OnUpdateFaviconURL(int32 page_id, const std::vector<FaviconURL>& urls);
 
@@ -336,6 +339,10 @@ class PrerenderContents : public RenderViewHostDelegate,
 
   bool prerendering_has_started_;
 
+  // Tracks whether or not prerendering has been cancelled by calling Destroy.
+  // Used solely to prevent double deletion.
+  bool prerendering_has_been_cancelled_;
+
   // Time at which we started to load the URL.  This is used to compute
   // the time elapsed from initiating a prerender until the time the
   // (potentially only partially) prerendered page is shown to the user.
@@ -355,6 +362,12 @@ class PrerenderContents : public RenderViewHostDelegate,
   // These are -1 before a RenderView is created.
   int child_id_;
   int route_id_;
+
+  // Page ID at which prerendering started.
+  int32 starting_page_id_;
+
+  // Offset by which to offset prerendered pages
+  static const int32 kPrerenderPageIdOffset = 10;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderContents);
 };

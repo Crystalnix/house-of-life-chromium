@@ -19,7 +19,9 @@ class TabContentsObserver : public IPC::Channel::Listener,
                             public IPC::Message::Sender {
  public:
   // Use this as a member variable in a class that uses the empty constructor
-  // version of this interface.
+  // version of this interface.  On destruction of TabContents being observed,
+  // the registrar must either be destroyed or explicitly set to observe
+  // another TabContents.
   class Registrar {
    public:
     explicit Registrar(TabContentsObserver* observer);
@@ -56,7 +58,8 @@ class TabContentsObserver : public IPC::Channel::Listener,
       const GURL& validated_url,
       bool is_error_page,
       RenderViewHost* render_view_host);
-  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url);
+  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url,
+                                               bool has_opener_set);
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
       bool is_main_frame,
@@ -124,6 +127,7 @@ class TabContentsObserver : public IPC::Channel::Listener,
  protected:
   friend class Registrar;
 
+  // Called from TabContents in response to having |this| added as an observer.
   void SetTabContents(TabContents* tab_contents);
 
  private:

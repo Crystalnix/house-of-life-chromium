@@ -4,7 +4,7 @@ vars = {
   "googlecode_url": "http://%s.googlecode.com/svn",
   "webkit_trunk": "http://svn.webkit.org/repository/webkit/trunk",
   "nacl_trunk": "http://src.chromium.org/native_client/trunk",
-  "webkit_revision": "87005",
+  "webkit_revision": "87089",
   "chromium_git": "http://git.chromium.org/git",
   "swig_revision": "69281",
   # These hashes need to be updated when nacl_revision is changed.
@@ -16,8 +16,8 @@ vars = {
   "libjingle_revision": "59",
   "libvpx_revision": "81610",
   "ffmpeg_revision": "83815",
-  "skia_revision": "1395",
-  "v8_revision": "7928",
+  "skia_revision": "1401",
+  "v8_revision": "8003",
 }
 
 deps = {

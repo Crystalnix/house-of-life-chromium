@@ -608,8 +608,6 @@
         'url_request/url_request_job_factory.h',
         'url_request/url_request_job_manager.cc',
         'url_request/url_request_job_manager.h',
-        'url_request/url_request_job_tracker.cc',
-        'url_request/url_request_job_tracker.h',
         'url_request/url_request_netlog_params.cc',
         'url_request/url_request_netlog_params.h',
         'url_request/url_request_redirect_job.cc',
@@ -728,7 +726,7 @@
             ],
           },
         ],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gconf',
               '../build/linux/system.gyp:gdk',
@@ -979,7 +977,6 @@
         'tools/dump_cache/url_utilities_unittest.cc',
         'udp/udp_socket_unittest.cc',
         'url_request/url_request_job_factory_unittest.cc',
-        'url_request/url_request_job_tracker_unittest.cc',
         'url_request/url_request_throttler_unittest.cc',
         'url_request/url_request_unittest.cc',
         'url_request/view_cache_helper_unittest.cc',
@@ -998,7 +995,7 @@
              'proxy/proxy_config_service_linux_unittest.cc',
           ],
         }],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gtk',
               '../build/linux/system.gyp:nss',
@@ -1010,7 +1007,7 @@
             ],
           }
         ],
-        [ 'OS == "linux"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1174,7 +1171,7 @@
             '../third_party/protobuf/protobuf.gyp:py_proto',
           ],
         }],
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
@@ -1187,7 +1184,7 @@
             }],
           ],
         }],
-        ['OS == "linux"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1295,7 +1292,7 @@
     },
   ],
   'conditions': [
-     ['OS=="linux"', {
+     ['os_posix == 1 and OS != "mac"', {
        'targets': [
          {
            'target_name': 'flip_in_mem_edsm_server',

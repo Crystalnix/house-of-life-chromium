@@ -137,8 +137,10 @@ PrerenderContents::PrerenderContents(PrerenderManager* prerender_manager,
       has_stopped_loading_(false),
       final_status_(FINAL_STATUS_MAX),
       prerendering_has_started_(false),
+      prerendering_has_been_cancelled_(false),
       child_id_(-1),
-      route_id_(-1) {
+      route_id_(-1),
+      starting_page_id_(-1) {
   DCHECK(prerender_manager != NULL);
 }
 
@@ -262,11 +264,12 @@ void PrerenderContents::StartPrerendering(
     // So that history merging will work, get the max page ID
     // of the old page, and add a safety margin of 10 to it (for things
     // such as redirects).
-    int32 max_page_id = source_tc->GetMaxPageID();
-    if (max_page_id != -1) {
-      prerender_contents_->controller().set_max_restored_page_id(
-          max_page_id + 10);
-    }
+    starting_page_id_ = source_tc->GetMaxPageID();
+    if (starting_page_id_ < 0)
+      starting_page_id_ = 0;
+    starting_page_id_ += kPrerenderPageIdOffset;
+    prerender_contents_->controller().set_max_restored_page_id(
+        starting_page_id_);
 
     tab_contents_delegate_.reset(new TabContentsDelegateImpl(this));
     new_contents->set_delegate(tab_contents_delegate_.get());
@@ -364,6 +367,9 @@ FinalStatus PrerenderContents::final_status() const {
 
 PrerenderContents::~PrerenderContents() {
   DCHECK(final_status_ != FINAL_STATUS_MAX);
+  DCHECK(prerendering_has_been_cancelled_ ||
+         final_status_ == FINAL_STATUS_USED ||
+         final_status_ == FINAL_STATUS_CONTROL_GROUP);
 
   // If we haven't even started prerendering, we were just in the control
   // group, which means we do not want to record the status.
@@ -631,6 +637,7 @@ void PrerenderContents::OnRenderViewHostCreated(
 
 void PrerenderContents::OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                                           bool is_main_frame,
+                                                          bool has_opener_set,
                                                           const GURL& url) {
   if (is_main_frame) {
     if (!AddAliasURL(url))
@@ -660,8 +667,8 @@ void PrerenderContents::OnUpdateFaviconURL(
 }
 
 bool PrerenderContents::AddAliasURL(const GURL& url) {
-  if (!url.SchemeIs("http")) {
-    if (url.SchemeIs("https"))
+  if (!url.SchemeIs(chrome::kHttpScheme)) {
+    if (url.SchemeIs(chrome::kHttpsScheme))
       Destroy(FINAL_STATUS_HTTPS);
     else
       Destroy(FINAL_STATUS_UNSUPPORTED_SCHEME);
@@ -709,8 +716,11 @@ void PrerenderContents::DidStopLoading() {
 }
 
 void PrerenderContents::Destroy(FinalStatus final_status) {
-  if (prerender_manager_->IsPendingDelete(this))
+  if (prerendering_has_been_cancelled_)
     return;
+
+  prerendering_has_been_cancelled_ = true;
+  prerender_manager_->MoveEntryToPendingDelete(this);
 
   if (child_id_ != -1 && route_id_ != -1) {
     // Cancel the prerender in the PrerenderTracker.  This is needed
@@ -729,9 +739,8 @@ void PrerenderContents::Destroy(FinalStatus final_status) {
       NOTREACHED();
     }
   }
-
-  prerender_manager_->MoveEntryToPendingDelete(this);
   set_final_status(final_status);
+
   // We may destroy the PrerenderContents before we have initialized the
   // RenderViewHost. Otherwise set the Observer's PrerenderContents to NULL to
   // avoid any more messages being sent.
@@ -794,6 +803,7 @@ void PrerenderContents::DestroyWhenUsingTooManyResources() {
 TabContentsWrapper* PrerenderContents::ReleasePrerenderContents() {
   render_view_host_observer_.reset();
   prerender_contents_->download_tab_helper()->set_delegate(NULL);
+  tab_contents_observer_registrar_.Observe(NULL);
   return prerender_contents_.release();
 }
 

@@ -990,8 +990,8 @@ void BookmarkBarView::BookmarkNodeChildrenReordered(BookmarkModel* model,
   SchedulePaint();
 }
 
-void BookmarkBarView::BookmarkNodeFaviconLoaded(BookmarkModel* model,
-                                                const BookmarkNode* node) {
+void BookmarkBarView::BookmarkNodeFaviconChanged(BookmarkModel* model,
+                                                 const BookmarkNode* node) {
   BookmarkNodeChangedImpl(model, node);
 }
 
@@ -1087,7 +1087,7 @@ void BookmarkBarView::ButtonPressed(views::Button* sender,
   if (sender->tag() == kSyncErrorButtonTag) {
     DCHECK(sender == sync_error_button_);
     DCHECK(sync_service_ && !sync_service_->IsManaged());
-    sync_service_->ShowErrorUI();
+    sync_service_->ShowErrorUI(NULL);
     return;
   }
 

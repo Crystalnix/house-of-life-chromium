@@ -21,7 +21,7 @@
         'plugin_extension': 'plugin',
         'plugin_prefix': '',
       }],
-      ['OS=="linux"', {
+      ['os_posix == 1 and OS != "mac"', {
         'plugin_extension': 'so',
         'plugin_prefix': 'lib',
       }],
@@ -46,7 +46,7 @@
   },
 
   'conditions': [
-    ['OS=="linux" or OS=="mac"', {
+    ['os_posix == 1', {
       'targets': [
         # Simple webserver for testing remoting client plugin.
         {
@@ -60,7 +60,7 @@
     }],
 
     # TODO(hclam): Enable this target for mac.
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    ['use_x11 == 1', {
 
       'targets': [
         {
@@ -117,6 +117,8 @@
         'client/plugin/chromoting_instance.h',
         'client/plugin/chromoting_scriptable_object.cc',
         'client/plugin/chromoting_scriptable_object.h',
+        'client/plugin/pepper_client_logger.cc',
+        'client/plugin/pepper_client_logger.h',
         'client/plugin/pepper_entrypoints.cc',
         'client/plugin/pepper_entrypoints.h',
         'client/plugin/pepper_input_handler.cc',
@@ -343,7 +345,7 @@
         'host/user_authenticator_win.cc',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -390,6 +392,8 @@
         'client/client_config.h',
         'client/client_context.cc',
         'client/client_context.h',
+        'client/client_logger.cc',
+        'client/client_logger.h',
         'client/client_util.cc',
         'client/client_util.h',
         'client/frame_consumer.h',
@@ -571,7 +575,7 @@
         '..',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'cflags': [
             '-msse2',
           ],
@@ -666,7 +670,7 @@
         'run_all_unittests.cc',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../app/app.gyp:app_base',
             # Needed for the following #include chain:

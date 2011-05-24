@@ -40,11 +40,15 @@ void SetLocalizedStrings(DictionaryValue* localized_strings) {
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_FAILED));
   localized_strings->SetString(std::string("initiatorTabClosed"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_INITIATOR_TAB_CLOSED));
+  localized_strings->SetString(std::string("reopenPage"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_REOPEN_PAGE));
 
   localized_strings->SetString(std::string("printButton"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINT_BUTTON));
   localized_strings->SetString(std::string("cancelButton"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_CANCEL_BUTTON));
+  localized_strings->SetString(std::string("printing"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINTING));
 
   localized_strings->SetString(std::string("destinationLabel"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_DESTINATION_LABEL));
@@ -76,8 +80,6 @@ void SetLocalizedStrings(DictionaryValue* localized_strings) {
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGE_RANGE_TEXT));
   localized_strings->SetString(std::string("pageRangeRadio"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGE_RANGE_RADIO));
-  localized_strings->SetString(std::string("invalidPageRange"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_INVALID_PAGE_RANGE));
   localized_strings->SetString(std::string("printToPDF"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINT_TO_PDF));
   localized_strings->SetString(std::string("printPreviewTitleFormat"),

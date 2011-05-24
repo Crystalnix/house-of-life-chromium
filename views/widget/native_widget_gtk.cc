@@ -44,7 +44,7 @@
 #endif
 #endif
 
-#if defined(TOUCH_UI) && defined(HAVE_IBUS)
+#if defined(HAVE_IBUS)
 #include "views/ime/input_method_ibus.h"
 #else
 #include "views/ime/input_method_gtk.h"
@@ -619,11 +619,12 @@ void NativeWidgetGtk::InitNativeWidget(const Widget::InitParams& params) {
   // already created at this point.
   // TODO(suzhe): Always enable input method when we start to use
   // RenderWidgetHostViewViews in normal ChromeOS.
-#if defined(TOUCH_UI) && defined(HAVE_IBUS)
-  if (!child_) {
-    input_method_.reset(new InputMethodIBus(this));
-#else
   if (!child_ && NativeTextfieldViews::IsTextfieldViewsEnabled()) {
+#if defined(HAVE_IBUS)
+    input_method_.reset(InputMethodIBus::IsInputMethodIBusEnabled() ?
+                        static_cast<InputMethod*>(new InputMethodIBus(this)) :
+                        static_cast<InputMethod*>(new InputMethodGtk(this)));
+#else
     input_method_.reset(new InputMethodGtk(this));
 #endif
     input_method_->Init(GetWidget());
@@ -897,8 +898,6 @@ void NativeWidgetGtk::SetSize(const gfx::Size& size) {
     if (GTK_IS_VIEWS_FIXED(parent)) {
       gtk_views_fixed_set_widget_size(widget_, size.width(), size.height());
     } else {
-      DCHECK(GTK_IS_FIXED(parent))
-          << "Parent of NativeWidgetGtk has to be Fixed or ViewsFixed";
       gtk_widget_set_size_request(widget_, size.width(), size.height());
     }
   } else {
