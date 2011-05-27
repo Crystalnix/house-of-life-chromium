@@ -29,7 +29,7 @@
 #if defined(OS_WIN)
 #include "chrome/installer/util/install_util.h"
 #elif defined(OS_MACOSX)
-#include "chrome/browser/cocoa/version_helper.h"
+#include "chrome/browser/cocoa/keystone_glue.h"
 #elif defined(OS_POSIX)
 #include "base/process_util.h"
 #include "base/version.h"
@@ -103,7 +103,7 @@ class DetectUpgradeTask : public Task {
 #elif defined(OS_MACOSX)
     installed_version.reset(
         Version::GetVersionFromString(UTF16ToASCII(
-            version_helper::CurrentlyInstalledVersion())));
+            keystone_glue::CurrentlyInstalledVersion())));
 #elif defined(OS_POSIX)
     // POSIX but not Mac OS X: Linux, etc.
     CommandLine command_line(*CommandLine::ForCurrentProcess());
@@ -186,7 +186,7 @@ UpgradeDetector::UpgradeDetector()
   // Linux (and other POSIX): always enable regardless of branding.
 #if (defined(OS_WIN) && defined(GOOGLE_CHROME_BUILD)) || defined(OS_POSIX)
 #if defined(OS_MACOSX)
-  //if (keystone_glue::KeystoneEnabled())
+  if (keystone_glue::KeystoneEnabled())
 #endif
   {
     detect_upgrade_timer_.Start(
