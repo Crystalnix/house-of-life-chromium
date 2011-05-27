@@ -452,7 +452,7 @@
           ['branding=="Chrome"', {
             'mac_product_name%': 'Google Chrome',
           }, { # else: branding!="Chrome"
-            'mac_product_name%': 'Chromium',
+            'mac_product_name%': 'BitPop',
           }],
 
           # Feature variables for enabling Mac Breakpad and Keystone auto-update
