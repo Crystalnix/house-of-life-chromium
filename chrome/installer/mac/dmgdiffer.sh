@@ -142,18 +142,17 @@ make_patch_fs() {
   readonly APP_NAME_RE="${product_name}\\.app"
   readonly APP_PLIST="Contents/Info"
   readonly APP_VERSION_KEY="CFBundleShortVersionString"
-  # readonly KS_VERSION_KEY="KSVersion"
-  # readonly KS_PRODUCT_KEY="KSProductID"
-  # readonly KS_CHANNEL_KEY="KSChannelID"
+  readonly KS_VERSION_KEY="KSVersion"
+  readonly KS_PRODUCT_KEY="KSProductID"
+  readonly KS_CHANNEL_KEY="KSChannelID"
   readonly VERSIONS_DIR="Contents/Versions"
   readonly BUILD_RE="^[0-9]+\\.[0-9]+\\.([0-9]+)\\.[0-9]+\$"
   readonly MIN_BUILD=434
 
-  local product_url="http://localhost/"
-  # local product_url="http://www.google.com/chrome/"
-  # if [[ "${product_name}" = "Google Chrome Canary" ]]; then
-  #   product_url="http://tools.google.com/dlpage/chromesxs"
-  # fi
+  local product_url="http://www.google.com/chrome/"
+  if [[ "${product_name}" = "Google Chrome Canary" ]]; then
+    product_url="http://tools.google.com/dlpage/chromesxs"
+  fi
 
   local old_app_path="${old_fs}/${APP_NAME}"
   local old_app_plist="${old_app_path}/${APP_PLIST}"
@@ -169,13 +168,13 @@ make_patch_fs() {
   fi
   local old_app_version_build="${BASH_REMATCH[1]}"
 
-  # local old_ks_plist="${old_app_plist}"
-  # local old_ks_version
-  # if ! old_ks_version="$(defaults read "${old_ks_plist}" \
-  #                                      "${KS_VERSION_KEY}")"; then
-  #   err "could not read old Keystone version"
-  #   exit 10
-  # fi
+  local old_ks_plist="${old_app_plist}"
+  local old_ks_version
+  if ! old_ks_version="$(defaults read "${old_ks_plist}" \
+                                       "${KS_VERSION_KEY}")"; then
+    err "could not read old Keystone version"
+    exit 10
+  fi
 
   local new_app_path="${new_fs}/${APP_NAME}"
   local new_app_plist="${new_app_path}/${APP_PLIST}"
@@ -191,20 +190,20 @@ make_patch_fs() {
   fi
   local new_app_version_build="${BASH_REMATCH[1]}"
 
-  # local new_ks_plist="${new_app_plist}"
-  # local new_ks_version
-  # if ! new_ks_version="$(defaults read "${new_ks_plist}" \
-  #                                      "${KS_VERSION_KEY}")"; then
-  #   err "could not read new Keystone version"
-  #   exit 11
-  # fi
-  # 
-  # local new_ks_product
-  # if ! new_ks_product="$(defaults read "${new_app_plist}" \
-  #                                      "${KS_PRODUCT_KEY}")"; then
-  #   err "could not read new Keystone product ID"
-  #   exit 11
-  # fi
+  local new_ks_plist="${new_app_plist}"
+  local new_ks_version
+  if ! new_ks_version="$(defaults read "${new_ks_plist}" \
+                                       "${KS_VERSION_KEY}")"; then
+    err "could not read new Keystone version"
+    exit 11
+  fi
+
+  local new_ks_product
+  if ! new_ks_product="$(defaults read "${new_app_plist}" \
+                                       "${KS_PRODUCT_KEY}")"; then
+    err "could not read new Keystone product ID"
+    exit 11
+  fi
 
   if [[ ${old_app_version_build} -lt ${MIN_BUILD} ]] ||
      [[ ${new_app_version_build} -lt ${MIN_BUILD} ]]; then
@@ -212,27 +211,27 @@ make_patch_fs() {
     exit 12
   fi
 
-  # local new_ks_channel
-  # new_ks_channel="$(defaults read "${new_app_plist}" \
-  #                   "${KS_CHANNEL_KEY}" 2> /dev/null || true)"
+  local new_ks_channel
+  new_ks_channel="$(defaults read "${new_app_plist}" \
+                    "${KS_CHANNEL_KEY}" 2> /dev/null || true)"
 
-  local name_extra=
-  # if [[ "${new_ks_channel}" = "beta" ]]; then
-  #   name_extra=" Beta"
-  # elif [[ "${new_ks_channel}" = "dev" ]]; then
-  #   name_extra=" Dev"
-  # elif [[ "${new_ks_channel}" = "canary" ]]; then
-  #   name_extra=
-  # elif [[ -n "${new_ks_channel}" ]]; then
-  #   name_extra=" ${new_ks_channel}"
-  # fi
+  local name_extra
+  if [[ "${new_ks_channel}" = "beta" ]]; then
+    name_extra=" Beta"
+  elif [[ "${new_ks_channel}" = "dev" ]]; then
+    name_extra=" Dev"
+  elif [[ "${new_ks_channel}" = "canary" ]]; then
+    name_extra=
+  elif [[ -n "${new_ks_channel}" ]]; then
+    name_extra=" ${new_ks_channel}"
+  fi
 
   local old_versioned_dir="${old_app_path}/${VERSIONS_DIR}/${old_app_version}"
   local new_versioned_dir="${new_app_path}/${VERSIONS_DIR}/${new_app_version}"
 
-  if ! cp -p "${SCRIPT_DIR}/install.sh" \
-             "${patch_fs}/.install"; then
-    err "could not copy .install"
+  if ! cp -p "${SCRIPT_DIR}/keystone_install.sh" \
+             "${patch_fs}/.keystone_install"; then
+    err "could not copy .keystone_install"
     exit 13
   fi
 
@@ -251,27 +250,26 @@ make_patch_fs() {
     exit 13
   fi
 
-  # if ! echo "${new_ks_product}" > "${patch_dotpatch_dir}/ks_product" ||
-  if ! echo "${old_app_version}" > "${patch_dotpatch_dir}/old_app_version" ||
-      ! echo "${new_app_version}" > "${patch_dotpatch_dir}/new_app_version"; then
-#     ! echo "${new_app_version}" > "${patch_dotpatch_dir}/new_app_version" ||
-#     ! echo "${old_ks_version}" > "${patch_dotpatch_dir}/old_ks_version" ||
-#     ! echo "${new_ks_version}" > "${patch_dotpatch_dir}/new_ks_version"; then
+  if ! echo "${new_ks_product}" > "${patch_dotpatch_dir}/ks_product" ||
+     ! echo "${old_app_version}" > "${patch_dotpatch_dir}/old_app_version" ||
+     ! echo "${new_app_version}" > "${patch_dotpatch_dir}/new_app_version" ||
+     ! echo "${old_ks_version}" > "${patch_dotpatch_dir}/old_ks_version" ||
+     ! echo "${new_ks_version}" > "${patch_dotpatch_dir}/new_ks_version"; then
     err "could not write patch product or version information"
     exit 13
   fi
-  # local patch_ks_channel_file="${patch_dotpatch_dir}/ks_channel"
-  # if [[ -n "${new_ks_channel}" ]]; then
-  #   if ! echo "${new_ks_channel}" > "${patch_ks_channel_file}"; then
-  #     err "could not write Keystone channel information"
-  #     exit 13
-  #   fi
-  # else
-  #   if ! touch "${patch_ks_channel_file}"; then
-  #     err "could not write empty Keystone channel information"
-  #     exit 13
-  #   fi
-  # fi
+  local patch_ks_channel_file="${patch_dotpatch_dir}/ks_channel"
+  if [[ -n "${new_ks_channel}" ]]; then
+    if ! echo "${new_ks_channel}" > "${patch_ks_channel_file}"; then
+      err "could not write Keystone channel information"
+      exit 13
+    fi
+  else
+    if ! touch "${patch_ks_channel_file}"; then
+      err "could not write empty Keystone channel information"
+      exit 13
+    fi
+  fi
 
   # The only visible contents of the disk image will be a README file that
   # explains the image's purpose.

@@ -887,7 +887,6 @@
                 'installer/mac/dirpatcher.sh',
                 'installer/mac/dmgdiffer.sh',
                 'installer/mac/pkg-dmg',
-                'installer/mac/install.sh',
               ],
               'conditions': [
                 ['mac_keystone==1', {
