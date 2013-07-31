@@ -18,11 +18,6 @@
             '../ui/base/models/tree_model.h',
             '../ui/base/models/tree_node_iterator.h',
             '../ui/base/models/tree_node_model.h',
-            '../ui/base/system_monitor/system_monitor.cc',
-            '../ui/base/system_monitor/system_monitor.h',
-            '../ui/base/system_monitor/system_monitor_mac.mm',
-            '../ui/base/system_monitor/system_monitor_posix.cc',
-            '../ui/base/system_monitor/system_monitor_win.cc',
             '../ui/base/ui_base_paths.h',
             '../ui/base/ui_base_paths.cc',
             '../ui/base/ui_base_switches.h',
@@ -31,7 +26,7 @@
             'app_paths.cc',
         ],
         'conditions': [
-          ['OS!="linux" and OS!="freebsd" and OS!="openbsd"', {
+          ['toolkit_uses_gtk!=1', {
             'sources!': [
               '../ui/base/dragdrop/gtk_dnd_util.cc',
               '../ui/base/dragdrop/gtk_dnd_util.h',
@@ -52,7 +47,7 @@
   'targets': [
     {
       'target_name': 'app_base',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '4631946D-7D5F-44BD-A5A8-504C0A7033BE',
       'variables': {
         'app_base_target': 1,
@@ -87,32 +82,6 @@
       },
       'sources': [
         # Files that are not required for Win64 Native Client loader
-        '../ui/base/animation/animation.cc',
-        '../ui/base/animation/animation.h',
-        '../ui/base/animation/animation_container.cc',
-        '../ui/base/animation/animation_container.h',
-        '../ui/base/animation/animation_container_element.h',
-        '../ui/base/animation/animation_container_observer.h',
-        '../ui/base/animation/animation_delegate.h',
-        '../ui/base/animation/linear_animation.cc',
-        '../ui/base/animation/linear_animation.h',
-        '../ui/base/animation/multi_animation.cc',
-        '../ui/base/animation/multi_animation.h',
-        '../ui/base/animation/slide_animation.cc',
-        '../ui/base/animation/slide_animation.h',
-        '../ui/base/animation/throb_animation.cc',
-        '../ui/base/animation/throb_animation.h',
-        '../ui/base/animation/tween.cc',
-        '../ui/base/animation/tween.h',
-        '../ui/base/clipboard/clipboard.cc',
-        '../ui/base/clipboard/clipboard.h',
-        '../ui/base/clipboard/clipboard_linux.cc',
-        '../ui/base/clipboard/clipboard_mac.mm',
-        '../ui/base/clipboard/clipboard_util_win.cc',
-        '../ui/base/clipboard/clipboard_util_win.h',
-        '../ui/base/clipboard/clipboard_win.cc',
-        '../ui/base/clipboard/scoped_clipboard_writer.cc',
-        '../ui/base/clipboard/scoped_clipboard_writer.h',
         '../ui/base/dragdrop/drag_drop_types_gtk.cc',
         '../ui/base/dragdrop/drag_drop_types_win.cc',
         '../ui/base/dragdrop/drag_drop_types.h',
@@ -221,7 +190,7 @@
         'win/shell.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk==1', {
           'dependencies': [
             # font_gtk.cc uses fontconfig.
             # TODO(evanm): I think this is wrong; it should just use GTK.
@@ -273,7 +242,7 @@
             ['exclude', '^win/*'],
           ],
         }],
-        ['OS=="linux"', {
+        ['use_x11==1', {
           'sources!': [
             '../ui/base/keycodes/keyboard_code_conversion_mac.mm',
             '../ui/base/keycodes/keyboard_code_conversion_mac.h',
@@ -329,7 +298,7 @@
       'targets': [
         {
           'target_name': 'app_base_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '4987C6F9-B230-48E5-BF91-418EAE69AD90',
           'dependencies': [
             # app resources and ui_strings should be shared with the 32-bit

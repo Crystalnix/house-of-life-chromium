@@ -78,8 +78,12 @@ PluginThread::PluginThread()
 
   scoped_refptr<webkit::npapi::PluginLib> plugin(
       webkit::npapi::PluginLib::CreatePluginLib(plugin_path_));
-  if (plugin.get())
+  if (plugin.get()) {
     plugin->NP_Initialize();
+    // For OOP plugins the plugin dll will be unloaded during process shutdown
+    // time.
+    plugin->set_defer_unload(true);
+  }
 
   content::GetContentClient()->plugin()->PluginProcessStarted(
       plugin.get() ? plugin->plugin_info().name : string16());
@@ -140,43 +144,6 @@ void PluginThread::OnNotifyRenderersOfPendingShutdown() {
 }
 
 namespace webkit_glue {
-
-#if defined(OS_WIN)
-bool DownloadUrl(const std::string& url, HWND caller_window) {
-  PluginThread* plugin_thread = PluginThread::current();
-  if (!plugin_thread) {
-    return false;
-  }
-
-  IPC::Message* message =
-      new PluginProcessHostMsg_DownloadUrl(MSG_ROUTING_NONE, url,
-                                           ::GetCurrentProcessId(),
-                                           caller_window);
-  return plugin_thread->Send(message);
-}
-#endif
-
-bool GetPluginFinderURL(std::string* plugin_finder_url) {
-  if (!plugin_finder_url) {
-    NOTREACHED();
-    return false;
-  }
-
-  PluginThread* plugin_thread = PluginThread::current();
-  if (!plugin_thread)
-    return false;
-
-  plugin_thread->Send(
-      new PluginProcessHostMsg_GetPluginFinderUrl(plugin_finder_url));
-  // If we get an empty string back this means the plugin finder has been
-  // disabled.
-  return true;
-}
-
-bool IsDefaultPluginEnabled() {
-  return true;
-}
-
 bool FindProxyForUrl(const GURL& url, std::string* proxy_list) {
   int net_error;
   std::string proxy_result;

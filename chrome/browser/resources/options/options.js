@@ -150,9 +150,7 @@ function load() {
     OptionsPage.registerSubPage(ChangePictureOptions.getInstance(),
                                 PersonalOptions.getInstance(),
                                 [$('change-picture-button')]);
-    OptionsPage.registerOverlay(new OptionsPage('detailsInternetPage',
-                                                'detailsInternetPage',
-                                                'detailsInternetPage'),
+    OptionsPage.registerOverlay(DetailsInternetPage.getInstance(),
                                 InternetOptions.getInstance());
 
     var languageModifierKeysOverlay = new OptionsPage(
@@ -210,4 +208,8 @@ document.addEventListener('DOMContentLoaded', load);
 
 window.onpopstate = function(e) {
   options.OptionsPage.setState(e.state);
+};
+
+window.onbeforeunload = function() {
+  options.OptionsPage.willClose();
 };

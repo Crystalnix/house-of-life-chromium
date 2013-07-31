@@ -17,8 +17,8 @@
 #include "views/focus/focus_manager.h"
 #include "views/ime/input_method.h"
 #include "views/touchui/touch_factory.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/view.h"
+#include "views/widget/native_widget.h"
 
 namespace views {
 
@@ -35,7 +35,7 @@ Widget* FindWidgetForGdkWindow(GdkWindow* gdk_window) {
   NativeWidget* widget = NativeWidget::GetNativeWidgetForNativeView(gtk_widget);
 
   if (!widget) {
-    DLOG(WARNING) << "no WidgetGtk found for that GtkWidget";
+    DLOG(WARNING) << "no NativeWidgetGtk found for that GtkWidget";
     return NULL;
   }
   return widget->GetWidget();
@@ -80,7 +80,7 @@ bool DispatchX2Event(Widget* widget, XEvent* xev) {
         // If the TouchEvent is processed by |root|, then return. Otherwise let
         // it fall through so it can be used as a MouseEvent, if desired.
         TouchEvent touch(xev, from_native);
-        RootView* root = widget->GetRootView();
+        View* root = widget->GetRootView();
         if (root->OnTouchEvent(touch) != views::View::TOUCH_STATUS_UNKNOWN)
           return true;
 

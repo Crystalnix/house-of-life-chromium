@@ -38,6 +38,7 @@ class NotificationSource;
 class Profile;
 class ProfileSyncFactory;
 class SigninManager;
+class WebUI;
 
 namespace browser_sync {
 class BackendMigrator;
@@ -239,21 +240,28 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   bool WizardIsVisible() const {
     return wizard_.IsVisible();
   }
-  virtual void ShowLoginDialog();
+
   SyncSetupWizard& get_wizard() { return wizard_; }
 
+  // Shows the login screen of the Sync setup wizard.  |web_ui| is the WebUI
+  // object for a current settings tab, NULL if one doesn't exist or the calling
+  // code doesn't know.
+  virtual void ShowLoginDialog(WebUI* web_ui);
+
   // This method handles clicks on "sync error" UI, showing the appropriate
-  // dialog for the error condition (relogin / enter passphrase).
-  virtual void ShowErrorUI();
+  // dialog for the error condition (relogin / enter passphrase).  |web_ui| is
+  // the WebUI object for a current settings tab, NULL if one doesn't exist or
+  // the calling code doesn't know.
+  virtual void ShowErrorUI(WebUI* web_ui);
 
   // Shows the configure screen of the Sync setup wizard. If |sync_everything|
   // is true, shows the corresponding page in the customize screen; otherwise,
   // displays the page that gives the user the ability to select which data
-  // types to sync.
-  void ShowConfigure(bool sync_everything);
+  // types to sync.  |web_ui| is the WebUI object for a current settings tab,
+  // NULL if one doesn't exist or the calling code doesn't know.
+  void ShowConfigure(WebUI* web_ui, bool sync_everything);
 
   void PromptForExistingPassphrase();
-  void SigninForPassphraseMigration();
 
   // Pretty-printed strings for a given StatusSummary.
   static std::string BuildSyncStatusSummaryText(
@@ -396,6 +404,7 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
       syncable::AutofillMigrationDebugInfo::PropertyToSet property_to_set,
       const syncable::AutofillMigrationDebugInfo& info);
 
+  // TODO(zea): Remove these and have the dtc's call directly into the SBH.
   virtual void ActivateDataType(
       browser_sync::DataTypeController* data_type_controller,
       browser_sync::ChangeProcessor* change_processor);
@@ -462,6 +471,8 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
       const syncable::ModelTypeSet& encrypted_types);
 
   // Get the currently encrypted data types.
+  // Note: this can include types that this client is not syncing. Passwords
+  // will always be in this list.
   virtual void GetEncryptedDataTypes(
       syncable::ModelTypeSet* encrypted_types) const;
 
@@ -523,9 +534,6 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   // was required for encryption, decryption with a cached passphrase, or
   // because a new passphrase is required?
   sync_api::PassphraseRequiredReason passphrase_required_reason_;
-
-  // Is the user in a passphrase migration?
-  bool passphrase_migration_in_progress_;
 
  private:
   friend class ProfileSyncServicePasswordTest;
@@ -628,6 +636,9 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   };
   CachedPassphrase cached_passphrase_;
 
+  // TODO(lipalani): Bug 82221 unify this with the CachedPassphrase struct.
+  std::string gaia_password_;
+
   // TODO(tim): Remove this once new 'explicit passphrase' code flushes through
   // dev channel. See bug 62103.
   // To "migrate" early adopters of password sync on dev channel to the new
@@ -647,9 +658,25 @@ class ProfileSyncService : public browser_sync::SyncFrontend,
   // is reworked to allow one-shot commands like clearing server data.
   base::OneShotTimer<ProfileSyncService> clear_server_data_timer_;
 
-  // The set of encrypted types. This is updated whenever datatypes are
-  // encrypted through the OnEncryptionComplete callback of SyncFrontend.
-  syncable::ModelTypeSet encrypted_types_;
+  // We keep track of both the currently encrypted types and the types
+  // we will soon be attempting to encrypt.
+  struct EncryptedTypes {
+    // Always initialize current with syncable::PASSWORDS.
+    EncryptedTypes();
+    ~EncryptedTypes();
+
+    // The currently encrypted types. Updated by OnEncryptionComplete whenever
+    // datatypes finish encryption.
+    syncable::ModelTypeSet current;
+
+    // The most recently requested set of types to encrypt. Set by the user,
+    // and cached if the syncer was unable to encrypt new types (for example
+    // because we haven't finished initializing). Cleared when we successfully
+    // post a new encrypt task to the sync backend.
+    syncable::ModelTypeSet pending;
+  };
+
+  EncryptedTypes encrypted_types_;
 
   scoped_ptr<browser_sync::BackendMigrator> migrator_;
 

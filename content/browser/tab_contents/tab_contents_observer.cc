@@ -26,8 +26,8 @@ void TabContentsObserver::Registrar::Observe(TabContents* tab) {
 }
 
 void TabContentsObserver::NavigateToPendingEntry(
-      const GURL& url,
-      NavigationController::ReloadType reload_type) {
+    const GURL& url,
+    NavigationController::ReloadType reload_type) {
 }
 
 void TabContentsObserver::DidNavigateMainFramePostCommit(
@@ -44,10 +44,13 @@ void TabContentsObserver::DidStartProvisionalLoadForFrame(
     int64 frame_id,
     bool is_main_frame,
     const GURL& validated_url,
-    bool is_error_page) {
+    bool is_error_page,
+    RenderViewHost* render_view_host) {
 }
 
-void TabContentsObserver::ProvisionalChangeToMainFrameUrl(const GURL& url) {
+void TabContentsObserver::ProvisionalChangeToMainFrameUrl(
+    const GURL& url,
+    bool has_opener_set) {
 }
 
 void TabContentsObserver::DidCommitProvisionalLoadForFrame(
@@ -67,6 +70,9 @@ void TabContentsObserver::DocumentLoadedInFrame(int64 frame_id) {
 }
 
 void TabContentsObserver::DidFinishLoad(int64 frame_id) {
+}
+
+void TabContentsObserver::DidGetUserGesture() {
 }
 
 void TabContentsObserver::DidStartLoading() {

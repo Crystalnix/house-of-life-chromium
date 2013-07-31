@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
 #include "chrome/browser/ui/views/tab_icon_view.h"
 #include "views/controls/button/button.h"
-#include "views/controls/menu/view_menu_delegate.h"
 #include "views/window/non_client_view.h"
 
 class BrowserView;
@@ -31,7 +30,6 @@ class ImageView;
 class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
                                public NotificationObserver,
                                public views::ButtonListener,
-                               public views::ViewMenuDelegate,
                                public TabIconView::TabIconViewModel {
  public:
   // Constructs a non-client view for an BrowserFrame.
@@ -79,8 +77,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // Overridden from views::NonClientFrameView:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
-  virtual bool AlwaysUseNativeFrame() const OVERRIDE;
-  virtual bool AlwaysUseCustomFrame() const OVERRIDE;
   virtual gfx::Rect GetWindowBoundsForClientBounds(
       const gfx::Rect& client_bounds) const OVERRIDE;
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
@@ -89,9 +85,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual void EnableClose(bool enable) OVERRIDE;
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
-
-  // Overridden from views::ViewMenuDelegate:
-  virtual void RunMenu(views::View* source, const gfx::Point& pt) OVERRIDE;
 
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -198,9 +191,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // Image tag displayed on frame beneath profile_button_.
   scoped_ptr<ProfileTagView> profile_tag_;
-
-  // Multi-profile menu for profile_button_.
-  scoped_ptr<ProfileMenuModel> profile_menu_model_;
 
   // The Google services user name associated with this BrowserView's profile.
   StringPrefMember username_pref_;

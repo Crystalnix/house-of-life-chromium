@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/file_util.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "webkit/fileapi/file_system_origin_database.h"
 
 namespace fileapi {
@@ -145,21 +145,21 @@ TEST(FileSystemOriginDatabaseTest, ListOriginsTest) {
   EXPECT_TRUE(database.GetPathForOrigin(origin0, &path0));
   EXPECT_TRUE(database.ListAllOrigins(&origins));
   EXPECT_EQ(origins.size(), 1UL);
-  EXPECT_EQ(origins[0].first, origin0);
-  EXPECT_EQ(origins[0].second, path0);
+  EXPECT_EQ(origins[0].origin, origin0);
+  EXPECT_EQ(origins[0].path, path0);
   origins.clear();
   EXPECT_TRUE(database.GetPathForOrigin(origin1, &path1));
   EXPECT_TRUE(database.ListAllOrigins(&origins));
   EXPECT_EQ(origins.size(), 2UL);
-  if (origins[0].first == origin0) {
-    EXPECT_EQ(origins[0].second, path0);
-    EXPECT_EQ(origins[1].first, origin1);
-    EXPECT_EQ(origins[1].second, path1);
+  if (origins[0].origin == origin0) {
+    EXPECT_EQ(origins[0].path, path0);
+    EXPECT_EQ(origins[1].origin, origin1);
+    EXPECT_EQ(origins[1].path, path1);
   } else {
-    EXPECT_EQ(origins[0].first, origin1);
-    EXPECT_EQ(origins[0].second, path1);
-    EXPECT_EQ(origins[1].first, origin0);
-    EXPECT_EQ(origins[1].second, path0);
+    EXPECT_EQ(origins[0].origin, origin1);
+    EXPECT_EQ(origins[0].path, path1);
+    EXPECT_EQ(origins[1].origin, origin0);
+    EXPECT_EQ(origins[1].path, path0);
   }
 }
 

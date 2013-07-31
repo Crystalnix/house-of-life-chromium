@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/fullscreen_exit_bubble.h"
 
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "grit/generated_resources.h"
@@ -14,14 +15,10 @@
 #include "ui/gfx/canvas_skia.h"
 #include "views/controls/link.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
 #include "ui/base/l10n/l10n_util_win.h"
-#include "views/widget/widget_win.h"
-#elif defined(TOOLKIT_USES_GTK)
-#include "views/widget/widget_gtk.h"
 #endif
 
 // FullscreenExitView ----------------------------------------------------------
@@ -132,8 +129,7 @@ FullscreenExitBubble::FullscreenExitBubble(
       this, UTF16ToWideHack(accelerator.GetShortcutText()));
 
   // Initialize the popup.
-  popup_ = views::Widget::CreateWidget();
-  popup_->SetOpacity(static_cast<unsigned char>(0xff * kOpacity));
+  popup_ = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.transparent = true;
   params.can_activate = false;
@@ -142,6 +138,7 @@ FullscreenExitBubble::FullscreenExitBubble(
   params.bounds = GetPopupRect(false);
   popup_->Init(params);
   popup_->SetContentsView(view_);
+  popup_->SetOpacity(static_cast<unsigned char>(0xff * kOpacity));
   popup_->Show();  // This does not activate the popup.
 
   // Start the initial delay timer and begin watching the mouse.

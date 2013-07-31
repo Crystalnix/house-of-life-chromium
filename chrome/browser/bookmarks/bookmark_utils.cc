@@ -370,8 +370,7 @@ void OpenAll(gfx::NativeWindow parent,
 
   NewBrowserPageNavigator navigator_impl(profile);
   if (!navigator) {
-    Browser* browser =
-        BrowserList::FindTabbedBrowser(profile, false);
+    Browser* browser = BrowserList::FindTabbedBrowser(profile, false);
     if (!browser || !browser->GetSelectedTabContents()) {
       navigator = &navigator_impl;
     } else {
@@ -439,7 +438,7 @@ bool CanPasteFromClipboard(const BookmarkNode* node) {
 
 string16 GetNameForURL(const GURL& url) {
   if (url.is_valid()) {
-    return net::GetSuggestedFilename(url, "", "", string16());
+    return net::GetSuggestedFilename(url, "", "", "", string16());
   } else {
     return l10n_util::GetStringUTF16(IDS_APP_UNTITLED_SHORTCUT_FILE_NAME);
   }
@@ -520,7 +519,7 @@ void GetBookmarksContainingText(BookmarkModel* model,
                                 std::vector<const BookmarkNode*>* nodes) {
   std::vector<string16> words;
   QueryParser parser;
-  parser.ExtractQueryWords(base::i18n::ToLower(text), &words);
+  parser.ParseQueryWords(base::i18n::ToLower(text), &words);
   if (words.empty())
     return;
 
@@ -540,7 +539,7 @@ bool DoesBookmarkContainText(const BookmarkNode* node,
                              const std::string& languages) {
   std::vector<string16> words;
   QueryParser parser;
-  parser.ExtractQueryWords(base::i18n::ToLower(text), &words);
+  parser.ParseQueryWords(base::i18n::ToLower(text), &words);
   if (words.empty())
     return false;
 
@@ -624,8 +623,12 @@ void ToggleWhenVisible(Profile* profile) {
 }
 
 void RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar, false);
-  prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kShowBookmarkBar,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kEditBookmarksEnabled,
+                             true,
+                             PrefService::UNSYNCABLE_PREF);
 }
 
 void GetURLAndTitleToBookmark(TabContents* tab_contents,

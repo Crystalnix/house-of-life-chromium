@@ -34,6 +34,8 @@ class DataTypeManager {
     STOPPING           // Data types are being stopped.
   };
 
+  // Update NotifyDone() in data_type_manager_impl.cc if you update
+  // this.
   enum ConfigureResult {
     OK,                  // Configuration finished without error.
     ASSOCIATION_FAILED,  // An error occurred during model association.
@@ -64,7 +66,8 @@ class DataTypeManager {
       this->location.reset(new tracked_objects::Location(
           location.function_name(),
           location.file_name(),
-          location.line_number()));
+          location.line_number(),
+          location.program_counter()));
     }
 
       ~ConfigureResultWithErrorLocation();

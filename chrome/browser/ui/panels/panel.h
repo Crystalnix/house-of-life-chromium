@@ -111,6 +111,7 @@ class Panel : public BrowserWindow {
       TabContentsWrapper* tab_contents) OVERRIDE;
   virtual void ShowCreateChromeAppShortcutsDialog(
       Profile* profile, const Extension* app) OVERRIDE;
+  virtual void ToggleUseCompactNavigationBar();
   virtual void Cut() OVERRIDE;
   virtual void Copy() OVERRIDE;
   virtual void Paste() OVERRIDE;
@@ -134,6 +135,10 @@ class Panel : public BrowserWindow {
 
 #ifdef UNIT_TEST
   BrowserWindow* browser_window() { return browser_window_.get(); }
+#endif
+
+#ifndef NDEBUG
+  bool closing() const { return closing_; }
 #endif
 
  protected:
@@ -160,6 +165,13 @@ class Panel : public BrowserWindow {
 
   // The bounds when the panel is minimized.
   gfx::Rect minimized_bounds_;
+
+  // Is the panel being closed? This is used by the platform specific
+  // BrowserWindow implementation to ensure its Close() method is only invoked
+  // from Panel::Close().
+#ifndef NDEBUG
+  bool closing_;
+#endif
 
   // Is the panel minimized?
   bool minimized_;

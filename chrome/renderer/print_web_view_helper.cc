@@ -12,15 +12,19 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/print_messages.h"
+#include "chrome/common/render_messages.h"
+#include "chrome/renderer/prerender/prerender_helper.h"
 #include "content/renderer/render_view.h"
 #include "grit/generated_resources.h"
 #include "printing/metafile.h"
 #include "printing/units.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
@@ -121,8 +125,7 @@ PrintWebViewHelper::PrintWebViewHelper(RenderView* render_view)
       context_menu_preview_node_(NULL),
       user_cancelled_scripted_print_count_(0),
       notify_browser_of_print_failure_(true) {
-  is_preview_ = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnablePrintPreview);
+  is_preview_ = switches::IsPrintPreviewEnabled();
 }
 
 PrintWebViewHelper::~PrintWebViewHelper() {}
@@ -130,6 +133,12 @@ PrintWebViewHelper::~PrintWebViewHelper() {}
 // Prints |frame| which called window.print().
 void PrintWebViewHelper::PrintPage(WebKit::WebFrame* frame) {
   DCHECK(frame);
+
+  // Allow Prerendering to cancel this print request if necessary.
+  if (prerender::PrerenderHelper::IsPrerendering(render_view())) {
+    Send(new ViewHostMsg_CancelPrerenderForPrinting(routing_id()));
+    return;
+  }
 
   if (IsScriptInitiatedPrintTooFrequent(frame))
     return;
@@ -325,7 +334,6 @@ void PrintWebViewHelper::PrintPreview(WebKit::WebFrame* frame,
 }
 
 void PrintWebViewHelper::DidFinishPrinting(PrintingResult result) {
-  int cookie = print_pages_params_->params.document_cookie;
   if (result == FAIL_PRINT) {
     WebView* web_view = print_web_view_;
     if (!web_view)
@@ -335,9 +343,12 @@ void PrintWebViewHelper::DidFinishPrinting(PrintingResult result) {
         web_view->mainFrame(),
         l10n_util::GetStringUTF16(IDS_PRINT_SPOOL_FAILED_ERROR_TEXT));
 
-    if (notify_browser_of_print_failure_)
+    if (notify_browser_of_print_failure_) {
+      int cookie = print_pages_params_->params.document_cookie;
       Send(new PrintHostMsg_PrintingFailed(routing_id(), cookie));
+    }
   } else if (result == FAIL_PREVIEW) {
+    int cookie = print_pages_params_->params.document_cookie;
     Send(new PrintHostMsg_PrintPreviewFailed(routing_id(), cookie));
   }
 
@@ -494,6 +505,16 @@ void PrintWebViewHelper::GetPageSizeAndMarginsInPoints(
   if (margin_left_in_points)
     *margin_left_in_points =
         ConvertPixelsToPointDouble(margin_left_in_pixels);
+}
+
+bool PrintWebViewHelper::IsModifiable(WebKit::WebFrame* frame,
+                                      WebKit::WebNode* node) {
+  if (node)
+    return false;
+  std::string mime(frame->dataSource()->response().mimeType().utf8());
+  if (mime == "application/pdf")
+    return false;
+  return true;
 }
 
 void PrintWebViewHelper::UpdatePrintableSizeInPrintParameters(

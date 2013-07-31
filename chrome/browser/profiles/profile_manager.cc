@@ -32,55 +32,27 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_job.h"
-#include "net/url_request/url_request_job_tracker.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/cryptohome_library.h"
 #endif
 
-namespace {
-
-void SuspendURLRequestJobs() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  for (net::URLRequestJobTracker::JobIterator i =
-           net::g_url_request_job_tracker.begin();
-       i != net::g_url_request_job_tracker.end(); ++i)
-    (*i)->Kill();
+bool ProfileManagerObserver::DeleteAfterCreation() {
+    return false;
 }
-
-void SuspendRequestContext(
-    net::URLRequestContextGetter* request_context_getter) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  scoped_refptr<net::URLRequestContext> request_context =
-      request_context_getter->GetURLRequestContext();
-
-  request_context->http_transaction_factory()->Suspend(true);
-}
-
-void ResumeRequestContext(
-    net::URLRequestContextGetter* request_context_getter) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  scoped_refptr<net::URLRequestContext> request_context =
-      request_context_getter->GetURLRequestContext();
-  request_context->http_transaction_factory()->Suspend(false);
-}
-
-}  // namespace
 
 // The NewProfileLauncher class is created when to wait for a multi-profile
 // to be created asynchronously. Upon completion of profile creation, the
 // NPL takes care of launching a new browser window and signing the user
 // in to their Google account.
-class NewProfileLauncher : public ProfileManager::Observer {
+class NewProfileLauncher : public ProfileManagerObserver {
  public:
   virtual void OnProfileCreated(Profile* profile) {
     Browser::NewWindowWithProfile(profile);
     ProfileSyncService* service = profile->GetProfileSyncService();
     DCHECK(service);
-    service->ShowLoginDialog();
+    service->ShowLoginDialog(NULL);
     ProfileSyncService::SyncEvent(ProfileSyncService::START_FROM_PROFILE_MENU);
   }
 
@@ -106,7 +78,6 @@ Profile* ProfileManager::GetDefaultProfile() {
 }
 
 ProfileManager::ProfileManager() : logged_in_(false) {
-  ui::SystemMonitor::Get()->AddObserver(this);
   BrowserList::AddObserver(this);
 #if defined(OS_CHROMEOS)
   registrar_.Add(
@@ -117,9 +88,6 @@ ProfileManager::ProfileManager() : logged_in_(false) {
 }
 
 ProfileManager::~ProfileManager() {
-  ui::SystemMonitor* system_monitor = ui::SystemMonitor::Get();
-  if (system_monitor)
-    system_monitor->RemoveObserver(this);
   BrowserList::RemoveObserver(this);
 }
 
@@ -275,7 +243,7 @@ Profile* ProfileManager::GetProfile(const FilePath& profile_dir) {
 }
 
 void ProfileManager::CreateProfileAsync(const FilePath& user_data_dir,
-                                        Observer* observer) {
+                                        ProfileManagerObserver* observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ProfilesInfoMap::iterator iter = profiles_info_.find(user_data_dir);
   if (iter != profiles_info_.end()) {
@@ -297,7 +265,8 @@ void ProfileManager::CreateProfileAsync(const FilePath& user_data_dir,
 }
 
 // static
-void ProfileManager::CreateDefaultProfileAsync(Observer* observer) {
+void ProfileManager::CreateDefaultProfileAsync(
+    ProfileManagerObserver* observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ProfileManager* profile_manager = g_browser_process->profile_manager();
 
@@ -339,49 +308,6 @@ ProfileManager::ProfileInfo* ProfileManager::RegisterProfile(Profile* profile,
 Profile* ProfileManager::GetProfileByPath(const FilePath& path) const {
   ProfilesInfoMap::const_iterator iter = profiles_info_.find(path);
   return (iter == profiles_info_.end()) ? NULL : iter->second->profile.get();
-}
-
-void ProfileManager::OnSuspend() {
-  DCHECK(CalledOnValidThread());
-
-  bool posted = BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(&SuspendURLRequestJobs));
-  DCHECK(posted);
-
-  scoped_refptr<net::URLRequestContextGetter> request_context;
-  std::vector<Profile*> profiles(GetLoadedProfiles());
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    request_context = profiles[i]->GetRequestContext();
-    posted = BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&SuspendRequestContext, request_context));
-    DCHECK(posted);
-    request_context = profiles[i]->GetRequestContextForMedia();
-    posted = BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&SuspendRequestContext, request_context));
-    DCHECK(posted);
-  }
-}
-
-void ProfileManager::OnResume() {
-  DCHECK(CalledOnValidThread());
-
-  scoped_refptr<net::URLRequestContextGetter> request_context;
-  std::vector<Profile*> profiles(GetLoadedProfiles());
-  for (size_t i = 0; i < profiles.size(); ++i) {
-    request_context = profiles[i]->GetRequestContext();
-    bool posted = BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&ResumeRequestContext, request_context));
-    DCHECK(posted);
-    request_context = profiles[i]->GetRequestContextForMedia();
-    posted = BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&ResumeRequestContext, request_context));
-    DCHECK(posted);
-  }
 }
 
 void ProfileManager::Observe(
@@ -441,7 +367,7 @@ void ProfileManager::OnProfileCreated(Profile* profile, bool success) {
   DCHECK(iter != profiles_info_.end());
   ProfileInfo* info = iter->second.get();
 
-  std::vector<Observer*> observers;
+  std::vector<ProfileManagerObserver*> observers;
   info->observers.swap(observers);
 
   if (success) {
@@ -460,7 +386,7 @@ void ProfileManager::OnProfileCreated(Profile* profile, bool success) {
     profiles_info_.erase(iter);
   }
 
-  std::vector<Observer*> observers_to_delete;
+  std::vector<ProfileManagerObserver*> observers_to_delete;
 
   for (size_t i = 0; i < observers.size(); ++i) {
     observers[i]->OnProfileCreated(profile);

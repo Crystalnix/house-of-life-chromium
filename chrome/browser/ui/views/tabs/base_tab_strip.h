@@ -133,6 +133,7 @@ class BaseTabStrip : public AbstractTabStripView,
   virtual bool EndDrag(bool canceled) OVERRIDE;
   virtual BaseTab* GetTabAt(BaseTab* tab,
                             const gfx::Point& tab_in_tab_coordinates) OVERRIDE;
+  virtual void ClickActiveTab(const BaseTab* tab) const OVERRIDE;
 
   // View overrides:
   virtual void Layout() OVERRIDE;
@@ -145,6 +146,7 @@ class BaseTabStrip : public AbstractTabStripView,
   };
 
   // View overrides.
+  virtual const views::View* GetViewByID(int id) const OVERRIDE;
   virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseCaptureLost() OVERRIDE;
@@ -198,15 +200,6 @@ class BaseTabStrip : public AbstractTabStripView,
   void set_ideal_bounds(int index, const gfx::Rect& bounds) {
     tab_data_[index].ideal_bounds = bounds;
   }
-
-  // Identifies whether we should ignore title prefix eliding or not
-  // for the specified tab. This allows derived class like the one
-  // for side tabs to make a different choice (e.g., for mini tabs).
-  virtual bool IgnoreTitlePrefixEliding(BaseTab* tab);
-
-  // Update the lengths of common title prefixes for all tabs. This needs
-  // to be done every time tabs are added/removed or when titles change.
-  virtual void UpdateCommonTitlePrefix();
 
   // Returns the index into |tab_data_| corresponding to the specified tab, or
   // -1 if the tab isn't in |tab_data_|.

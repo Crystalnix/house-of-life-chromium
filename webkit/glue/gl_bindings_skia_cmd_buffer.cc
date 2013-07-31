@@ -5,7 +5,9 @@
 
 #include "webkit/glue/gl_bindings_skia_cmd_buffer.h"
 
+#ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES
+#endif
 #include "gpu/GLES2/gl2.h"
 #include "gpu/GLES2/gl2ext.h"
 
@@ -123,6 +125,7 @@ void BindSkiaToCommandBufferGL() {
     NULL,  // glResolveMultisampleFramebuffer
     NULL,  // glMapBuffer
     NULL,  // glUnmapBuffer
+    NULL,  // glBindFragDataLocationIndexed
 
     GrGLInterface::kStaticInitEndGuard
   };

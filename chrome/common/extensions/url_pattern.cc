@@ -215,7 +215,7 @@ void URLPattern::SetPath(const std::string& path) {
   ReplaceSubstringsAfterOffset(&path_escaped_, 0, "?", "\\?");
 }
 
-bool URLPattern::MatchesUrl(const GURL &test) const {
+bool URLPattern::MatchesURL(const GURL &test) const {
   if (!MatchesScheme(test.scheme()))
     return false;
 
@@ -311,14 +311,16 @@ std::string URLPattern::GetAsString() const {
 }
 
 bool URLPattern::OverlapsWith(const URLPattern& other) const {
-  if (!MatchesScheme(other.scheme_) && !other.MatchesScheme(scheme_))
+  if (!MatchesAnyScheme(other.GetExplicitSchemes()) &&
+      !other.MatchesAnyScheme(GetExplicitSchemes())) {
     return false;
+  }
 
   if (!MatchesHost(other.host()) && !other.MatchesHost(host_))
     return false;
 
   // We currently only use OverlapsWith() for the patterns inside
-  // ExtensionExtent. In those cases, we know that the path will have only a
+  // URLPatternSet. In those cases, we know that the path will have only a
   // single wildcard at the end. This makes figuring out overlap much easier. It
   // seems like there is probably a computer-sciency way to solve the general
   // case, but we don't need that yet.
@@ -332,21 +334,44 @@ bool URLPattern::OverlapsWith(const URLPattern& other) const {
   return true;
 }
 
-std::vector<URLPattern> URLPattern::ConvertToExplicitSchemes() const {
-  std::vector<URLPattern> result;
+bool URLPattern::MatchesAnyScheme(
+    const std::vector<std::string>& schemes) const {
+  for (std::vector<std::string>::const_iterator i = schemes.begin();
+       i != schemes.end(); ++i) {
+    if (MatchesScheme(*i))
+      return true;
+  }
+
+  return false;
+}
+
+std::vector<std::string> URLPattern::GetExplicitSchemes() const {
+  std::vector<std::string> result;
 
   if (scheme_ != "*" && !match_all_urls_ && IsValidScheme(scheme_)) {
-    result.push_back(*this);
+    result.push_back(scheme_);
     return result;
   }
 
   for (size_t i = 0; i < arraysize(kValidSchemes); ++i) {
     if (MatchesScheme(kValidSchemes[i])) {
-      URLPattern temp = *this;
-      temp.SetScheme(kValidSchemes[i]);
-      temp.set_match_all_urls(false);
-      result.push_back(temp);
+      result.push_back(kValidSchemes[i]);
     }
+  }
+
+  return result;
+}
+
+std::vector<URLPattern> URLPattern::ConvertToExplicitSchemes() const {
+  std::vector<std::string> explicit_schemes = GetExplicitSchemes();
+  std::vector<URLPattern> result;
+
+  for (std::vector<std::string>::const_iterator i = explicit_schemes.begin();
+       i != explicit_schemes.end(); ++i) {
+    URLPattern temp = *this;
+    temp.SetScheme(*i);
+    temp.set_match_all_urls(false);
+    result.push_back(temp);
   }
 
   return result;

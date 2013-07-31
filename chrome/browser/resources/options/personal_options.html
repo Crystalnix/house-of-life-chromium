@@ -86,7 +86,7 @@
     <div>
       <div class="checkbox">
         <label>
-          <input id="autofillEnabled" pref="autofill.enabled"
+          <input id="autofill-enabled" pref="autofill.enabled"
               metric="Options_FormAutofill" type="checkbox">
           <span i18n-content="autofillEnabled"></span>
         </label>
@@ -103,7 +103,7 @@
     </div>
   </section>
 </if>
-<if expr="not pp_ifdef('toolkit_views') and (os == 'linux2' or os.find('bsd') != -1)">
+<if expr="not pp_ifdef('toolkit_views') and (os == 'linux2' or os.find('bsd') != -1 or os == 'sunos5')">
   <section>
     <h3 i18n-content="appearance"></h3>
     <div>

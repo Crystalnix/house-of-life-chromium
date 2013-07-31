@@ -12,11 +12,13 @@ const char kMethodKey[] = "method";
 const char kRedirectUrlKey[] = "redirectUrl";
 const char kRequestIdKey[] = "requestId";
 const char kStatusCodeKey[] = "statusCode";
+const char kStatusLineKey[] = "statusLine";
 const char kTabIdKey[] = "tabId";
 const char kTimeStampKey[] = "timeStamp";
 const char kTypeKey[] = "type";
 const char kUrlKey[] = "url";
 const char kRequestHeadersKey[] = "requestHeaders";
+const char kResponseHeadersKey[] = "responseHeaders";
 const char kHeaderNameKey[] = "name";
 const char kHeaderValueKey[] = "value";
 

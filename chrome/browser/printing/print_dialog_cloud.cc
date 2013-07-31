@@ -29,6 +29,7 @@
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
+#include "content/common/view_messages.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/glue/webpreferences.h"
 
@@ -269,7 +270,8 @@ void CloudPrintFlowHandler::RegisterMessages() {
     if (rvh && rvh->delegate()) {
       WebPreferences webkit_prefs = rvh->delegate()->GetWebkitPrefs();
       webkit_prefs.allow_scripts_to_close_windows = true;
-      rvh->UpdateWebPreferences(webkit_prefs);
+      rvh->Send(new ViewMsg_UpdateWebPreferences(
+          rvh->routing_id(), webkit_prefs));
     }
 
     // Register for appropriate notifications, and re-direct the URL
@@ -533,11 +535,13 @@ void CreateDialogImpl(const FilePath& path_to_file,
   DCHECK(pref_service);
   if (!pref_service->FindPreference(prefs::kCloudPrintDialogWidth)) {
     pref_service->RegisterIntegerPref(prefs::kCloudPrintDialogWidth,
-                                      kDefaultWidth);
+                                      kDefaultWidth,
+                                      PrefService::UNSYNCABLE_PREF);
   }
   if (!pref_service->FindPreference(prefs::kCloudPrintDialogHeight)) {
     pref_service->RegisterIntegerPref(prefs::kCloudPrintDialogHeight,
-                                      kDefaultHeight);
+                                      kDefaultHeight,
+                                      PrefService::UNSYNCABLE_PREF);
   }
 
   int width = pref_service->GetInteger(prefs::kCloudPrintDialogWidth);

@@ -17,7 +17,7 @@
 #include "ui/gfx/surface/transport_dib.h"
 
 class Profile;
-struct ViewMsg_ClosePage_Params;
+struct ViewMsg_SwapOut_Params;
 
 namespace base {
 class SharedMemory;
@@ -88,6 +88,9 @@ class RenderProcessHost : public IPC::Channel::Sender,
     sudden_termination_allowed_ = enabled;
   }
 
+  bool is_extension_process() const { return is_extension_process_; }
+  void mark_is_extension_process() { is_extension_process_ = true; }
+
   // Used for refcounting, each holder of this object must Attach and Release
   // just like it would for a COM object. This object should be allocated on
   // the heap; when no listeners own it any more, it will delete itself.
@@ -100,6 +103,12 @@ class RenderProcessHost : public IPC::Channel::Sender,
   // they're waiting for a "Close_ACK", so that if the renderer process
   // goes away we'll know that it was intentional rather than a crash.
   void ReportExpectingClose(int32 listener_id);
+
+  // Track the count of pending views that are being swapped back in.  Called
+  // by listeners to register and unregister pending views to prevent the
+  // process from exiting.
+  void AddPendingView();
+  void RemovePendingView();
 
   // Allows iteration over this RenderProcessHost's RenderViewHost listeners.
   // Use from UI thread only.
@@ -157,8 +166,7 @@ class RenderProcessHost : public IPC::Channel::Sender,
   // be called once before the object can be used, but can be called after
   // that with no effect. Therefore, if the caller isn't sure about whether
   // the process has been created, it should just call Init().
-  virtual bool Init(
-      bool is_accessibility_enabled, bool is_extensions_process) = 0;
+  virtual bool Init(bool is_accessibility_enabled) = 0;
 
   // Gets the next available routing id.
   virtual int GetNextRoutingID() = 0;
@@ -167,12 +175,12 @@ class RenderProcessHost : public IPC::Channel::Sender,
   // the specified render widget.
   virtual void CancelResourceRequests(int render_widget_id) = 0;
 
-  // Called on the UI thread to simulate a ClosePage_ACK message to the
+  // Called on the UI thread to simulate a SwapOut_ACK message to the
   // ResourceDispatcherHost.  Necessary for a cross-site request, in the case
   // that the original RenderViewHost is not live and thus cannot run an
-  // onunload handler.
-  virtual void CrossSiteClosePageACK(
-      const ViewMsg_ClosePage_Params& params) = 0;
+  // unload handler.
+  virtual void CrossSiteSwapOutACK(
+      const ViewMsg_SwapOut_Params& params) = 0;
 
   // Called on the UI thread to wait for the next UpdateRect message for the
   // specified render widget.  Returns true if successful, and the msg out-
@@ -275,6 +283,15 @@ class RenderProcessHost : public IPC::Channel::Sender,
 
   // True if we've posted a DeleteTask and will be deleted soon.
   bool deleting_soon_;
+
+  // True iff this process is being used as an extension process. Not valid
+  // when running in single-process mode.
+  bool is_extension_process_;
+
+  // The count of currently swapped out but pending RenderViews.  We have
+  // started to swap these in, so the renderer process should not exit if
+  // this count is non-zero.
+  int32 pending_views_;
 
  private:
   // The globally-unique identifier for this RPH.

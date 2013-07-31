@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/process_util.h"
+#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 
 namespace chromeos {
@@ -47,18 +48,22 @@ const char* kKeepRightAltOverlays[] = {
   "et",
   "es",
   "en_US_altgr_intl",
+  "de_neo",
   "nl",
   "no",
   "tr",
   "lt",
   "pt_PT",
+  "en_GB_dvorak",
   "fr",
   "bg",
   "pt_BR",
+  "en_fr_hybrid_CA",
   "hr",
   "da",
   "fi",
   "fr_CA",
+  "ko",
   "sv",
   "sk",
   "de",
@@ -206,6 +211,11 @@ class XKeyboard {
   // setxkbmap command if needed, and updates the last_full_layout_name_ cache.
   bool SetLayoutInternal(const std::string& layout_name,
                          const ModifierMap& modifier_map) {
+    if (!CrosLibrary::Get()->EnsureLoaded()) {
+      // We should not try to change a layout inside ui_tests.
+      return false;
+    }
+
     const std::string layouts_to_set = CreateFullXkbLayoutName(
         layout_name, modifier_map);
     if (layouts_to_set.empty()) {

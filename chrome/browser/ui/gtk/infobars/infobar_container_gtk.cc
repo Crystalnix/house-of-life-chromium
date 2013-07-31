@@ -16,7 +16,7 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/infobars/infobar_gtk.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_source.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -39,7 +39,7 @@ void AnimateClosingForDelegate(GtkWidget* infobar_widget,
   }
 
   if (delegate == infobar->delegate())
-    infobar->AnimateClose();
+    infobar->Hide(true);
 }
 
 // If |infobar_widget| matches |info_bar_delegate|, then close the infobar w/o
@@ -56,7 +56,7 @@ void ClosingForDelegate(GtkWidget* infobar_widget, gpointer info_bar_delegate) {
   }
 
   if (delegate == infobar->delegate())
-    infobar->Close();
+    infobar->Hide(false);
 }
 
 // Get the height of the widget and add it to |userdata|, but only if it is in
@@ -86,7 +86,7 @@ InfoBarContainerGtk::~InfoBarContainerGtk() {
   container_.Destroy();
 }
 
-void InfoBarContainerGtk::ChangeTabContents(TabContents* contents) {
+void InfoBarContainerGtk::ChangeTabContents(TabContentsWrapper* contents) {
   if (tab_contents_)
     registrar_.RemoveAll();
 
@@ -96,7 +96,7 @@ void InfoBarContainerGtk::ChangeTabContents(TabContents* contents) {
   tab_contents_ = contents;
   if (tab_contents_) {
     UpdateInfoBars();
-    Source<TabContents> source(tab_contents_);
+    Source<TabContents> source(tab_contents_->tab_contents());
     registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_ADDED, source);
     registrar_.Add(this, NotificationType::TAB_CONTENTS_INFOBAR_REMOVED,
                    source);

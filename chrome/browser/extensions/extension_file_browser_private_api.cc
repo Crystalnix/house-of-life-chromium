@@ -12,6 +12,7 @@
 #include "base/stringprintf.h"
 #include "base/string_util.h"
 #include "base/task.h"
+#include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/extensions/extension_event_router.h"
@@ -19,13 +20,15 @@
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tabs_module.h"
-#include "chrome/browser/platform_util.h"
+#include "chrome/browser/extensions/file_manager_util.h"
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/views/html_dialog_view.h"
 #include "chrome/browser/ui/webui/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/file_browser_handler.h"
+#include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/renderer_host/render_process_host.h"
@@ -48,6 +51,9 @@
 const char kFileError[] = "File error %d";
 const char kInvalidFileUrl[] = "Invalid file URL";
 
+// Internal task ids.
+const char kEnqueueTaskId[] = "enqueue";
+
 const int kReadOnlyFilePermissions = base::PLATFORM_FILE_OPEN |
                                      base::PLATFORM_FILE_READ |
                                      base::PLATFORM_FILE_EXCLUSIVE_READ |
@@ -57,19 +63,40 @@ const int kReadWriteFilePermissions = base::PLATFORM_FILE_OPEN |
                                       base::PLATFORM_FILE_CREATE |
                                       base::PLATFORM_FILE_OPEN_ALWAYS |
                                       base::PLATFORM_FILE_CREATE_ALWAYS |
+                                      base::PLATFORM_FILE_OPEN_TRUNCATED |
                                       base::PLATFORM_FILE_READ |
                                       base::PLATFORM_FILE_WRITE |
                                       base::PLATFORM_FILE_EXCLUSIVE_READ |
                                       base::PLATFORM_FILE_EXCLUSIVE_WRITE |
                                       base::PLATFORM_FILE_ASYNC |
-                                      base::PLATFORM_FILE_TRUNCATE |
                                       base::PLATFORM_FILE_WRITE_ATTRIBUTES;
 
-typedef std::vector<
-    std::pair<std::string, const FileBrowserHandler* > >
-        NamedHandlerList;
+typedef std::pair<int, const FileBrowserHandler* > LastUsedHandler;
+typedef std::vector<LastUsedHandler> LastUsedHandlerList;
 
 typedef std::vector<const FileBrowserHandler*> ActionList;
+
+
+// Breaks down task_id that is used between getFileTasks() and executeTask() on
+// its building blocks. task_id field the following structure:
+//     <extension-id>|<task-action-id>
+// Currently, the only supported task-type is of 'context'.
+bool CrackTaskIdentifier(const std::string& task_id,
+                         std::string* target_extension_id,
+                         std::string* action_id) {
+  std::vector<std::string> result;
+  int count = Tokenize(task_id, std::string("|"), &result);
+  if (count != 2)
+    return false;
+  *target_extension_id = result[0];
+  *action_id = result[1];
+  return true;
+}
+
+std::string MakeTaskID(const char* extension_id,
+                       const char*  action_id) {
+  return base::StringPrintf("%s|%s", extension_id, action_id);
+}
 
 bool GetFileBrowserHandlers(Profile* profile,
                            const GURL& selected_file_url,
@@ -99,11 +126,22 @@ bool GetFileBrowserHandlers(Profile* profile,
   return true;
 }
 
+bool SortByLastUsedTimestampDesc(const LastUsedHandler& a,
+                                 const LastUsedHandler& b) {
+  return a.first > b.first;
+}
+
+// TODO(zelidrag): Wire this with ICU to make this sort I18N happy.
+bool SortByTaskName(const LastUsedHandler& a, const LastUsedHandler& b) {
+  return base::strcasecmp(a.second->title().data(),
+                          b.second->title().data()) > 0;
+}
+
 // Given the list of selected files, returns array of context menu tasks
 // that are shared
 bool FindCommonTasks(Profile* profile,
                      ListValue* files_list,
-                     NamedHandlerList* named_action_list) {
+                     LastUsedHandlerList* named_action_list) {
   named_action_list->clear();
   ActionList common_tasks;
   for (size_t i = 0; i < files_list->GetSize(); ++i) {
@@ -145,38 +183,40 @@ bool FindCommonTasks(Profile* profile,
     }
   }
 
-  // At the end, sort the results by task title.
-  // TODO(zelidrag): Wire this with ICU to make this sort I18N happy.
+  const DictionaryValue* prefs_tasks =
+      profile->GetPrefs()->GetDictionary(prefs::kLastUsedFileBrowserHandlers);
   for (ActionList::const_iterator iter = common_tasks.begin();
        iter != common_tasks.end(); ++iter) {
-    named_action_list->push_back(
-        std::pair<std::string, const FileBrowserHandler* >(
-            (*iter)->title(), *iter));
+    // Get timestamp of when this task was used last time.
+    int last_used_timestamp = 0;
+    prefs_tasks->GetInteger(MakeTaskID((*iter)->extension_id().data(),
+                                       (*iter)->id().data()),
+                             &last_used_timestamp);
+    named_action_list->push_back(LastUsedHandler(last_used_timestamp, *iter));
   }
-  std::sort(named_action_list->begin(), named_action_list->end());
+  // Sort by the last used descending.
+  std::sort(named_action_list->begin(), named_action_list->end(),
+            SortByLastUsedTimestampDesc);
+  if (named_action_list->size() > 1) {
+    // Sort the rest by name.
+    std::sort(named_action_list->begin() + 1, named_action_list->end(),
+              SortByTaskName);
+  }
   return true;
 }
 
-// Breaks down task_id that is used between getFileTasks() and executeTask() on
-// its building blocks. task_id field the following structure:
-//     <task-type>:<extension-id>/<task-action-id>
-// Currently, the only supported task-type is of 'context'.
-bool CrackTaskIdentifier(const std::string& task_id,
-                         std::string* target_extension_id,
-                         std::string* action_id) {
-  std::vector<std::string> result;
-  int count = Tokenize(task_id, std::string("|"), &result);
-  if (count != 2)
-    return false;
-  *target_extension_id = result[0];
-  *action_id = result[1];
-  return true;
+// Update file handler usage stats.
+void UpdateFileHandlerUsageStats(Profile* profile, const std::string& task_id) {
+  if (!profile || !profile->GetPrefs())
+    return;
+  DictionaryPrefUpdate prefs_usage_update(profile->GetPrefs(),
+      prefs::kLastUsedFileBrowserHandlers);
+  prefs_usage_update->SetWithoutPathExpansion(task_id,
+      new FundamentalValue(
+          static_cast<int>(base::Time::Now().ToInternalValue()/
+                           base::Time::kMicrosecondsPerSecond)));
 }
 
-std::string MakeTaskID(const char* extension_id,
-                       const char*  action_id) {
-  return base::StringPrintf("%s|%s", extension_id, action_id);
-}
 
 class LocalFileSystemCallbackDispatcher
     : public fileapi::FileSystemCallbackDispatcher {
@@ -195,10 +235,6 @@ class LocalFileSystemCallbackDispatcher
 
   // fileapi::FileSystemCallbackDispatcher overrides.
   virtual void DidSucceed() OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidGetLocalPath(const FilePath& local_path) {
     NOTREACHED();
   }
 
@@ -311,8 +347,7 @@ void RequestLocalFileSystemFunction::RequestOnFileThread(
 }
 
 bool RequestLocalFileSystemFunction::RunImpl() {
-  if (!dispatcher() || !dispatcher()->render_view_host() ||
-      !dispatcher()->render_view_host()->process())
+  if (!dispatcher() || !render_view_host() || !render_view_host()->process())
     return false;
 
   BrowserThread::PostTask(
@@ -320,7 +355,7 @@ bool RequestLocalFileSystemFunction::RunImpl() {
       NewRunnableMethod(this,
           &RequestLocalFileSystemFunction::RequestOnFileThread,
           source_url_,
-          dispatcher()->render_view_host()->process()->id()));
+          render_view_host()->process()->id()));
   // Will finish asynchronously.
   return true;
 }
@@ -351,12 +386,12 @@ bool GetFileTasksFileBrowserFunction::RunImpl() {
   ListValue* result_list = new ListValue();
   result_.reset(result_list);
 
-  NamedHandlerList common_tasks;
+  LastUsedHandlerList common_tasks;
   if (!FindCommonTasks(profile_, files_list, &common_tasks))
     return false;
 
   ExtensionService* service = profile_->GetExtensionService();
-  for (NamedHandlerList::iterator iter = common_tasks.begin();
+  for (LastUsedHandlerList::const_iterator iter = common_tasks.begin();
        iter != common_tasks.end();
        ++iter) {
     const std::string extension_id = iter->second->extension_id();
@@ -405,10 +440,6 @@ class ExecuteTasksFileSystemCallbackDispatcher
 
   // fileapi::FileSystemCallbackDispatcher overrides.
   virtual void DidSucceed() OVERRIDE {
-    NOTREACHED();
-  }
-
-  virtual void DidGetLocalPath(const FilePath& local_path) {
     NOTREACHED();
   }
 
@@ -572,7 +603,8 @@ class ExecuteTasksFileSystemCallbackDispatcher
     GURL base_url = fileapi::GetFileSystemRootURI(target_origin_url,
         fileapi::kFileSystemTypeExternal);
     *target_file_url = GURL(base_url.spec() + virtual_path.value());
-    *file_path = virtual_path;
+    FilePath root(FILE_PATH_LITERAL("/"));
+    *file_path = root.Append(virtual_path);
     *is_directory = file_info.is_directory;
     return true;
   }
@@ -637,7 +669,7 @@ void ExecuteTasksFileBrowserFunction::RequestFileEntryOnFileThread(
           new ExecuteTasksFileSystemCallbackDispatcher(
               this,
               profile(),
-              dispatcher()->render_view_host()->process()->id(),
+              render_view_host()->process()->id(),
               source_url,
               GetExtension(),
               task_id,
@@ -713,6 +745,8 @@ void ExecuteTasksFileBrowserFunction::ExecuteFileActionsOnUIThread(
       details->SetInteger("tab_id", ExtensionTabUtil::GetTabId(contents));
   }
 
+  UpdateFileHandlerUsageStats(profile_, task_id);
+
   std::string json_args;
   base::JSONWriter::Write(event_args.get(), false, &json_args);
   event_router->DispatchEventToExtension(
@@ -730,7 +764,7 @@ FileDialogFunction::~FileDialogFunction() {
 
 // static
 FileDialogFunction::Callback
-FileDialogFunction::Callback::null_(NULL, NULL, NULL);
+FileDialogFunction::Callback::null_(NULL, NULL);
 
 // static
 FileDialogFunction::Callback::Map FileDialogFunction::Callback::map_;
@@ -738,10 +772,9 @@ FileDialogFunction::Callback::Map FileDialogFunction::Callback::map_;
 // static
 void FileDialogFunction::Callback::Add(int32 tab_id,
                                      SelectFileDialog::Listener* listener,
-                                     HtmlDialogView* dialog,
                                      void* params) {
   if (map_.find(tab_id) == map_.end()) {
-    map_.insert(std::make_pair(tab_id, Callback(listener, dialog, params)));
+    map_.insert(std::make_pair(tab_id, Callback(listener, params)));
   } else {
     DLOG_ASSERT("FileDialogFunction::AddCallback tab_id already present");
   }
@@ -761,30 +794,29 @@ FileDialogFunction::Callback::Find(int32 tab_id) {
 
 
 int32 FileDialogFunction::GetTabId() const {
-  return dispatcher()->delegate()->associated_tab_contents()->
-    controller().session_id().id();
+  int32 tab_id = 0;
+  // TODO(jamescook):  This is going to fail when we switch to tab-modal
+  // dialogs.  Figure out a way to find which SelectFileDialog::Listener
+  // to call from inside these extension FileDialogFunctions.
+  Browser* browser = const_cast<FileDialogFunction*>(this)->GetCurrentBrowser();
+  if (browser) {
+    TabContents* contents = browser->GetSelectedTabContents();
+    if (contents)
+      tab_id = ExtensionTabUtil::GetTabId(contents);
+  }
+  return tab_id;
 }
 
 const FileDialogFunction::Callback& FileDialogFunction::GetCallback() const {
-  if (!dispatcher() || !dispatcher()->delegate() ||
-      !dispatcher()->delegate()->associated_tab_contents()) {
-    return Callback::null();
-  }
   return Callback::Find(GetTabId());
-}
-
-void FileDialogFunction::CloseDialog(HtmlDialogView* dialog) {
-  DCHECK(dialog);
-  TabContents* contents = dispatcher()->delegate()->associated_tab_contents();
-  if (contents)
-    dialog->CloseContents(contents);
 }
 
 // GetFileSystemRootPathOnFileThread can only be called from the file thread,
 // so here we are. This function takes a vector of virtual paths, converts
 // them to local paths and calls GetLocalPathsResponseOnUIThread with the
 // result vector, on the UI thread.
-void FileDialogFunction::GetLocalPathsOnFileThread(const UrlList& file_urls) {
+void FileDialogFunction::GetLocalPathsOnFileThread(const UrlList& file_urls,
+                                                   const std::string& task_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   FilePathList selected_files;
 
@@ -828,7 +860,7 @@ void FileDialogFunction::GetLocalPathsOnFileThread(const UrlList& file_urls) {
         BrowserThread::UI, FROM_HERE,
         NewRunnableMethod(this,
             &FileDialogFunction::GetLocalPathsResponseOnUIThread,
-            selected_files));
+            selected_files, task_id));
   }
 }
 
@@ -845,13 +877,13 @@ bool SelectFileFunction::RunImpl() {
       BrowserThread::FILE, FROM_HERE,
       NewRunnableMethod(this,
           &SelectFileFunction::GetLocalPathsOnFileThread,
-          file_paths));
+          file_paths, std::string()));
 
   return true;
 }
 
 void SelectFileFunction::GetLocalPathsResponseOnUIThread(
-    const FilePathList& files) {
+    const FilePathList& files, const std::string& task_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (files.size() != 1) {
     SendResponse(false);
@@ -862,9 +894,6 @@ void SelectFileFunction::GetLocalPathsResponseOnUIThread(
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
     callback.listener()->FileSelected(files[0],
                                       index,
                                       callback.params());
@@ -880,13 +909,16 @@ ViewFilesFunction::~ViewFilesFunction() {
 }
 
 bool ViewFilesFunction::RunImpl() {
-  if (args_->GetSize() != 1) {
+  if (args_->GetSize() < 1) {
     return false;
   }
 
   ListValue* path_list = NULL;
   args_->GetList(0, &path_list);
   DCHECK(path_list);
+
+  std::string internal_task_id;
+  args_->GetString(1, &internal_task_id);
 
   std::string virtual_path;
   size_t len = path_list->GetSize();
@@ -901,19 +933,20 @@ bool ViewFilesFunction::RunImpl() {
       BrowserThread::FILE, FROM_HERE,
       NewRunnableMethod(this,
           &ViewFilesFunction::GetLocalPathsOnFileThread,
-          file_urls));
+          file_urls, internal_task_id));
 
   return true;
 }
 
 void ViewFilesFunction::GetLocalPathsResponseOnUIThread(
-    const FilePathList& files) {
+    const FilePathList& files, const std::string& internal_task_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   for (FilePathList::const_iterator iter = files.begin();
        iter != files.end();
        ++iter) {
-    platform_util::OpenItem(*iter);
+    FileManagerUtil::ViewItem(*iter, internal_task_id == kEnqueueTaskId);
   }
+  UpdateFileHandlerUsageStats(profile_, internal_task_id);
   SendResponse(true);
 }
 
@@ -945,21 +978,18 @@ bool SelectFilesFunction::RunImpl() {
       BrowserThread::FILE, FROM_HERE,
       NewRunnableMethod(this,
           &SelectFilesFunction::GetLocalPathsOnFileThread,
-          file_urls));
+          file_urls, std::string()));
 
   return true;
 }
 
 void SelectFilesFunction::GetLocalPathsResponseOnUIThread(
-    const FilePathList& files) {
+    const FilePathList& files, const std::string& internal_task_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
     callback.listener()->MultiFilesSelected(files, callback.params());
   }
   SendResponse(true);
@@ -969,9 +999,6 @@ bool CancelFileDialogFunction::RunImpl() {
   const Callback& callback = GetCallback();
   DCHECK(!callback.IsNull());
   if (!callback.IsNull()) {
-    // Must do this before callback, as the callback may delete listeners
-    // waiting for window close.
-    CloseDialog(callback.dialog());
     callback.listener()->FileSelectionCanceled(callback.params());
   }
   SendResponse(true);
@@ -1050,7 +1077,10 @@ bool FileDialogStringsFunction::RunImpl() {
   // FILEBROWSER, without the underscore, is from the old school codebase.
   // TODO(rginda): Move these into IDS_FILE_BROWSER post M12.
   SET_STRING(IDS_FILEBROWSER, CONFIRM_DELETE);
+
+  SET_STRING(IDS_FILEBROWSER, ENQUEUE);
 #undef SET_STRING
+
   // TODO(serya): Create a new string in .grd file for this one in M13.
   dict->SetString("PREVIEW_IMAGE",
       l10n_util::GetStringUTF16(IDS_CERT_MANAGER_VIEW_CERT_BUTTON));

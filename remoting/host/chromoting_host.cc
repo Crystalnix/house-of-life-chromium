@@ -33,31 +33,37 @@ namespace remoting {
 
 // static
 ChromotingHost* ChromotingHost::Create(ChromotingHostContext* context,
-                                       MutableHostConfig* config) {
+                                       MutableHostConfig* config,
+                                       AccessVerifier* access_verifier) {
   Capturer* capturer = Capturer::Create();
   EventExecutor* event_executor =
       EventExecutor::Create(context->ui_message_loop(), capturer);
   Curtain* curtain = Curtain::Create();
   return Create(context, config,
-                new DesktopEnvironment(capturer, event_executor, curtain));
+                new DesktopEnvironment(capturer, event_executor, curtain),
+                access_verifier);
 }
 
 // static
 ChromotingHost* ChromotingHost::Create(ChromotingHostContext* context,
                                        MutableHostConfig* config,
-                                       DesktopEnvironment* environment) {
-  return new ChromotingHost(context, config, environment);
+                                       DesktopEnvironment* environment,
+                                       AccessVerifier* access_verifier) {
+  return new ChromotingHost(context, config, environment, access_verifier);
 }
 
 ChromotingHost::ChromotingHost(ChromotingHostContext* context,
                                MutableHostConfig* config,
-                               DesktopEnvironment* environment)
+                               DesktopEnvironment* environment,
+                               AccessVerifier* access_verifier)
     : context_(context),
       config_(config),
       desktop_environment_(environment),
+      access_verifier_(access_verifier),
       state_(kInitial),
       protocol_config_(protocol::CandidateSessionConfig::CreateDefault()),
-      is_curtained_(false) {
+      is_curtained_(false),
+      preauthenticated_(false) {
   DCHECK(desktop_environment_.get());
 }
 
@@ -74,6 +80,7 @@ void ChromotingHost::Start(Task* shutdown_task) {
 
   DCHECK(!jingle_client_);
   DCHECK(shutdown_task);
+  DCHECK(access_verifier_.get());
 
   // Make sure this object is not started.
   {
@@ -94,9 +101,6 @@ void ChromotingHost::Start(Task* shutdown_task) {
     return;
   }
 
-  if (!access_verifier_.Init(config_))
-    return;
-
   // Connect to the talk network with a JingleClient.
   signal_strategy_.reset(
       new XmppSignalStrategy(context_->jingle_thread(), xmpp_login,
@@ -104,8 +108,7 @@ void ChromotingHost::Start(Task* shutdown_task) {
                              kChromotingTokenServiceName));
   jingle_client_ = new JingleClient(context_->jingle_thread(),
                                     signal_strategy_.get(),
-                                    NULL,
-                                    this);
+                                    NULL, NULL, NULL, this);
   jingle_client_->Init();
 }
 
@@ -175,6 +178,12 @@ void ChromotingHost::AddStatusObserver(
 void ChromotingHost::OnConnectionOpened(ConnectionToClient* connection) {
   DCHECK_EQ(context_->network_message_loop(), MessageLoop::current());
   VLOG(1) << "Connection to client established.";
+  if (preauthenticated_) {
+    context_->main_message_loop()->PostTask(
+        FROM_HERE,
+        NewRunnableMethod(this, &ChromotingHost::ProcessPreAuthentication,
+                          make_scoped_refptr(connection)));
+  }
 }
 
 void ChromotingHost::OnConnectionClosed(ConnectionToClient* connection) {
@@ -266,8 +275,8 @@ void ChromotingHost::OnNewClientSession(
   }
 
   // Check that the client has access to the host.
-  if (!access_verifier_.VerifyPermissions(session->jid(),
-                                          session->initiator_token())) {
+  if (!access_verifier_->VerifyPermissions(session->jid(),
+                                           session->initiator_token())) {
     *response = protocol::SessionManager::DECLINE;
     return;
   }
@@ -329,8 +338,7 @@ void ChromotingHost::OnClientDisconnected(ConnectionToClient* connection) {
 
   // Find the client session corresponding to the given connection.
   ClientList::iterator client;
-  for (client = clients_.begin(); client != clients_.end();
-       ++client) {
+  for (client = clients_.begin(); client != clients_.end(); ++client) {
     if (client->get()->connection() == connection)
       break;
   }
@@ -464,6 +472,19 @@ void ChromotingHost::LocalLoginFailed(
   status->set_success(false);
   connection->client_stub()->BeginSessionResponse(
       status, new DeleteTask<protocol::LocalLoginStatus>(status));
+}
+
+void ChromotingHost::ProcessPreAuthentication(
+    const scoped_refptr<ConnectionToClient>& connection) {
+  DCHECK_EQ(context_->main_message_loop(), MessageLoop::current());
+  // Find the client session corresponding to the given connection.
+  ClientList::iterator client;
+  for (client = clients_.begin(); client != clients_.end(); ++client) {
+    if (client->get()->connection() == connection)
+      break;
+  }
+  CHECK(client != clients_.end());
+  client->get()->OnAuthorizationComplete(true);
 }
 
 }  // namespace remoting

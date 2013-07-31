@@ -84,17 +84,32 @@ class ChromeRenderMessageFilter : public BrowserMessageFilter {
 #endif
   void OnGetPluginPolicies(ContentSetting* outdated_policy,
                            ContentSetting* authorize_policy);
-  void OnAllowDatabase(const std::string& origin_url,
+  void OnAllowDatabase(int render_view_id,
+                       const GURL& origin_url,
                        const string16& name,
                        const string16& display_name,
-                       unsigned long estimated_size,
                        bool* allowed);
   void OnAllowDOMStorage(int render_view_id,
                          const GURL& url,
                          DOMStorageType type,
                          bool* allowed);
+  void OnAllowFileSystem(int render_view_id, const GURL& url, bool* allowed);
+  void OnAllowIndexedDB(int render_view_id,
+                        const string16& origin_url,
+                        const string16& name,
+                        bool* allowed);
+  void OnGetPluginContentSetting(const GURL& policy_url,
+                                 const std::string& resource,
+                                 ContentSetting* setting);
   void OnCanTriggerClipboardRead(const GURL& url, bool* allowed);
   void OnCanTriggerClipboardWrite(const GURL& url, bool* allowed);
+  void OnGetCookies(const GURL& url,
+                    const GURL& first_party_for_cookies,
+                    IPC::Message* reply_msg);
+  void OnSetCookie(const IPC::Message& message,
+                   const GURL& url,
+                   const GURL& first_party_for_cookies,
+                   const std::string& cookie);
 
   int render_process_id_;
 

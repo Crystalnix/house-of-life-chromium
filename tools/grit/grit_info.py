@@ -16,7 +16,8 @@ from grit import util
 
 
 def Outputs(filename, defines):
-  grd = grd_reader.Parse(filename, defines=defines)
+  grd = grd_reader.Parse(
+      filename, defines=defines, tags_to_ignore=set(['messages']))
 
   target = []
   lang_folders = {}
@@ -47,7 +48,8 @@ def Outputs(filename, defines):
 
 
 def Inputs(filename, defines):
-  grd = grd_reader.Parse(filename, debug=False, defines=defines)
+  grd = grd_reader.Parse(
+      filename, debug=False, defines=defines, tags_to_ignore=set(['messages']))
   files = []
   for node in grd:
     if (node.name == 'structure' or node.name == 'skeleton' or
@@ -78,7 +80,7 @@ def PrintUsage():
   print '       ./grit_info.py --outputs [-D foo] <out-prefix> <grd-files>..'
 
 
-def main(argv):
+def DoMain(argv):
   parser = optparse.OptionParser()
   parser.add_option("--inputs", action="store_true", dest="inputs")
   parser.add_option("--outputs", action="store_true", dest="outputs")
@@ -88,11 +90,10 @@ def main(argv):
   parser.add_option("-E", action="append", dest="build_env", default=[])
   parser.add_option("-w", action="append", dest="whitelist_files", default=[])
 
-  options, args = parser.parse_args()
+  options, args = parser.parse_args(argv)
 
   if not len(args):
-    PrintUsage()
-    return 1
+    return None
 
   defines = {}
   for define in options.defines:
@@ -105,18 +106,24 @@ def main(argv):
       inputs = [inputs[0], filename] + inputs[1:]
       if options.whitelist_files:
         inputs.extend(options.whitelist_files)
-      print '\n'.join(inputs)
+      return '\n'.join(inputs)
   elif options.outputs:
     if len(args) < 2:
-      PrintUsage()
-      return 1
+      return None
 
     for f in args[1:]:
       outputs = [posixpath.join(args[0], f) for f in Outputs(f, defines)]
-      print '\n'.join(outputs)
+      return '\n'.join(outputs)
   else:
+    return None
+
+
+def main(argv):
+  result = DoMain(argv[1:])
+  if result == None:
     PrintUsage()
     return 1
+  print result
   return 0
 
 

@@ -5,9 +5,11 @@
 #include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/testing_profile.h"
@@ -26,7 +28,7 @@ class ContentSettingBubbleModelTest : public TabContentsWrapperTestHarness {
                               bool expect_reload_hint) {
     scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
         ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-            contents_wrapper(), profile_.get(),
+            NULL, contents_wrapper(), profile_.get(),
             CONTENT_SETTINGS_TYPE_GEOLOCATION));
     const ContentSettingBubbleModel::BubbleContent& bubble_content =
         content_setting_bubble_model->bubble_content();
@@ -45,13 +47,14 @@ class ContentSettingBubbleModelTest : public TabContentsWrapperTestHarness {
 
 TEST_F(ContentSettingBubbleModelTest, ImageRadios) {
   TabSpecificContentSettings* content_settings =
-      contents()->GetTabSpecificContentSettings();
+      contents_wrapper()->content_settings();
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_IMAGES,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         contents_wrapper(), profile_.get(), CONTENT_SETTINGS_TYPE_IMAGES));
+         NULL, contents_wrapper(), profile_.get(),
+         CONTENT_SETTINGS_TYPE_IMAGES));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_FALSE(bubble_content.title.empty());
@@ -63,13 +66,14 @@ TEST_F(ContentSettingBubbleModelTest, ImageRadios) {
 
 TEST_F(ContentSettingBubbleModelTest, Cookies) {
   TabSpecificContentSettings* content_settings =
-      contents()->GetTabSpecificContentSettings();
+      contents_wrapper()->content_settings();
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_COOKIES,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         contents_wrapper(), profile_.get(), CONTENT_SETTINGS_TYPE_COOKIES));
+         NULL, contents_wrapper(), profile_.get(),
+         CONTENT_SETTINGS_TYPE_COOKIES));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_FALSE(bubble_content.title.empty());
@@ -81,13 +85,14 @@ TEST_F(ContentSettingBubbleModelTest, Cookies) {
 
 TEST_F(ContentSettingBubbleModelTest, Plugins) {
   TabSpecificContentSettings* content_settings =
-      contents()->GetTabSpecificContentSettings();
+      contents_wrapper()->content_settings();
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
                                      std::string());
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-         contents_wrapper(), profile_.get(), CONTENT_SETTINGS_TYPE_PLUGINS));
+         NULL, contents_wrapper(), profile_.get(),
+         CONTENT_SETTINGS_TYPE_PLUGINS));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_FALSE(bubble_content.title.empty());
@@ -117,7 +122,7 @@ TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
                           CONTENT_SETTING_ASK);
 
   TabSpecificContentSettings* content_settings =
-      contents()->GetTabSpecificContentSettings();
+      contents_wrapper()->content_settings();
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
                                      fooPlugin);
   content_settings->OnContentBlocked(CONTENT_SETTINGS_TYPE_PLUGINS,
@@ -125,7 +130,8 @@ TEST_F(ContentSettingBubbleModelTest, MultiplePlugins) {
 
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          contents_wrapper(), profile_.get(), CONTENT_SETTINGS_TYPE_PLUGINS));
+          NULL, contents_wrapper(), profile_.get(),
+          CONTENT_SETTINGS_TYPE_PLUGINS));
   const ContentSettingBubbleModel::BubbleContent& bubble_content =
       content_setting_bubble_model->bubble_content();
   EXPECT_EQ(2U, bubble_content.radio_group.radio_items.size());
@@ -161,7 +167,7 @@ TEST_F(ContentSettingBubbleModelTest, Geolocation) {
 
   NavigateAndCommit(page_url);
   TabSpecificContentSettings* content_settings =
-      contents()->GetTabSpecificContentSettings();
+      contents_wrapper()->content_settings();
 
   // One permitted frame, but not in the content map: requires reload.
   content_settings->OnGeolocationPermissionSet(frame1_url, true);
@@ -191,7 +197,8 @@ TEST_F(ContentSettingBubbleModelTest, FileURL) {
   NavigateAndCommit(GURL(file_url));
   scoped_ptr<ContentSettingBubbleModel> content_setting_bubble_model(
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          contents_wrapper(), profile_.get(), CONTENT_SETTINGS_TYPE_IMAGES));
+          NULL, contents_wrapper(), profile_.get(),
+          CONTENT_SETTINGS_TYPE_IMAGES));
   std::string title =
       content_setting_bubble_model->bubble_content().radio_group.radio_items[0];
   ASSERT_NE(std::string::npos, title.find(file_url));

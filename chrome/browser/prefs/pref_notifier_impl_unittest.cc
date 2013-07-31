@@ -56,8 +56,12 @@ class MockPrefNotifier : public PrefNotifierImpl {
 class PrefNotifierTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    pref_service_.RegisterBooleanPref(kChangedPref, true);
-    pref_service_.RegisterBooleanPref(kUnchangedPref, true);
+    pref_service_.RegisterBooleanPref(kChangedPref,
+                                      true,
+                                      PrefService::UNSYNCABLE_PREF);
+    pref_service_.RegisterBooleanPref(kUnchangedPref,
+                                      true,
+                                      PrefService::UNSYNCABLE_PREF);
   }
 
   TestingPrefService pref_service_;
@@ -82,8 +86,8 @@ TEST_F(PrefNotifierTest, OnInitializationCompleted) {
       Field(&NotificationType::value,
             NotificationType::PREF_INITIALIZATION_COMPLETED),
       Source<PrefService>(&pref_service_),
-      NotificationService::NoDetails()));
-  notifier.OnInitializationCompleted();
+      Property(&Details<bool>::ptr, testing::Pointee(true))));
+  notifier.OnInitializationCompleted(true);
 }
 
 TEST_F(PrefNotifierTest, AddAndRemovePrefObservers) {

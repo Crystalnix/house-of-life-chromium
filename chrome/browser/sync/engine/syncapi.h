@@ -43,7 +43,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/tracked.h"
@@ -254,6 +254,8 @@ class BaseNode {
   // data.  Can only be called if GetModelType() == SESSIONS.
   const sync_pb::SessionSpecifics& GetSessionSpecifics() const;
 
+  const sync_pb::EntitySpecifics& GetEntitySpecifics() const;
+
   // Returns the local external ID associated with the node.
   int64 GetExternalId() const;
 
@@ -424,6 +426,9 @@ class WriteNode : public BaseNode {
   // Set the session specifics (windows, tabs, navigations etc.).
   // Should only be called if GetModelType() == SESSIONS.
   void SetSessionSpecifics(const sync_pb::SessionSpecifics& specifics);
+
+  // Generic set specifics method. Will extract the model type from |specifics|.
+  void SetEntitySpecifics(const sync_pb::EntitySpecifics& specifics);
 
   // Resets the EntitySpecifics for this node based on the unencrypted data.
   // Will encrypt if necessary.
@@ -710,7 +715,7 @@ class SyncManager {
 
     // Notifications counters updated by the actions in synapi.
     int notifications_received;
-    int notifications_sent;
+    int notifiable_commits;
 
     // The max number of consecutive errors from any component.
     int max_consecutive_errors;
@@ -736,6 +741,14 @@ class SyncManager {
     // Total number of overwrites due to conflict resolver since browser start.
     int num_local_overwrites_total;
     int num_server_overwrites_total;
+
+    // Count of empty and non empty getupdates;
+    int nonempty_get_updates;
+    int empty_get_updates;
+
+    // Count of useless and useful syncs we perform.
+    int useless_sync_cycles;
+    int useful_sync_cycles;
   };
 
   // An interface the embedding application implements to receive notifications
@@ -961,32 +974,34 @@ class SyncManager {
   // manager).  Never returns NULL.  The following events are sent by
   // the returned backend:
   //
-  // onSyncNotificationStateChange(boolean notificationsEnabled):
+  // onNotificationStateChange({ enabled: (boolean) }):
   //   Sent when notifications are enabled or disabled.
   //
-  // onSyncIncomingNotification(array changedTypes):
+  // onIncomingNotification({ changedTypes: (array) }):
   //   Sent when an incoming notification arrives.  |changedTypes|
-  //   contains a list of sync types (strings) which have changed.
+  //   is a list of sync types (strings) which have changed.
   //
   // The following messages are processed by the returned backend:
   //
   // getNotificationState():
-  //   If there is a parent router, sends the
-  //   onGetNotificationStateFinished(boolean notificationsEnabled)
-  //   event to |sender| via the parent router with whether or not
-  //   notifications are enabled.
+  //   callback(boolean notificationsEnabled):
+  //     notificationsEnabled: whether or not notifications are
+  //     enabled.
   //
   // getRootNode():
-  //   If there is a parent router, sends the
-  //   onGetRootNodeFinished(dictionary nodeInfo) event to |sender|
-  //   via the parent router with information on the root node.
+  //   callback(dictionary nodeInfo):
+  //     nodeInfo: Information on the root node.
   //
-  // getNodeById(string id):
-  //   If there is a parent router, sends the
-  //   onGetNodeByIdFinished(dictionary nodeInfo) event to |sender|
-  //   via the parent router with information on the node with the
-  //   given id (metahandle), if the id is valid and a node with that
-  //   id exists.  Otherwise, calls onGetNodeByIdFinished(null).
+  // getNodesById(array idList):
+  //   idList: A list of IDs as strings.
+  //   callback(array nodeList):
+  //     nodeList: Information on each node for each valid id in
+  //     idList.  Not guaranteed to be in any order.
+  //
+  // getChildNodeIds(string id):
+  //   id: The id of the node for which to return the child node ids.
+  //   callback(array idList):
+  //     idList: The child node IDs of the node with the given id.
   //
   // All other messages are dropped.
   browser_sync::JsBackend* GetJsBackend();

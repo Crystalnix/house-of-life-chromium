@@ -5,6 +5,7 @@
 #include "views/controls/menu/menu_item_view.h"
 
 #include "base/i18n/case_conversion.h"
+#include "base/stl_util-inl.h"
 #include "base/utf_string_conversions.h"
 #include "grit/app_strings.h"
 #include "ui/base/accessibility/accessible_view_state.h"
@@ -89,7 +90,9 @@ MenuItemView::MenuItemView(MenuDelegate* delegate)
       submenu_(NULL),
       has_mnemonics_(false),
       show_mnemonics_(false),
-      has_icons_(false) {
+      has_icons_(false),
+      top_margin_(-1),
+      bottom_margin_(-1) {
   // NOTE: don't check the delegate for NULL, UpdateMenuPartSizes supplies a
   // NULL delegate.
   Init(NULL, 0, SUBMENU, delegate);
@@ -102,6 +105,7 @@ MenuItemView::~MenuItemView() {
   // MenuController should be the only place handling deletion of the menu.
   // (57890).
   delete submenu_;
+  STLDeleteElements(&removed_items_);
 }
 
 bool MenuItemView::GetTooltipText(const gfx::Point& p, std::wstring* tooltip) {
@@ -251,6 +255,46 @@ void MenuItemView::Cancel() {
   }
 }
 
+MenuItemView* MenuItemView::AddMenuItemAt(int index,
+                                          int item_id,
+                                          const std::wstring& label,
+                                          const SkBitmap& icon,
+                                          Type type) {
+  DCHECK_LE(0, index);
+  if (!submenu_)
+    CreateSubmenu();
+  DCHECK_GE(submenu_->child_count(), index);
+  if (type == SEPARATOR) {
+    submenu_->AddChildViewAt(new MenuSeparator(), index);
+    return NULL;
+  }
+  MenuItemView* item = new MenuItemView(this, item_id, type);
+  if (label.empty() && GetDelegate())
+    item->SetTitle(GetDelegate()->GetLabel(item_id));
+  else
+    item->SetTitle(label);
+  item->SetIcon(icon);
+  if (type == SUBMENU)
+    item->CreateSubmenu();
+  submenu_->AddChildViewAt(item, index);
+  return item;
+}
+
+void MenuItemView::RemoveMenuItemAt(int index) {
+  DCHECK(submenu_);
+  DCHECK_LE(0, index);
+  DCHECK_GT(submenu_->child_count(), index);
+
+  View* item = submenu_->GetChildViewAt(index);
+  DCHECK(item);
+  submenu_->RemoveChildView(item);
+
+  // RemoveChildView() does not delete the item, which is a good thing
+  // in case a submenu is being displayed while items are being removed.
+  // Deletion will be done by ChildrenChanged() or at destruction.
+  removed_items_.push_back(item);
+}
+
 MenuItemView* MenuItemView::AppendMenuItemFromModel(ui::MenuModel* model,
                                                     int index,
                                                     int id) {
@@ -293,22 +337,8 @@ MenuItemView* MenuItemView::AppendMenuItemImpl(int item_id,
                                                const std::wstring& label,
                                                const SkBitmap& icon,
                                                Type type) {
-  if (!submenu_)
-    CreateSubmenu();
-  if (type == SEPARATOR) {
-    submenu_->AddChildView(new MenuSeparator());
-    return NULL;
-  }
-  MenuItemView* item = new MenuItemView(this, item_id, type);
-  if (label.empty() && GetDelegate())
-    item->SetTitle(GetDelegate()->GetLabel(item_id));
-  else
-    item->SetTitle(label);
-  item->SetIcon(icon);
-  if (type == SUBMENU)
-    item->CreateSubmenu();
-  submenu_->AddChildView(item);
-  return item;
+  const int index = submenu_ ? submenu_->child_count() : 0;
+  return AddMenuItemAt(index, item_id, label, icon, type);
 }
 
 SubmenuView* MenuItemView::CreateSubmenu() {
@@ -383,26 +413,26 @@ MenuItemView* MenuItemView::GetRootMenuItem() {
   return NULL;
 }
 
-wchar_t MenuItemView::GetMnemonic() {
+char16 MenuItemView::GetMnemonic() {
   if (!GetRootMenuItem()->has_mnemonics_)
     return 0;
 
-  const std::wstring& title = GetTitle();
+  string16 title = WideToUTF16(GetTitle());
   size_t index = 0;
   do {
     index = title.find('&', index);
-    if (index != std::wstring::npos) {
+    if (index != string16::npos) {
       if (index + 1 != title.size() && title[index + 1] != '&') {
-        wchar_t char_array[1] = { title[index + 1] };
+        char16 char_array[] = { title[index + 1], 0 };
         // TODO(jshin): What about Turkish locale? See http://crbug.com/81719.
         // If the mnemonic is capital I and the UI language is Turkish,
         // lowercasing it results in 'small dotless i', which is different
         // from a 'dotted i'. Similar issues may exist for az and lt locales.
-        return base::i18n::WideToLower(char_array)[0];
+        return base::i18n::ToLower(char_array)[0];
       }
       index++;
     }
-  } while (index != std::wstring::npos);
+  } while (index != string16::npos);
   return 0;
 }
 
@@ -425,24 +455,25 @@ MenuItemView* MenuItemView::GetMenuItemByID(int id) {
 
 void MenuItemView::ChildrenChanged() {
   MenuController* controller = GetMenuController();
-  if (!controller)
-    return;  // We're not showing, nothing to do.
+  if (controller) {
+    // Handles the case where we were empty and are no longer empty.
+    RemoveEmptyMenus();
 
-  // Handles the case where we were empty and are no longer empty.
-  RemoveEmptyMenus();
+    // Handles the case where we were not empty, but now are.
+    AddEmptyMenus();
 
-  // Handles the case where we were not empty, but now are.
-  AddEmptyMenus();
+    controller->MenuChildrenChanged(this);
 
-  controller->MenuChildrenChanged(this);
-
-  if (submenu_) {
-    // Force a paint and layout. This handles the case of the top level window's
-    // size remaining the same, resulting in no change to the submenu's size and
-    // no layout.
-    submenu_->Layout();
-    submenu_->SchedulePaint();
+    if (submenu_) {
+      // Force a paint and layout. This handles the case of the top
+      // level window's size remaining the same, resulting in no
+      // change to the submenu's size and no layout.
+      submenu_->Layout();
+      submenu_->SchedulePaint();
+    }
   }
+
+  STLDeleteElements(&removed_items_);
 }
 
 void MenuItemView::Layout() {
@@ -462,7 +493,7 @@ void MenuItemView::Layout() {
 
 int MenuItemView::GetAcceleratorTextWidth() {
   string16 text = GetAcceleratorText();
-  return text.empty() ? 0 : MenuConfig::instance().font.GetStringWidth(text);
+  return text.empty() ? 0 : GetFont().GetStringWidth(text);
 }
 
 MenuItemView::MenuItemView(MenuItemView* parent,
@@ -478,7 +509,9 @@ MenuItemView::MenuItemView(MenuItemView* parent,
       submenu_(NULL),
       has_mnemonics_(false),
       show_mnemonics_(false),
-      has_icons_(false) {
+      has_icons_(false),
+      top_margin_(-1),
+      bottom_margin_(-1) {
   Init(parent, command, type, NULL);
 }
 
@@ -590,6 +623,15 @@ int MenuItemView::GetDrawStringFlags() {
   return flags;
 }
 
+const gfx::Font& MenuItemView::GetFont() {
+  // Check for item-specific font.
+  const MenuDelegate* delegate = GetDelegate();
+  if (delegate)
+    return delegate->GetLabelFont(GetCommand());
+  else
+    return MenuConfig::instance().font;
+}
+
 void MenuItemView::AddEmptyMenus() {
   DCHECK(HasSubmenu());
   if (!submenu_->has_children()) {
@@ -616,6 +658,8 @@ void MenuItemView::RemoveEmptyMenus() {
         menu_item->RemoveEmptyMenus();
     } else if (child->GetID() == EmptyMenuMenuItem::kEmptyMenuItemViewID) {
       submenu_->RemoveChildView(child);
+      delete child;
+      child = NULL;
     }
   }
 }
@@ -629,7 +673,7 @@ void MenuItemView::PaintAccelerator(gfx::Canvas* canvas) {
   if (accel_text.empty())
     return;
 
-  const gfx::Font& font = MenuConfig::instance().font;
+  const gfx::Font& font = GetFont();
   int available_height = height() - GetTopMargin() - GetBottomMargin();
   int max_accel_width =
       parent_menu_item_->GetSubmenu()->max_accelerator_width();
@@ -661,6 +705,9 @@ void MenuItemView::DestroyAllMenuHosts() {
 }
 
 int MenuItemView::GetTopMargin() {
+  if (top_margin_ >= 0)
+    return top_margin_;
+
   MenuItemView* root = GetRootMenuItem();
   return root && root->has_icons_
       ? MenuConfig::instance().item_top_margin :
@@ -668,6 +715,9 @@ int MenuItemView::GetTopMargin() {
 }
 
 int MenuItemView::GetBottomMargin() {
+  if (bottom_margin_ >= 0)
+    return bottom_margin_;
+
   MenuItemView* root = GetRootMenuItem();
   return root && root->has_icons_
       ? MenuConfig::instance().item_bottom_margin :

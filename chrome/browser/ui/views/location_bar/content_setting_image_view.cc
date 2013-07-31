@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/location_bar/content_setting_image_view.h"
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
@@ -75,8 +76,11 @@ void ContentSettingImageView::UpdateFromTabContents(TabContents* tab_contents) {
   SetTooltipText(UTF8ToWide(content_setting_image_model_->get_tooltip()));
   SetVisible(true);
 
-  TabSpecificContentSettings* content_settings = tab_contents ?
-      tab_contents->GetTabSpecificContentSettings() : NULL;
+  TabSpecificContentSettings* content_settings = NULL;
+  if (tab_contents) {
+    content_settings = TabContentsWrapper::GetCurrentWrapperForContents(
+        tab_contents)->content_settings();
+  }
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
     return;
@@ -141,7 +145,8 @@ void ContentSettingImageView::OnMouseReleased(const views::MouseEvent& event) {
   ContentSettingBubbleContents* bubble_contents =
       new ContentSettingBubbleContents(
           ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-              tab_contents, profile_, content_settings_type),
+              parent_->browser(), tab_contents, profile_,
+              content_settings_type),
           profile_, tab_contents->tab_contents());
   bubble_ = Bubble::Show(GetWidget(), screen_bounds, BubbleBorder::TOP_RIGHT,
                          bubble_contents, this);

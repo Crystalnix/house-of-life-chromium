@@ -23,7 +23,6 @@
 #include "views/layout/fill_layout.h"
 #include "views/layout/grid_layout.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/non_client_view.h"
 #include "views/window/window.h"
@@ -407,10 +406,10 @@ class CandidateWindowView : public views::View {
 
   // A function to be called when one of the |candidate_views_| receives a mouse
   // press event.
-  void OnMousePressed();
+  void OnCandidateMousePressed();
   // A function to be called when one of the |candidate_views_| receives a mouse
   // release event.
-  void OnMouseReleased();
+  void OnCandidateMouseReleased();
 
   void set_cursor_location(const gfx::Rect& cursor_location) {
     cursor_location_ = cursor_location;
@@ -712,7 +711,7 @@ gfx::Point CandidateView::GetCandidateLabelPosition() const {
 }
 
 bool CandidateView::OnMousePressed(const views::MouseEvent& event) {
-  parent_candidate_window_->OnMousePressed();
+  parent_candidate_window_->OnCandidateMousePressed();
   // Select the candidate. We'll commit the candidate when the mouse
   // button is released.
   parent_candidate_window_->SelectCandidateAt(index_in_page_);
@@ -737,7 +736,7 @@ void CandidateView::OnMouseReleased(const views::MouseEvent& event) {
 }
 
 void CandidateView::OnMouseCaptureLost() {
-  parent_candidate_window_->OnMouseReleased();
+  parent_candidate_window_->OnCandidateMouseReleased();
 }
 
 CandidateWindowView::CandidateWindowView(
@@ -831,11 +830,11 @@ void CandidateWindowView::HideLookupTable() {
   LOG(WARNING) << "Can't hide the table since a mouse button is not released.";
 }
 
-void CandidateWindowView::OnMousePressed() {
+void CandidateWindowView::OnCandidateMousePressed() {
   mouse_is_pressed_ = true;
 }
 
-void CandidateWindowView::OnMouseReleased() {
+void CandidateWindowView::OnCandidateMouseReleased() {
   mouse_is_pressed_ = false;
 }
 
@@ -1281,7 +1280,7 @@ bool CandidateWindowController::Impl::Init() {
 
 void CandidateWindowController::Impl::CreateView() {
   // Create a non-decorated frame.
-  frame_.reset(views::Widget::CreateWidget());
+  frame_.reset(new views::Widget);
   // The size is initially zero.
   frame_->Init(
       views::Widget::InitParams(views::Widget::InitParams::TYPE_POPUP));
@@ -1291,12 +1290,7 @@ void CandidateWindowController::Impl::CreateView() {
   candidate_window_->Init();
   candidate_window_->AddObserver(this);
 
-  // Put the candidate window view on the frame.  The frame is resized
-  // later when the candidate window is shown.
-  views::RootView* root_view = frame_->GetRootView();
-  // |root_view| owns the |candidate_window_|, thus |frame_| effectively
-  // owns |candidate_window_|.
-  root_view->SetContentsView(candidate_window_);
+  frame_->SetContentsView(candidate_window_);
 }
 
 CandidateWindowController::Impl::Impl()

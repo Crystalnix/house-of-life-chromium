@@ -143,7 +143,7 @@ void BookmarkBubbleView::BubbleShown() {
 
 bool BookmarkBubbleView::AcceleratorPressed(
     const views::Accelerator& accelerator) {
-  if (accelerator.GetKeyCode() != ui::VKEY_RETURN)
+  if (accelerator.key_code() != ui::VKEY_RETURN)
     return false;
 
   if (edit_button_->HasFocus())
@@ -346,7 +346,7 @@ std::wstring BookmarkBubbleView::accessible_name() {
 
 void BookmarkBubbleView::Close() {
   ApplyEdits();
-  static_cast<Bubble*>(GetWidget())->Close();
+  GetWidget()->Close();
 }
 
 void BookmarkBubbleView::HandleButtonPressed(views::Button* sender) {
@@ -378,8 +378,8 @@ void BookmarkBubbleView::ShowEditor() {
   HWND parent = GetAncestor(GetWidget()->GetNativeView(), GA_ROOTOWNER);
 
   // We're about to show the bookmark editor. When the bookmark editor closes
-  // we want the browser to become active. WidgetWin::Hide() does a hide in
-  // a such way that activation isn't changed, which means when we close
+  // we want the browser to become active. NativeWidgetWin::Hide() does a hide
+  // in a such way that activation isn't changed, which means when we close
   // Windows gets confused as to who it should give active status to. We
   // explicitly hide the bookmark bubble window in such a way that activation
   // status changes. That way, when the editor closes, activation is properly
@@ -387,7 +387,8 @@ void BookmarkBubbleView::ShowEditor() {
   ShowWindow(GetWidget()->GetNativeView(), SW_HIDE);
 #elif defined(TOOLKIT_USES_GTK)
   gfx::NativeWindow parent = GTK_WINDOW(
-      static_cast<views::WidgetGtk*>(GetWidget())->GetTransientParent());
+      static_cast<views::NativeWidgetGtk*>(GetWidget()->native_widget())->
+          GetTransientParent());
 #endif
 
   // Even though we just hid the window, we need to invoke Close to schedule

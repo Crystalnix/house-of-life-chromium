@@ -16,66 +16,25 @@
 
 namespace gfx {
 
-bool GLContext::InitializeOneOff() {
-  static bool initialized = false;
-  if (initialized)
-    return true;
-
-  static const GLImplementation kAllowedGLImplementations[] = {
-    kGLImplementationDesktopGL,
-    kGLImplementationOSMesaGL
-  };
-
-  if (!InitializeRequestedGLBindings(
-           kAllowedGLImplementations,
-           kAllowedGLImplementations + arraysize(kAllowedGLImplementations),
-           kGLImplementationDesktopGL)) {
-    LOG(ERROR) << "InitializeRequestedGLBindings failed.";
-    return false;
-  }
-
-  switch (GetGLImplementation()) {
-    case kGLImplementationDesktopGL:
-      if (!GLSurfaceCGL::InitializeOneOff()) {
-        LOG(ERROR) << "GLSurfaceCGL::InitializeOneOff failed.";
-        return false;
-      }
-      break;
-    default:
-      break;
-  }
-
-  initialized = true;
-  return true;
-}
-
-GLContext* GLContext::CreateOffscreenGLContext(GLContext* shared_context) {
+GLContext* GLContext::CreateGLContext(GLContext* shared_context,
+                                      GLSurface* compatible_surface) {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL: {
-      scoped_ptr<PbufferGLSurfaceCGL> surface(new PbufferGLSurfaceCGL(
-          gfx::Size(1, 1)));
-      if (!surface->Initialize())
-        return false;
-
-      scoped_ptr<GLContextCGL> context(new GLContextCGL(surface.release()));
-      if (!context->Initialize(shared_context))
+      scoped_ptr<GLContextCGL> context(new GLContextCGL);
+      if (!context->Initialize(shared_context, compatible_surface))
         return NULL;
 
       return context.release();
     }
     case kGLImplementationOSMesaGL: {
-      scoped_ptr<GLSurfaceOSMesa> surface(new GLSurfaceOSMesa());
-      surface->Resize(gfx::Size(1, 1));
-
-      scoped_ptr<GLContextOSMesa> context(
-          new GLContextOSMesa(surface.release()));
-      if (!context->Initialize(OSMESA_RGBA, shared_context))
+      scoped_ptr<GLContextOSMesa> context(new GLContextOSMesa);
+      if (!context->Initialize(shared_context, compatible_surface))
         return NULL;
 
       return context.release();
     }
     case kGLImplementationMockGL:
-      return new StubGLContext;
+      return new GLContextStub;
     default:
       NOTREACHED();
       return NULL;

@@ -40,7 +40,7 @@ class AdaptiveDemuxerStream : public DemuxerStream {
   void ChangeCurrentStream(int index);
 
   // DemuxerStream methods.
-  virtual void Read(Callback1<Buffer*>::Type* read_callback);
+  virtual void Read(const ReadCallback& read_callback);
   virtual Type type();
   virtual const MediaFormat& media_format();
   virtual void EnableBitstreamConverter();
@@ -79,11 +79,11 @@ class AdaptiveDemuxer : public Demuxer {
 
   // Filter implementation.
   virtual void Stop(FilterCallback* callback);
-  virtual void Seek(base::TimeDelta time, FilterCallback* callback);
+  virtual void Seek(base::TimeDelta time, const FilterStatusCB&  cb);
   virtual void OnAudioRendererDisabled();
   virtual void set_host(FilterHost* filter_host);
+  virtual void SetPlaybackRate(float playback_rate);
   virtual void SetPreload(Preload preload);
-  // TODO(fischman): add support for SetPlaybackRate().
 
   // Demuxer implementation.
   virtual scoped_refptr<DemuxerStream> GetStream(DemuxerStream::Type type);

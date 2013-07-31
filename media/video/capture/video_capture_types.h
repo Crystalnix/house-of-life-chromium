@@ -22,3 +22,4 @@ struct VideoCaptureParams {
 }  // namespace media
 
 #endif  // MEDIA_VIDEO_CAPTURE_VIDEO_CAPTURE_TYPES_H_
+

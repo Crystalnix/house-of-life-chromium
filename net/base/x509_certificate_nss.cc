@@ -215,10 +215,10 @@ bool IsKnownRoot(CERTCertificate* root) {
                      "NSS Builtin Objects");
 }
 
-typedef char* (*CERTGetNameFunc)(CERTName* name);
-
 void ParsePrincipal(CERTName* name,
                     CertPrincipal* principal) {
+  typedef char* (*CERTGetNameFunc)(CERTName* name);
+
   // TODO(jcampan): add business_category and serial_number.
   // TODO(wtc): NSS has the CERT_GetOrgName, CERT_GetOrgUnitName, and
   // CERT_GetDomainComponentName functions, but they return only the most
@@ -292,7 +292,8 @@ void GetCertSubjectAltNamesOfType(X509Certificate::OSCertHandle cert_handle,
 
   SECItem alt_name;
   SECStatus rv = CERT_FindCertExtension(cert_handle,
-      SEC_OID_X509_SUBJECT_ALT_NAME, &alt_name);
+                                        SEC_OID_X509_SUBJECT_ALT_NAME,
+                                        &alt_name);
   if (rv != SECSuccess)
     return;
 
@@ -534,8 +535,9 @@ SECStatus RetryPKIXVerifyCertWithWorkarounds(
 CERTCertificatePolicies* DecodeCertPolicies(
     X509Certificate::OSCertHandle cert_handle) {
   SECItem policy_ext;
-  SECStatus rv = CERT_FindCertExtension(
-      cert_handle, SEC_OID_X509_CERTIFICATE_POLICIES, &policy_ext);
+  SECStatus rv = CERT_FindCertExtension(cert_handle,
+                                        SEC_OID_X509_CERTIFICATE_POLICIES,
+                                        &policy_ext);
   if (rv != SECSuccess)
     return NULL;
   CERTCertificatePolicies* policies =

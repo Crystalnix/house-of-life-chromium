@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
+#include "base/tracked_objects.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
@@ -17,6 +19,10 @@
 #include "ppapi/proxy/interface_id.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
+
+namespace ppapi {
+class WebKitForwarding;
+}
 
 namespace pp {
 namespace proxy {
@@ -41,16 +47,6 @@ class Dispatcher : public ProxyChannel {
  public:
   typedef const void* (*GetInterfaceFunc)(const char*);
   typedef int32_t (*InitModuleFunc)(PP_Module, GetInterfaceFunc);
-
-  class Delegate : public ProxyChannel::Delegate {
-   public:
-    // Returns the set used for globally uniquifying PP_Instances. This same
-    // set must be returned for all channels. This is required only for the
-    // plugin side, for the host side, the return value may be NULL.
-    //
-    // DEREFERENCE ONLY ON THE I/O THREAD.
-    virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() = 0;
-  };
 
   virtual ~Dispatcher();
 

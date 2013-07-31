@@ -10,13 +10,14 @@
 #include "base/logging.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
-#include "gpu/common/gpu_trace_event.h"
+#include "base/debug/trace_event.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/plugin_message_filter.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_serialization_rules.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/proxy/ppb_font_proxy.h"
 #include "ppapi/proxy/ppp_class_proxy.h"
 #include "ppapi/proxy/resource_creation_proxy.h"
 #include "ppapi/shared_impl/tracker_base.h"
@@ -38,14 +39,15 @@ InstanceToDispatcherMap* g_instance_to_dispatcher = NULL;
 
 PluginDispatcher::PluginDispatcher(base::ProcessHandle remote_process_handle,
                                    GetInterfaceFunc get_interface)
-    : Dispatcher(remote_process_handle, get_interface) {
+    : Dispatcher(remote_process_handle, get_interface),
+      plugin_delegate_(NULL) {
   SetSerializationRules(new PluginVarSerializationRules);
 
   // As a plugin, we always support the PPP_Class interface. There's no
   // GetInterface call or name for it, so we insert it into our table now.
   target_proxies_[INTERFACE_ID_PPP_CLASS].reset(new PPP_Class_Proxy(this));
 
-  ::ppapi::shared_impl::TrackerBase::Init(
+  ::ppapi::TrackerBase::Init(
       &PluginResourceTracker::GetTrackerBaseInstance);
 }
 
@@ -74,11 +76,12 @@ const void* PluginDispatcher::GetInterfaceFromDispatcher(
 }
 
 bool PluginDispatcher::InitPluginWithChannel(
-    PluginDispatcher::Delegate* delegate,
+    PluginDelegate* delegate,
     const IPC::ChannelHandle& channel_handle,
     bool is_client) {
   if (!Dispatcher::InitWithChannel(delegate, channel_handle, is_client))
     return false;
+  plugin_delegate_ = delegate;
 
   // The message filter will intercept and process certain messages directly
   // on the I/O thread.
@@ -92,9 +95,9 @@ bool PluginDispatcher::IsPlugin() const {
 }
 
 bool PluginDispatcher::Send(IPC::Message* msg) {
-  GPU_TRACE_EVENT2("ppapi proxy", "PluginDispatcher::Send",
-                   "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
-                   "Line", IPC_MESSAGE_ID_LINE(msg->type()));
+  TRACE_EVENT2("ppapi proxy", "PluginDispatcher::Send",
+               "Class", IPC_MESSAGE_ID_CLASS(msg->type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg->type()));
   // We always want plugin->renderer messages to arrive in-order. If some sync
   // and some async messages are send in response to a synchronous
   // renderer->plugin call, the sync reply will be processed before the async
@@ -107,9 +110,9 @@ bool PluginDispatcher::Send(IPC::Message* msg) {
 }
 
 bool PluginDispatcher::OnMessageReceived(const IPC::Message& msg) {
-  GPU_TRACE_EVENT2("ppapi proxy", "PluginDispatcher::OnMessageReceived",
-                   "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
-                   "Line", IPC_MESSAGE_ID_LINE(msg.type()));
+  TRACE_EVENT2("ppapi proxy", "PluginDispatcher::OnMessageReceived",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   // Handle common control messages.
   if (Dispatcher::OnMessageReceived(msg))
     return true;
@@ -201,13 +204,29 @@ InstanceData* PluginDispatcher::GetInstanceData(PP_Instance instance) {
   return (it == instance_map_.end()) ? NULL : &it->second;
 }
 
-::ppapi::shared_impl::FunctionGroupBase* PluginDispatcher::GetFunctionAPI(
+void PluginDispatcher::PostToWebKitThread(
+    const tracked_objects::Location& from_here,
+    const base::Closure& task) {
+  return plugin_delegate_->PostToWebKitThread(from_here, task);
+}
+
+bool PluginDispatcher::SendToBrowser(IPC::Message* msg) {
+  return plugin_delegate_->SendToBrowser(msg);
+}
+
+ppapi::WebKitForwarding* PluginDispatcher::GetWebKitForwarding() {
+  return plugin_delegate_->GetWebKitForwarding();
+}
+
+::ppapi::FunctionGroupBase* PluginDispatcher::GetFunctionAPI(
     pp::proxy::InterfaceID id) {
   if (function_proxies_[id].get())
     return function_proxies_[id].get();
 
   if (id == INTERFACE_ID_RESOURCE_CREATION)
     function_proxies_[id].reset(new ResourceCreationProxy(this));
+  if (id == INTERFACE_ID_PPB_FONT)
+    function_proxies_[id].reset(new PPB_Font_Proxy(this, NULL));
 
   return function_proxies_[id].get();
 }

@@ -487,6 +487,9 @@ const char kShow3gPromoNotification[] =
 const char kCarrierDealPromoShown[] =
     "settings.internet.mobile.carrier_deal_promo_shown";
 
+// Map of timestamps of the last used file browser tasks.
+const char kLastUsedFileBrowserHandlers[] =
+    "filebrowser.handler.lastused";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -641,9 +644,6 @@ const char kContentSettingsPatterns[] = "profile.content_settings.patterns";
 // regardless of other content settings.
 const char kBlockThirdPartyCookies[] = "profile.block_third_party_cookies";
 
-// Boolean that is true if non-sandboxed plug-ins should be blocked.
-const char kBlockNonsandboxedPlugins[] = "profile.block_nonsandboxed_plugins";
-
 // Boolean that is true when all locally stored site data (e.g. cookies, local
 // storage, etc..) should be deleted on exit.
 const char kClearSiteDataOnExit[] = "profile.clear_site_data_on_exit";
@@ -681,6 +681,9 @@ const char kEditBookmarksEnabled[] = "bookmarks.editing_enabled";
 // Boolean that is true when the tabstrip is to be laid out vertically down the
 // side of the browser window.
 const char kUseVerticalTabs[] = "tabs.use_vertical_tabs";
+
+// Boolean that is true when the compact navigation bar is to be used.
+const char kUseCompactNavigationBar[] = "tabs.use_compact_navigation_bar";
 
 // Boolean that is true when the translate feature is enabled.
 const char kEnableTranslate[] = "translate.enabled";
@@ -925,17 +928,6 @@ const char kSelectFileLastDirectory[] = "selectfile.last_directory";
 
 // Boolean that specifies if file selection dialogs are shown.
 const char kAllowFileSelectionDialogs[] = "select_file_dialogs.allowed";
-
-// Boolean that specifies if remote access features are allowed.
-const char kChromotingEnabled[] = "chromoting.enabled";
-
-// Boolean that specifies if machine is allowed to be shared for remote access.
-const char kChromotingHostEnabled[] = "chromoting.host_enabled";
-
-// Boolean that specifies if a machine that is shared for remote access is
-// is allowed to accept connections from across a firewall.
-const char kChromotingHostFirewallTraversal[] =
-    "chromoting.host_firewall_traversal";
 
 // Extensions which should be opened upon completion.
 const char kDownloadExtensionsToOpen[] = "download.extensions_to_open";
@@ -1251,8 +1243,6 @@ const char kCloudPrintServiceURL[] = "cloud_print.service_url";
 const char kCloudPrintDialogWidth[] = "cloud_print.dialog_size.width";
 const char kCloudPrintDialogHeight[] = "cloud_print.dialog_size.height";
 
-const char kRemotingHasSetupCompleted[] = "remoting.has_setup_completed";
-
 // The list of BackgroundContents that should be loaded when the browser
 // launches.
 const char kRegisteredBackgroundContents[] = "background_contents.registered";
@@ -1312,9 +1302,6 @@ const char kCloudPrintEnableJobPoll[] = "cloud_print.enable_job_poll";
 const char kCloudPrintRobotRefreshToken[] = "cloud_print.robot_refresh_token";
 const char kCloudPrintRobotEmail[] = "cloud_print.robot_email";
 
-// Used by the service process to determine if the remoting host is enabled.
-const char kRemotingHostEnabled[] = "remoting.host_enabled";
-
 // Preference to story proxy settings.
 const char kProxy[] = "proxy";
 
@@ -1356,14 +1343,12 @@ const char kManagedPopupsAllowedForUrls[] =
 const char kManagedPopupsBlockedForUrls[] =
     "profile.managed_popups_blocked_for_urls";
 
-// Dictionary for storing the set of known background pages (keys are extension
-// IDs of background page owners, value is a boolean that is true if the user
-// needs to acknowledge this page.
-const char kKnownBackgroundPages[] = "background_pages.known";
-
 // Set to true if the user created a login item so we should not modify it when
 // uninstalling background apps.
 const char kUserCreatedLoginItem[] = "background_mode.user_created_login_item";
+
+// Set to true if background mode is enabled on this browser.
+const char kBackgroundModeEnabled[] = "background_mode.enabled";
 
 // List of protocol handlers.
 const char kRegisteredProtocolHandlers[] =
@@ -1376,4 +1361,6 @@ const char kIgnoredProtocolHandlers[] =
 // Whether user-specified handlers for protocols and content types can be
 // specified.
 const char kCustomHandlersEnabled[] = "custom_handlers.enabled";
+
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
 }  // namespace prefs

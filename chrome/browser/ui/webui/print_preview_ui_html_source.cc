@@ -38,11 +38,17 @@ void SetLocalizedStrings(DictionaryValue* localized_strings) {
 #endif
   localized_strings->SetString(std::string("previewFailed"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_FAILED));
+  localized_strings->SetString(std::string("initiatorTabClosed"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_INITIATOR_TAB_CLOSED));
+  localized_strings->SetString(std::string("reopenPage"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_REOPEN_PAGE));
 
   localized_strings->SetString(std::string("printButton"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINT_BUTTON));
   localized_strings->SetString(std::string("cancelButton"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_CANCEL_BUTTON));
+  localized_strings->SetString(std::string("printing"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINTING));
 
   localized_strings->SetString(std::string("destinationLabel"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_DESTINATION_LABEL));
@@ -68,28 +74,24 @@ void SetLocalizedStrings(DictionaryValue* localized_strings) {
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_OPTION_PORTRAIT));
   localized_strings->SetString(std::string("optionTwoSided"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_OPTION_TWO_SIDED));
-  localized_strings->SetString(std::string("bindingLabel"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_BINDING_LABEL));
-  localized_strings->SetString(std::string("optionLongEdgeBinding"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_OPTION_LONG_EDGE_BINDING));
-  localized_strings->SetString(std::string("optionShortEdgeBinding"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_OPTION_SHORT_EDGE_BINDING));
   localized_strings->SetString(std::string("pagesLabel"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGES_LABEL));
   localized_strings->SetString(std::string("pageRangeTextBox"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGE_RANGE_TEXT));
   localized_strings->SetString(std::string("pageRangeRadio"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGE_RANGE_RADIO));
-  localized_strings->SetString(std::string("invalidPageRange"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_INVALID_PAGE_RANGE));
   localized_strings->SetString(std::string("printToPDF"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PRINT_TO_PDF));
   localized_strings->SetString(std::string("printPreviewTitleFormat"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_TITLE_FORMAT));
-  localized_strings->SetString(std::string("printPreviewSummaryFormat"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SUMMARY_FORMAT));
-  localized_strings->SetString(std::string("printPreviewSheetsLabel"),
-      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SHEETS_LABEL));
+  localized_strings->SetString(std::string("printPreviewSummaryFormatShort"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SUMMARY_FORMAT_SHORT));
+  localized_strings->SetString(std::string("printPreviewSummaryFormatLong"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SUMMARY_FORMAT_LONG));
+  localized_strings->SetString(std::string("printPreviewSheetsLabelSingular"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SHEETS_LABEL_SINGULAR));
+  localized_strings->SetString(std::string("printPreviewSheetsLabelPlural"),
+      l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_SHEETS_LABEL_PLURAL));
   localized_strings->SetString(std::string("printPreviewPageLabelSingular"),
       l10n_util::GetStringUTF8(IDS_PRINT_PREVIEW_PAGE_LABEL_SINGULAR));
   localized_strings->SetString(std::string("printPreviewPageLabelPlural"),

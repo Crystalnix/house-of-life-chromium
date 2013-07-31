@@ -12,11 +12,11 @@
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "ui/gfx/rect.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 // ConstrainedHtmlDelegateGtk works with ConstrainedWindowGtk to present
 // a TabContents in a ContraintedHtmlUI.
-class ConstrainedHtmlDelegateGtk : public views::WidgetGtk,
+class ConstrainedHtmlDelegateGtk : public views::NativeWidgetGtk,
                                    public ConstrainedHtmlUIDelegate,
                                    public ConstrainedWindowDelegate,
                                    public HtmlDialogTabContentsDelegate {
@@ -41,6 +41,7 @@ class ConstrainedHtmlDelegateGtk : public views::WidgetGtk,
     return html_tab_contents_.GetContentNativeView();
   }
   virtual void DeleteDelegate() {
+    html_delegate_->OnWindowClosed();
     html_delegate_->OnDialogClosed("");
     tab_container_->ChangeTabContents(NULL);
   }
@@ -69,7 +70,8 @@ class ConstrainedHtmlDelegateGtk : public views::WidgetGtk,
 ConstrainedHtmlDelegateGtk::ConstrainedHtmlDelegateGtk(
     Profile* profile,
     HtmlDialogUIDelegate* delegate)
-    : HtmlDialogTabContentsDelegate(profile),
+    : views::NativeWidgetGtk(new views::Widget),
+      HtmlDialogTabContentsDelegate(profile),
       html_tab_contents_(profile, NULL, MSG_ROUTING_NONE, NULL, NULL),
       tab_container_(NULL),
       html_delegate_(delegate),
@@ -85,10 +87,11 @@ ConstrainedHtmlDelegateGtk::ConstrainedHtmlDelegateGtk(
                                           PageTransition::START_PAGE);
 
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_CONTROL);
+  params.native_widget = this;
   GetWidget()->Init(params);
 
   tab_container_ = new TabContentsContainer;
-  SetContentsView(tab_container_);
+  GetWidget()->SetContentsView(tab_container_);
   tab_container_->ChangeTabContents(&html_tab_contents_);
 
   gfx::Size dialog_size;

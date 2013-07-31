@@ -99,6 +99,11 @@ class ConfigurationPolicyPrefKeeper
   bool ApplyFileSelectionDialogsPolicy(ConfigurationPolicyType policy,
                                        Value* value);
 
+  // Processes default search provider policies. Returns true if the specified
+  // policy is a default search provider related policy. In that case,
+  // ApplyDefaultSearchPolicy takes ownership of |value|.
+  bool ApplyDefaultSearchPolicy(ConfigurationPolicyType policy, Value* value);
+
   // Make sure that the |path| if present in |prefs_|.  If not, set it to
   // a blank string.
   void EnsureStringPrefExists(const std::string& path);
@@ -263,12 +268,6 @@ const ConfigurationPolicyPrefKeeper::PolicyToPreferenceMapEntry
     prefs::kEditBookmarksEnabled },
   { Value::TYPE_BOOLEAN, kPolicyAllowFileSelectionDialogs,
     prefs::kAllowFileSelectionDialogs },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingEnabled,
-    prefs::kChromotingEnabled },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingHostEnabled,
-    prefs::kChromotingHostEnabled },
-  { Value::TYPE_BOOLEAN, kPolicyChromotingHostFirewallTraversal,
-    prefs::kChromotingHostFirewallTraversal },
 
 #if defined(OS_CHROMEOS)
   { Value::TYPE_BOOLEAN, kPolicyChromeOsLockOnIdleSuspend,
@@ -288,9 +287,11 @@ const ConfigurationPolicyPrefKeeper::PolicyToPreferenceMapEntry
     prefs::kDefaultSearchProviderSearchURL },
   { Value::TYPE_STRING, kPolicyDefaultSearchProviderSuggestURL,
     prefs::kDefaultSearchProviderSuggestURL },
+  { Value::TYPE_STRING, kPolicyDefaultSearchProviderInstantURL,
+    prefs::kDefaultSearchProviderInstantURL },
   { Value::TYPE_STRING, kPolicyDefaultSearchProviderIconURL,
     prefs::kDefaultSearchProviderIconURL },
-  { Value::TYPE_STRING, kPolicyDefaultSearchProviderEncodings,
+  { Value::TYPE_LIST, kPolicyDefaultSearchProviderEncodings,
     prefs::kDefaultSearchProviderEncodings },
 };
 
@@ -345,8 +346,7 @@ void ConfigurationPolicyPrefKeeper::Apply(ConfigurationPolicyType policy,
   if (ApplyFileSelectionDialogsPolicy(policy, value))
     return;
 
-  if (ApplyPolicyFromMap(policy, value, kDefaultSearchPolicyMap,
-                         arraysize(kDefaultSearchPolicyMap)))
+  if (ApplyDefaultSearchPolicy(policy, value))
     return;
 
   if (ApplyPolicyFromMap(policy, value, kSimplePolicyMap,
@@ -376,7 +376,7 @@ bool ConfigurationPolicyPrefKeeper::ApplyPolicyFromMap(
   for (int current = 0; current < size; ++current) {
     if (map[current].policy_type == policy) {
       DCHECK_EQ(map[current].value_type, value->GetType())
-          << "mismatch in provided and expected policy value for preferences"
+          << "mismatch in provided and expected policy value for preferences "
           << map[current].preference_path << ". expected = "
           << map[current].value_type << ", actual = "<< value->GetType();
       prefs_.SetValue(map[current].preference_path, value);
@@ -437,6 +437,9 @@ bool ConfigurationPolicyPrefKeeper::ApplyDownloadDirPolicy(
   // Replace the policy string which might contain some user variables to an
   // expanded string.
   if (policy == kPolicyDownloadDirectory) {
+    // This policy is ignored on ChromeOS because the download path there is
+    // fixed and can not be configured by the user.
+#if !defined(OS_CHROMEOS)
     FilePath::StringType string_value;
     bool result = value->GetAsString(&string_value);
     DCHECK(result);
@@ -446,6 +449,7 @@ bool ConfigurationPolicyPrefKeeper::ApplyDownloadDirPolicy(
                     Value::CreateStringValue(expanded_value));
     prefs_.SetValue(prefs::kPromptForDownload,
                     Value::CreateBooleanValue(false));
+#endif  // !defined(OS_CHROMEOS)
     delete value;
     return true;
   }
@@ -471,6 +475,48 @@ bool ConfigurationPolicyPrefKeeper::ApplyFileSelectionDialogsPolicy(
     return true;
   }
   // We are not interested in this policy.
+  return false;
+}
+
+bool ConfigurationPolicyPrefKeeper::ApplyDefaultSearchPolicy(
+    ConfigurationPolicyType policy,
+    Value* value) {
+  // The DefaultSearchProviderEncodings policy has type list, but the related
+  // preference has type string. Convert one into the other here, using
+  // ';' as a separator.
+  if (policy == kPolicyDefaultSearchProviderEncodings) {
+    ListValue* list;
+    if (!value->GetAsList(&list)) {
+      NOTREACHED()
+          << "mismatch in provided and expected policy value for preferences "
+          << prefs::kDefaultSearchProviderEncodings << ". expected = "
+          << Value::TYPE_LIST << ", actual = "<< value->GetType();
+      return false;
+    }
+    ListValue::const_iterator iter(list->begin());
+    ListValue::const_iterator end(list->end());
+    std::string encodings;
+    for (; iter != end; ++iter) {
+      std::string s;
+      if ((*iter)->GetAsString(&s)) {
+        if (!encodings.empty())
+          encodings.push_back(';');
+        encodings.append(s);
+      } else {
+        NOTREACHED();
+      }
+    }
+    // We own |value|.
+    delete value;
+    prefs_.SetValue(prefs::kDefaultSearchProviderEncodings,
+                    Value::CreateStringValue(encodings));
+    return true;
+  }
+
+  if (ApplyPolicyFromMap(policy, value, kDefaultSearchPolicyMap,
+                         arraysize(kDefaultSearchPolicyMap))) {
+    return true;
+  }
   return false;
 }
 
@@ -683,7 +729,7 @@ void ConfigurationPolicyPrefKeeper::ApplyProxySettings() {
     std::string string_mode;
     CHECK(proxy_policies_[kPolicyProxyMode]->GetAsString(&string_mode));
     if (!ProxyPrefs::StringToProxyMode(string_mode, &mode)) {
-      LOG(WARNING) << "A centrally-administered policy specifies a value for"
+      LOG(WARNING) << "A centrally-administered policy specifies a value for "
                    << "the ProxyMode policy that isn't recognized.";
       return;
     }
@@ -720,6 +766,11 @@ void ConfigurationPolicyPrefKeeper::ApplyProxySettings() {
       prefs_.SetValue(prefs::kProxy, ProxyConfigDictionary::CreateAutoDetect());
       break;
     case ProxyPrefs::MODE_PAC_SCRIPT: {
+      if (!HasProxyPolicy(kPolicyProxyPacUrl)) {
+        LOG(WARNING) << "A centrally-administered policy specifies to use a "
+                     << "PAC script, but doesn't supply the PAC script URL.";
+        return;
+      }
       std::string pac_url;
       proxy_policies_[kPolicyProxyPacUrl]->GetAsString(&pac_url);
       prefs_.SetValue(prefs::kProxy,
@@ -727,6 +778,11 @@ void ConfigurationPolicyPrefKeeper::ApplyProxySettings() {
       break;
     }
     case ProxyPrefs::MODE_FIXED_SERVERS: {
+      if (!HasProxyPolicy(kPolicyProxyServer)) {
+        LOG(WARNING) << "A centrally-administered policy specifies to use a "
+                     << "fixed server, but doesn't supply the server address.";
+        return;
+      }
       std::string proxy_server;
       proxy_policies_[kPolicyProxyServer]->GetAsString(&proxy_server);
       std::string bypass_list;
@@ -887,7 +943,7 @@ ConfigurationPolicyPrefStore::GetChromePolicyDefinitionList() {
       key::kDefaultSearchProviderInstantURL },
     { kPolicyDefaultSearchProviderIconURL, Value::TYPE_STRING,
       key::kDefaultSearchProviderIconURL },
-    { kPolicyDefaultSearchProviderEncodings, Value::TYPE_STRING,
+    { kPolicyDefaultSearchProviderEncodings, Value::TYPE_LIST,
       key::kDefaultSearchProviderEncodings },
     { kPolicyProxyMode, Value::TYPE_STRING, key::kProxyMode },
     { kPolicyProxyServerMode, Value::TYPE_INTEGER, key::kProxyServerMode },
@@ -1007,12 +1063,6 @@ ConfigurationPolicyPrefStore::GetChromePolicyDefinitionList() {
       key::kEditBookmarksEnabled },
     { kPolicyAllowFileSelectionDialogs, Value::TYPE_BOOLEAN,
       key::kAllowFileSelectionDialogs },
-    { kPolicyChromotingEnabled, Value::TYPE_BOOLEAN,
-      key::kChromotingEnabled },
-    { kPolicyChromotingHostEnabled, Value::TYPE_BOOLEAN,
-      key::kChromotingHostEnabled },
-    { kPolicyChromotingHostFirewallTraversal, Value::TYPE_BOOLEAN,
-      key::kChromotingHostFirewallTraversal },
 
 #if defined(OS_CHROMEOS)
     { kPolicyChromeOsLockOnIdleSuspend, Value::TYPE_BOOLEAN,
@@ -1051,7 +1101,7 @@ void ConfigurationPolicyPrefStore::Refresh() {
       provider_->IsInitializationComplete()) {
     initialization_complete_ = true;
     FOR_EACH_OBSERVER(PrefStore::Observer, observers_,
-                      OnInitializationCompleted());
+                      OnInitializationCompleted(true));
   }
 }
 

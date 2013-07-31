@@ -8,12 +8,15 @@
 #include "base/shared_memory.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_extent.h"
 #include "chrome/common/extensions/url_pattern.h"
+#include "chrome/common/extensions/url_pattern_set.h"
 #include "chrome/common/web_apps.h"
+#include "content/common/view_types.h"
 #include "ipc/ipc_message_macros.h"
 
 #define IPC_MESSAGE_START ExtensionMsgStart
+
+IPC_ENUM_TRAITS(ViewType::Type)
 
 // Parameters structure for ExtensionHostMsg_Request.
 IPC_STRUCT_BEGIN(ExtensionHostMsg_Request_Params)
@@ -121,8 +124,8 @@ struct ParamTraits<URLPattern> {
 };
 
 template <>
-struct ParamTraits<ExtensionExtent> {
-  typedef ExtensionExtent param_type;
+struct ParamTraits<URLPatternSet> {
+  typedef URLPatternSet param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* p);
   static void Log(const param_type& p, std::string* l);
@@ -199,6 +202,14 @@ IPC_MESSAGE_CONTROL1(ExtensionMsg_UpdateUserScripts,
 // ExtensionHostMsg_DidGetApplicationInfo.
 IPC_MESSAGE_ROUTED1(ExtensionMsg_GetApplicationInfo,
                     int32 /*page_id*/)
+
+// Tell the renderer which browser window it's being attached to.
+IPC_MESSAGE_ROUTED1(ExtensionMsg_UpdateBrowserWindowId,
+                    int /* id of browser window */)
+
+// Tell the renderer which type this view is.
+IPC_MESSAGE_ROUTED1(ExtensionMsg_NotifyRenderViewType,
+                    ViewType::Type /* view_type */)
 
 // Messages sent from the renderer to the browser.
 

@@ -104,6 +104,16 @@ function checkExpectations() {
   eventsCaptured();
 }
 
+// Simple check to see that we have a User-Agent header, and that it contains
+// an expected value. This is a basic check that the request headers are valid.
+function checkUserAgent(headers) {
+  for (var i in headers) {
+    if (headers[i].name.toLowerCase() == "user-agent")
+      return headers[i].value.toLowerCase().indexOf("chrome") != -1;
+  }
+  return false;
+}
+
 function captureEvent(name, details) {
   // Ignore system-level requests like safebrowsing updates and favicon fetches
   // since they are unpredictable.
@@ -123,8 +133,12 @@ function captureEvent(name, details) {
   delete details.requestId;
   delete details.timeStamp;
   if (details.requestHeaders) {
-    details.requestHeadersExist = true;
+    details.requestHeadersValid = checkUserAgent(details.requestHeaders);
     delete details.requestHeaders;
+  }
+  if (details.responseHeaders) {
+    details.responseHeadersExist = true;
+    delete details.responseHeaders;
   }
 
   // find |details| in expectedEventData
@@ -169,19 +183,19 @@ function initListeners(filter, extraInfoSpec) {
   chrome.experimental.webRequest.onRequestSent.addListener(
       function(details) {
     return captureEvent("onRequestSent", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["requestHeaders"]));
   chrome.experimental.webRequest.onResponseStarted.addListener(
       function(details) {
     return captureEvent("onResponseStarted", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onBeforeRedirect.addListener(
       function(details) {
     return captureEvent("onBeforeRedirect", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onCompleted.addListener(
       function(details) {
     return captureEvent("onCompleted", details);
-  }, filter);
+  }, filter, intersect(extraInfoSpec, ["responseHeaders", "statusLine"]));
   chrome.experimental.webRequest.onErrorOccurred.addListener(
       function(details) {
     return captureEvent("onErrorOccurred", details);
@@ -259,14 +273,15 @@ runTests([
           event: "onBeforeSendHeaders",
           details: {
             url: URL_HTTP_SIMPLE_LOAD_REDIRECT,
-            requestHeadersExist: true
+            requestHeadersValid: true
           }
         },
         { label: "onRequestSent-1",
           event: "onRequestSent",
           details: {
             url: URL_HTTP_SIMPLE_LOAD_REDIRECT,
-            ip: "127.0.0.1"
+            ip: "127.0.0.1",
+            requestHeadersValid: true
           }
         },
         { label: "onBeforeRedirect",
@@ -274,7 +289,9 @@ runTests([
           details: {
             url: URL_HTTP_SIMPLE_LOAD_REDIRECT,
             redirectUrl: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 301
+            statusCode: 301,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 301 Moved Permanently"
           }
         },
         { label: "onBeforeRequest-2",
@@ -290,28 +307,33 @@ runTests([
           event: "onBeforeSendHeaders",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            requestHeadersExist: true
+            requestHeadersValid: true
           }
         },
         { label: "onRequestSent-2",
           event: "onRequestSent",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            ip: "127.0.0.1"
+            ip: "127.0.0.1",
+            requestHeadersValid: true
           }
         },
         { label: "onResponseStarted",
           event: "onResponseStarted",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 200
+            statusCode: 200,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 200 OK",
           }
         },
         { label: "onCompleted",
           event: "onCompleted",
           details: {
             url: URL_HTTP_SIMPLE_LOAD,
-            statusCode: 200
+            statusCode: 200,
+            responseHeadersExist: true,
+            statusLine: "HTTP/1.0 200 OK"
           }
         }
       ],
@@ -320,8 +342,8 @@ runTests([
          "onBeforeRedirect",
          "onBeforeRequest-2", "onBeforeSendHeaders-2", "onRequestSent-2",
          "onResponseStarted", "onCompleted"] ],
-      {},
-      ["requestHeaders"]);
+      {},  // filter
+      ["requestHeaders", "responseHeaders", "statusLine"]);
     navigateAndWait(URL_HTTP_SIMPLE_LOAD_REDIRECT);
   },
 
@@ -433,7 +455,7 @@ runTests([
           event: "onErrorOccurred",
           details: {
             url: getURL("complexLoad/a.html"),
-            error: ""
+            error: "net::ERR_EMPTY_RESPONSE"
           }
         },
       ],
@@ -582,7 +604,7 @@ runTests([
           event: "onErrorOccurred",
           details: {
             url: getURL("does_not_exist.html"),
-            error: ""
+            error: "net::ERR_FILE_NOT_FOUND"
           }
         },
       ],

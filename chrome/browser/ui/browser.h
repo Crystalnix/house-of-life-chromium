@@ -29,12 +29,14 @@
 #include "chrome/browser/tabs/tab_strip_model_delegate.h"  // TODO(beng): remove
 #include "chrome/browser/tabs/tab_strip_model_observer.h"  // TODO(beng): remove
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
-#include "chrome/browser/ui/bookmarks/bookmarks_tab_helper_delegate.h"
+#include "chrome/browser/ui/bookmarks/bookmark_tab_helper_delegate.h"
 #include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper_delegate.h"
 #include "chrome/browser/ui/shell_dialogs.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper_delegate.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/browser/tab_contents/page_navigator.h"
 #include "content/browser/tab_contents/tab_contents_delegate.h"
@@ -66,7 +68,8 @@ class Browser : public TabHandlerDelegate,
                 public TabContentsWrapperDelegate,
                 public SearchEngineTabHelperDelegate,
                 public BlockedContentTabHelperDelegate,
-                public BookmarksTabHelperDelegate,
+                public BookmarkTabHelperDelegate,
+                public DownloadTabHelperDelegate,
                 public PageNavigator,
                 public CommandUpdater::CommandUpdaterDelegate,
                 public NotificationObserver,
@@ -330,6 +333,11 @@ class Browser : public TabHandlerDelegate,
   // cleanup.
   void OnWindowClosing();
 
+  // OnWindowActivationChanged handling ///////////////////////////////////////
+
+  // Invoked when the window containing us is activated.
+  void OnWindowActivated();
+
   // In-progress download termination handling /////////////////////////////////
 
   // Are normal and/or incognito downloads in progress?
@@ -485,7 +493,6 @@ class Browser : public TabHandlerDelegate,
   void ToggleFullscreenMode();
   void Exit();
 #if defined(OS_CHROMEOS)
-  void ToggleCompactNavigationBar();
   void Search();
   void ShowKeyboardOverlay();
 #endif
@@ -555,13 +562,12 @@ class Browser : public TabHandlerDelegate,
   void ShowAboutConflictsTab();
   void ShowBrokenPageTab(TabContents* contents);
   void ShowOptionsTab(const std::string& sub_page);
+  // Shows the Content Settings page for a given content type.
+  void ShowContentSettingsPage(ContentSettingsType content_type);
   void OpenClearBrowsingDataDialog();
   void OpenOptionsDialog();
   void OpenPasswordManager();
   void OpenSyncMyBookmarksDialog();
-#if defined(ENABLE_REMOTING)
-  void OpenRemotingSetupDialog();
-#endif
   void OpenImportSettingsDialog();
   void OpenInstantConfirmDialog();
   void OpenAboutChromeDialog();
@@ -586,6 +592,7 @@ class Browser : public TabHandlerDelegate,
 
   // Overridden from TabStripModelDelegate:
   virtual bool UseVerticalTabs() const;
+  virtual bool UseCompactNavigationBar() const;
 
   /////////////////////////////////////////////////////////////////////////////
 
@@ -653,6 +660,9 @@ class Browser : public TabHandlerDelegate,
   // specified.
   GURL GetHomePage() const;
 
+  // Shows the cookies collected in the tab contents.
+  void ShowCollectedCookiesDialog(TabContents* tab_contents);
+
   // Interface implementations ////////////////////////////////////////////////
 
   // Overridden from PageNavigator:
@@ -707,6 +717,7 @@ class Browser : public TabHandlerDelegate,
   virtual void BookmarkAllTabs();
   virtual bool CanCloseTab() const;
   virtual void ToggleUseVerticalTabs();
+  virtual void ToggleUseCompactNavigationBar();
   virtual bool CanRestoreTab();
   virtual void RestoreTab();
   virtual bool LargeIconsPermitted() const;
@@ -798,22 +809,18 @@ class Browser : public TabHandlerDelegate,
   virtual void ContentsMouseEvent(
       TabContents* source, const gfx::Point& location, bool motion);
   virtual void ContentsZoomChange(bool zoom_in);
-  virtual void OnContentSettingsChange(TabContents* source);
   virtual void SetTabContentBlocked(TabContents* contents, bool blocked);
   virtual void TabContentsFocused(TabContents* tab_content);
   virtual bool TakeFocus(bool reverse);
   virtual bool IsApplication() const;
   virtual void ConvertContentsToApplication(TabContents* source);
   virtual bool ShouldDisplayURLField();
-  virtual void ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window);
   virtual void BeforeUnloadFired(TabContents* source,
                                  bool proceed,
                                  bool* proceed_to_fire_unload);
   virtual void SetFocusToLocationBar(bool select_all);
   virtual void RenderWidgetShowing();
   virtual int GetExtraRenderViewHeight() const;
-  virtual void OnStartDownload(DownloadItem* download, TabContents* tab);
   virtual void ShowPageInfo(Profile* profile,
                             const GURL& url,
                             const NavigationEntry::SSLStatus& ssl,
@@ -826,8 +833,6 @@ class Browser : public TabHandlerDelegate,
                                         bool* is_keyboard_shortcut);
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
-  virtual void ShowContentSettingsPage(ContentSettingsType content_type);
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
   virtual bool ShouldAddNavigationToHistory(
       const history::HistoryAddPageArgs& add_page_args,
       NavigationType::Type navigation_type);
@@ -857,9 +862,15 @@ class Browser : public TabHandlerDelegate,
   virtual TabContentsWrapper* GetConstrainingContentsWrapper(
       TabContentsWrapper* source) OVERRIDE;
 
-  // Overridden from BookmarksTabHelperDelegate:
+  // Overridden from BookmarkTabHelperDelegate:
   virtual void URLStarredChanged(TabContentsWrapper* source,
                                  bool starred) OVERRIDE;
+
+  // Overridden from DownloadTabHelperDelegate:
+  virtual bool CanDownload(int request_id) OVERRIDE;
+  virtual void OnStartDownload(DownloadItem* download,
+                               TabContentsWrapper* tab) OVERRIDE;
+
 
   // Overridden from SelectFileDialog::Listener:
   virtual void FileSelected(const FilePath& path, int index, void* params);
@@ -1034,6 +1045,10 @@ class Browser : public TabHandlerDelegate,
   // policy of the tab strip model and notifies the window.
   void UseVerticalTabsChanged();
 
+  // Invoked when the use of the compact navigation bar preference changes.
+  // Notifies the window.
+  void UseCompactNavigationBarChanged();
+
   // Implementation of SupportsWindowFeature and CanSupportWindowFeature. If
   // |check_fullscreen| is true, the set of features reflect the actual state of
   // the browser, otherwise the set of features reflect the possible state of
@@ -1196,6 +1211,9 @@ class Browser : public TabHandlerDelegate,
 
   // Tracks the display mode of the tabstrip.
   mutable BooleanPrefMember use_vertical_tabs_;
+
+  // Tracks the display mode of the navigation bar.
+  mutable BooleanPrefMember use_compact_navigation_bar_;
 
   // The profile's tab restore service. The service is owned by the profile,
   // and we install ourselves as an observer.

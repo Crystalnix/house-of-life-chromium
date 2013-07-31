@@ -47,10 +47,10 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   ~BrowserRenderProcessHost();
 
   // RenderProcessHost implementation (public portion).
-  virtual bool Init(bool is_accessibility_enabled, bool is_extensions_process);
+  virtual bool Init(bool is_accessibility_enabled);
   virtual int GetNextRoutingID();
   virtual void CancelResourceRequests(int render_widget_id);
-  virtual void CrossSiteClosePageACK(const ViewMsg_ClosePage_Params& params);
+  virtual void CrossSiteSwapOutACK(const ViewMsg_SwapOut_Params& params);
   virtual bool WaitForUpdateMsg(int render_widget_id,
                                 const base::TimeDelta& max_delay,
                                 IPC::Message* msg);
@@ -81,6 +81,7 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   void CreateMessageFilters();
 
   // Control message handlers.
+  void OnShutdownRequest();
   void OnUpdatedCacheStats(const WebKit::WebCache::UsageStats& stats);
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
@@ -130,9 +131,9 @@ class BrowserRenderProcessHost : public RenderProcessHost,
   // True if this prcoess should have accessibility enabled;
   bool accessibility_enabled_;
 
-  // True iff this process is being used as an extension process. Not valid
-  // when running in single-process mode.
-  bool extension_process_;
+  // True after Init() has been called. We can't just check channel_ because we
+  // also reset that in the case of process termination.
+  bool is_initialized_;
 
   // Used to launch and terminate the process without blocking the UI thread.
   scoped_ptr<ChildProcessLauncher> child_process_launcher_;

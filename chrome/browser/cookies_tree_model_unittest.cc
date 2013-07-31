@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/stub_settings_observer.h"
 #include "chrome/browser/mock_browsing_data_appcache_helper.h"
 #include "chrome/browser/mock_browsing_data_database_helper.h"
@@ -650,7 +651,8 @@ TEST_F(CookiesTreeModelTest, OriginOrdering) {
 
 TEST_F(CookiesTreeModelTest, ContentSettings) {
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("[*.]example.com");
   net::CookieMonster* monster = profile_->GetCookieMonster();
   monster->SetCookie(host, "A=1");
 

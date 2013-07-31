@@ -74,6 +74,8 @@ void BrowserOptionsHandler::GetLocalizedValues(
     { "instantConfirmTitle", IDS_INSTANT_OPT_IN_TITLE },
     { "instantConfirmMessage", IDS_INSTANT_OPT_IN_MESSAGE },
     { "defaultBrowserGroupName", IDS_OPTIONS_DEFAULTBROWSER_GROUP_NAME },
+    { "checkForUpdateGroupName", IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME },
+    { "updatesAutoCheckDaily", IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -119,6 +121,9 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui_->RegisterMessageCallback(
       "toggleShowBookmarksBar",
       NewCallback(this, &BrowserOptionsHandler::ToggleShowBookmarksBar));
+  web_ui_->RegisterMessageCallback(
+      "toggleAutomaticUpdates",
+      NewCallback(this, &BrowserOptionsHandler::ToggleAutomaticUpdates));
 }
 
 void BrowserOptionsHandler::Initialize() {
@@ -242,9 +247,7 @@ void BrowserOptionsHandler::SetDefaultBrowserUIString(int status_string_id) {
        status_string_id == IDS_OPTIONS_DEFAULTBROWSER_NOTDEFAULT)));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateDefaultBrowserState",
-                                  *(status_string.get()),
-                                  *(is_default.get()),
-                                  *(can_be_default.get()));
+                                  *status_string, *is_default, *can_be_default);
 }
 
 void BrowserOptionsHandler::OnTemplateURLModelChanged() {
@@ -265,16 +268,18 @@ void BrowserOptionsHandler::OnTemplateURLModelChanged() {
     DictionaryValue* entry = new DictionaryValue();
     entry->SetString("name", model_urls[i]->short_name());
     entry->SetInteger("index", i);
-    entry->SetBoolean("hasInstant", model_urls[i]->instant_url() != NULL);
     search_engines.Append(entry);
     if (model_urls[i] == default_url)
       default_index = i;
   }
 
   scoped_ptr<Value> default_value(Value::CreateIntegerValue(default_index));
+  scoped_ptr<Value> default_managed(Value::CreateBooleanValue(
+      template_url_model_->is_default_search_managed()));
 
   web_ui_->CallJavascriptFunction("BrowserOptions.updateSearchEngines",
-                                  search_engines, *(default_value.get()));
+                                  search_engines, *default_value,
+                                  *default_managed);
 }
 
 void BrowserOptionsHandler::SetDefaultSearchEngine(const ListValue* args) {
@@ -428,6 +433,11 @@ void BrowserOptionsHandler::ToggleShowBookmarksBar(const ListValue* args) {
       NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED,
       source,
       NotificationService::NoDetails());
+}
+
+void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
+  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
+  platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 
 void BrowserOptionsHandler::OnResultChanged(bool default_match_changed) {

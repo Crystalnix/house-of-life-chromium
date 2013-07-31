@@ -30,6 +30,38 @@ void TestURLFetcher::AppendChunkToUpload(const std::string& data,
   chunks_.push_back(data);
 }
 
+void TestURLFetcher::set_status(const net::URLRequestStatus& status) {
+  fake_status_ = status;
+}
+
+void TestURLFetcher::SetResponseString(const std::string& response) {
+  SetResponseDestinationForTesting(STRING);
+  fake_response_string_ = response;
+}
+
+void TestURLFetcher::SetResponseFilePath(const FilePath& path) {
+  SetResponseDestinationForTesting(TEMP_FILE);
+  fake_response_file_path_ = path;
+}
+
+bool TestURLFetcher::GetResponseAsString(
+    std::string* out_response_string) const {
+  if (GetResponseDestinationForTesting() != STRING)
+    return false;
+
+  *out_response_string = fake_response_string_;
+  return true;
+}
+
+bool TestURLFetcher::GetResponseAsFilePath(
+    bool take_ownership, FilePath* out_response_path) const {
+  if (GetResponseDestinationForTesting() != TEMP_FILE)
+    return false;
+
+  *out_response_path = fake_response_file_path_;
+  return true;
+}
+
 TestURLFetcherFactory::TestURLFetcherFactory() {}
 
 TestURLFetcherFactory::~TestURLFetcherFactory() {}
@@ -53,6 +85,18 @@ void TestURLFetcherFactory::RemoveFetcherFromMap(int id) {
   Fetchers::iterator i = fetchers_.find(id);
   DCHECK(i != fetchers_.end());
   fetchers_.erase(i);
+}
+
+const GURL& TestURLFetcher::url() const {
+  return fake_url_;
+}
+
+const net::URLRequestStatus& TestURLFetcher::status() const {
+  return fake_status_;
+}
+
+int TestURLFetcher::response_code() const {
+  return fake_response_code_;
 }
 
 // This class is used by the FakeURLFetcherFactory below.

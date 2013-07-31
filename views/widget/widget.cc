@@ -9,11 +9,18 @@
 #include "ui/gfx/compositor/compositor.h"
 #include "views/focus/view_storage.h"
 #include "views/ime/input_method.h"
+#include "views/views_delegate.h"
 #include "views/widget/default_theme_provider.h"
 #include "views/widget/root_view.h"
 #include "views/widget/native_widget.h"
 
 namespace views {
+
+namespace {
+// Set to true if a pure Views implementation is preferred
+bool use_pure_views = false;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, InitParams:
@@ -21,6 +28,7 @@ namespace views {
 Widget::InitParams::InitParams()
     : type(TYPE_WINDOW),
       child(false),
+      transient(false),
       transparent(false),
       accept_events(true),
       can_activate(true),
@@ -37,6 +45,7 @@ Widget::InitParams::InitParams()
 Widget::InitParams::InitParams(Type type)
     : type(type),
       child(type == TYPE_CONTROL),
+      transient(type == TYPE_POPUP || type == TYPE_MENU),
       transparent(false),
       accept_events(true),
       can_activate(type != TYPE_POPUP && type != TYPE_MENU),
@@ -63,41 +72,60 @@ Widget::Widget()
       last_mouse_event_was_move_(false),
       native_widget_(NULL),
       widget_delegate_(NULL),
-      dragged_view_(NULL) {
+      dragged_view_(NULL),
+      delete_on_destroy_(false),
+      is_secondary_widget_(true) {
 }
 
 Widget::~Widget() {
+  DestroyRootView();
+
+  if (!delete_on_destroy_)
+    delete native_widget_;
+}
+
+// static
+void Widget::SetPureViews(bool pure) {
+  use_pure_views = pure;
+}
+
+// static
+bool Widget::IsPureViews() {
+  return use_pure_views;
 }
 
 void Widget::Init(const InitParams& params) {
+  delete_on_destroy_ = params.delete_on_destroy;
+  native_widget_ =
+      params.native_widget ? params.native_widget
+                           : NativeWidget::CreateNativeWidget(this);
   GetRootView();
   default_theme_provider_.reset(new DefaultThemeProvider);
+  if (params.type == InitParams::TYPE_MENU)
+    is_mouse_button_pressed_ = native_widget_->IsMouseButtonDown();
   native_widget_->InitNativeWidget(params);
 }
 
 // Unconverted methods (see header) --------------------------------------------
 
 gfx::NativeView Widget::GetNativeView() const {
-  return NULL;
+   return native_widget_->GetNativeView();
 }
 
 gfx::NativeWindow Widget::GetNativeWindow() const {
-  return NULL;
-}
-
-void Widget::GenerateMousePressedForView(View* view, const gfx::Point& point) {
+  return native_widget_->GetNativeWindow();
 }
 
 bool Widget::GetAccelerator(int cmd_id, ui::Accelerator* accelerator) {
   return false;
 }
 
-Window* Widget::GetWindow() {
-  return NULL;
+Window* Widget::GetContainingWindow() {
+  return native_widget_->GetContainingWindow();
 }
 
-const Window* Widget::GetWindow() const {
-  return NULL;
+const Window* Widget::GetContainingWindow() const {
+  return native_widget_->GetContainingWindow();
 }
 
 void Widget::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
@@ -108,7 +136,8 @@ void Widget::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
     FocusManager* focus_manager = GetFocusManager();
     if (focus_manager)
       focus_manager->ViewRemoved(child);
-    ViewStorage::GetInstance()->ViewRemoved(parent, child);
+    ViewStorage::GetInstance()->ViewRemoved(child);
+    native_widget_->ViewRemoved(child);
   }
 }
 
@@ -193,7 +222,7 @@ void Widget::SetAlwaysOnTop(bool on_top) {
   native_widget_->SetAlwaysOnTop(on_top);
 }
 
-RootView* Widget::GetRootView() {
+View* Widget::GetRootView() {
   if (!root_view_.get()) {
     // First time the root view is being asked for, create it now.
     root_view_.reset(CreateRootView());
@@ -273,8 +302,12 @@ void Widget::SetCursor(gfx::NativeCursor cursor) {
   native_widget_->SetCursor(cursor);
 }
 
+void Widget::ResetLastMouseMoveFlag() {
+  last_mouse_event_was_move_ = false;
+}
+
 FocusTraversable* Widget::GetFocusTraversable() {
-  return root_view_.get();
+  return static_cast<internal::RootView*>(root_view_.get());
 }
 
 void Widget::ThemeChanged() {
@@ -291,6 +324,18 @@ void Widget::SetFocusTraversableParent(FocusTraversable* parent) {
 
 void Widget::SetFocusTraversableParentView(View* parent_view) {
   root_view_->SetFocusTraversableParentView(parent_view);
+}
+
+void Widget::NotifyAccessibilityEvent(
+    View* view,
+    ui::AccessibilityTypes::Event event_type,
+    bool send_native_event) {
+  // Send the notification to the delegate.
+  if (ViewsDelegate::views_delegate)
+    ViewsDelegate::views_delegate->NotifyAccessibilityEvent(view, event_type);
+
+  if (send_native_event)
+    native_widget_->SendNativeAccessibilityEvent(view, event_type);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -314,6 +359,7 @@ void Widget::OnNativeWidgetCreated() {
     // manager.
     focus_manager_.reset(new FocusManager(this));
   }
+  EnsureCompositor();
 }
 
 void Widget::OnSizeChanged(const gfx::Size& new_size) {
@@ -324,13 +370,34 @@ bool Widget::HasFocusManager() const {
   return !!focus_manager_.get();
 }
 
+bool Widget::OnNativeWidgetPaintAccelerated(const gfx::Rect& dirty_region) {
+#if !defined(COMPOSITOR_2)
+  return false;
+#else
+  if (!compositor_.get())
+    return false;
+
+  compositor_->NotifyStart();
+  GetRootView()->PaintToTexture(dirty_region);
+  GetRootView()->PaintComposite();
+  compositor_->NotifyEnd();
+  return true;
+#endif
+}
+
 void Widget::OnNativeWidgetPaint(gfx::Canvas* canvas) {
   GetRootView()->Paint(canvas);
-  RefreshCompositeTree();
+#if !defined(COMPOSITOR_2)
+  if (compositor_.get()) {
+    compositor_->NotifyStart();
+    root_view_->PaintComposite(compositor_.get());
+    compositor_->NotifyEnd();
+  }
+#endif
 }
 
 bool Widget::OnKeyEvent(const KeyEvent& event) {
-  return GetRootView()->OnKeyEvent(event);
+  return static_cast<internal::RootView*>(GetRootView())->OnKeyEvent(event);
 }
 
 bool Widget::OnMouseEvent(const MouseEvent& event) {
@@ -385,6 +452,14 @@ void Widget::OnMouseCaptureLost() {
   is_mouse_button_pressed_ = false;
 }
 
+Widget* Widget::AsWidget() {
+  return this;
+}
+
+const Widget* Widget::AsWidget() const {
+  return this;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, FocusTraversable implementation:
 
@@ -409,20 +484,20 @@ View* Widget::GetFocusTraversableParentView() {
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, protected:
 
-RootView* Widget::CreateRootView() {
-  return new RootView(this);
+internal::RootView* Widget::CreateRootView() {
+  return new internal::RootView(this);
 }
 
 void Widget::DestroyRootView() {
   root_view_.reset();
 
   // Defer focus manager's destruction. This is for the case when the
-  // focus manager is referenced by a child WidgetGtk (e.g. TabbedPane in a
-  // dialog). When gtk_widget_destroy is called on the parent, the destroy
+  // focus manager is referenced by a child NativeWidgetGtk (e.g. TabbedPane in
+  // a dialog). When gtk_widget_destroy is called on the parent, the destroy
   // signal reaches parent first and then the child. Thus causing the parent
-  // WidgetGtk's dtor executed before the child's. If child's view hierarchy
-  // references this focus manager, it crashes. This will defer focus manager's
-  // destruction after child WidgetGtk's dtor.
+  // NativeWidgetGtk's dtor executed before the child's. If child's view
+  // hierarchy references this focus manager, it crashes. This will defer focus
+  // manager's destruction after child NativeWidgetGtk's dtor.
   FocusManager* focus_manager = focus_manager_.release();
   if (focus_manager)
     MessageLoop::current()->DeleteSoon(FROM_HERE, focus_manager);
@@ -435,26 +510,14 @@ void Widget::ReplaceFocusManager(FocusManager* focus_manager) {
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, private:
 
-void Widget::RefreshCompositeTree() {
-  if (!EnsureCompositor())
-    return;
-
-  compositor_->NotifyStart();
-  root_view_->PaintComposite(compositor_.get());
-  compositor_->NotifyEnd();
-}
-
-bool Widget::EnsureCompositor() {
-  if (compositor_.get())
-    return true;
+void Widget::EnsureCompositor() {
+  DCHECK(!compositor_.get());
 
   // TODO(sad): If there is a parent Widget, then use the same compositor
   //            instead of creating a new one here.
   gfx::AcceleratedWidget widget = native_widget_->GetAcceleratedWidget();
   if (widget != gfx::kNullAcceleratedWidget)
     compositor_ = ui::Compositor::Create(widget);
-
-  return compositor_.get() != NULL;
 }
 
 bool Widget::ShouldReleaseCaptureOnMouseReleased() const {

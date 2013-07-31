@@ -15,8 +15,9 @@ namespace chromeos {
 
 class MockNetworkLibrary : public NetworkLibrary {
  public:
-  MockNetworkLibrary() {}
-  virtual ~MockNetworkLibrary() {}
+  MockNetworkLibrary();
+  virtual ~MockNetworkLibrary();
+
   MOCK_METHOD1(AddNetworkManagerObserver, void(NetworkManagerObserver*));
   MOCK_METHOD1(RemoveNetworkManagerObserver, void(NetworkManagerObserver*));
   MOCK_METHOD2(AddNetworkObserver, void(const std::string&, NetworkObserver*));
@@ -113,6 +114,11 @@ class MockNetworkLibrary : public NetworkLibrary {
                                                 const std::string&,
                                                 const std::string&,
                                                 const std::string&));
+  MOCK_METHOD5(ConnectToVirtualNetworkCert, void(const std::string&,
+                                                 const std::string&,
+                                                 const std::string&,
+                                                 const std::string&,
+                                                 const std::string&));
   MOCK_METHOD0(SignalCellularPlanPayment, void(void));
   MOCK_METHOD0(HasRecentCellularPlanPayment, bool(void));
 

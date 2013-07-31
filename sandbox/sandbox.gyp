@@ -126,7 +126,7 @@
     ],
   },
   'conditions': [
-    [ 'OS=="freebsd" or OS=="openbsd"', {
+    [ 'os_posix == 1 and OS != "mac" and OS != "linux"', {
       # GYP requires that each file have at least one target defined.
       'targets': [
         {
@@ -157,7 +157,7 @@
         },
         {
           'target_name': 'sandbox',
-          'type': '<(library)',
+          'type': 'static_library',
           'conditions': [
             ['target_arch!="arm"', {
                'dependencies': [
@@ -181,7 +181,7 @@
       'targets': [
         {
           'target_name': 'sandbox',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'sandbox_windows_target': 1,
           },
@@ -231,7 +231,7 @@
         },
         {
           'target_name': 'sandbox_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'variables': {
             'sandbox_windows_target': 1,
           },

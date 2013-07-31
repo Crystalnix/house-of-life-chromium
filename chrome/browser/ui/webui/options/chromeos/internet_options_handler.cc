@@ -230,9 +230,6 @@ void InternetOptionsHandler::GetLocalizedValues(
   localized_strings->SetString("hardwareRevision",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_HARDWARE_REVISION));
-  localized_strings->SetString("lastUpdate",
-      l10n_util::GetStringUTF16(
-          IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_LAST_UPDATE));
   localized_strings->SetString("prlVersion",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_INTERNET_CELLULAR_PRL_VERSION));
@@ -686,7 +683,6 @@ void InternetOptionsHandler::PopulateCellularDetails(
     dictionary->SetString("modelId", device->model_id());
     dictionary->SetString("firmwareRevision", device->firmware_revision());
     dictionary->SetString("hardwareRevision", device->hardware_revision());
-    dictionary->SetString("lastUpdate", device->last_update());
     dictionary->SetString("prlVersion",
                           StringPrintf("%u", device->prl_version()));
     dictionary->SetString("meid", device->meid());
@@ -1126,12 +1122,11 @@ ListValue* InternetOptionsHandler::GetWirelessList() {
         chromeos::TYPE_CELLULAR,
         false,
         (*it)->activation_state(),
-        (*it)->restricted_pool()));
+        (*it)->SupportsDataPlan() && (*it)->restricted_pool()));
   }
 
   const chromeos::NetworkDevice* cellular_device = cros->FindCellularDevice();
-  // TODO(dpolukhin): replace imsi check with more specific supportNetworkScan
-  if (cellular_device && !cellular_device->imsi().empty() &&
+  if (cellular_device && cellular_device->support_network_scan() &&
       cros->cellular_enabled()) {
     list->Append(GetNetwork(
         kOtherNetworksFakePath,

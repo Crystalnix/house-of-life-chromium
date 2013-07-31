@@ -33,7 +33,6 @@
 #include "views/controls/label.h"
 #include "views/controls/menu/menu_2.h"
 #include "views/controls/menu/view_menu_delegate.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 
 namespace {
@@ -267,7 +266,7 @@ void BalloonViewImpl::Layout() {
 void BalloonViewImpl::ViewHierarchyChanged(
     bool is_add, View* parent, View* child) {
   if (is_add && GetWidget() && !control_view_host_.get() && controls_) {
-    control_view_host_.reset(views::Widget::CreateWidget());
+    control_view_host_.reset(new views::Widget);
     views::Widget::InitParams params(
         views::Widget::InitParams::TYPE_CONTROL);
     params.double_buffer = true;
@@ -279,6 +278,10 @@ void BalloonViewImpl::ViewHierarchyChanged(
   }
   if (!is_add && this == child && control_view_host_.get() && controls_)
     control_view_host_.release()->CloseNow();
+}
+
+gfx::Size BalloonViewImpl::GetPreferredSize() {
+  return gfx::Size(1000, 1000);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

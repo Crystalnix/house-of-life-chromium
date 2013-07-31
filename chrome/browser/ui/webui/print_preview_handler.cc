@@ -8,6 +8,7 @@
 
 #include "base/i18n/file_util_icu.h"
 #include "base/json/json_reader.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/printing/background_printing_manager.h"
 #include "chrome/browser/printing/printer_manager_dialog.h"
 #include "chrome/browser/printing/print_preview_tab_controller.h"
+#include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/print_preview_ui_html_source.h"
@@ -51,6 +53,29 @@ const char kColorDevice[] = "ColorDevice";
 #elif defined(OS_WIN)
 const char kPskColor[] = "psk:Color";
 #endif
+
+// Histogram buckets
+enum UserActionBuckets {
+  PRINT_TO_PRINTER,
+  PRINT_TO_PDF,
+  CANCEL,
+  FALLBACK_TO_ADVANCED_SETTINGS_DIALOG,
+  USERACTION_BUCKET_BOUNDARY
+};
+
+
+// Print preview user action histogram names.
+const char kUserAction[] = "PrintPreview.UserAction";
+const char kManagePrinters[] = "PrintPreview.ManagePrinters";
+const char kNumberOfPrinters[] = "PrintPreview.NumberOfPrinters";
+const char kPreviewFailedInitiatorTabDoesNotExist[] =
+    "PrintPreview.Failed.InitiatorTabDoesNotExist";
+
+const char kRegeneratePreviewRequestsRcvdBeforeCancel[] =
+    "PrintPreview.RegeneratePreviewRequest.BeforeCancel";
+
+const char kRegeneratePreviewRequestsRcvdBeforePrint[] =
+    "PrintPreview.RegeneratePreviewRequest.BeforePrint";
 
 // Get the print job settings dictionary from |args|. The caller takes
 // ownership of the returned DictionaryValue. Returns NULL on failure.
@@ -86,9 +111,11 @@ class PrintSystemTaskProxy
                                         BrowserThread::DeleteOnUIThread> {
  public:
   PrintSystemTaskProxy(const base::WeakPtr<PrintPreviewHandler>& handler,
-                             printing::PrintBackend* print_backend)
+                       printing::PrintBackend* print_backend,
+                       bool has_logged_printers_count)
       : handler_(handler),
-        print_backend_(print_backend) {
+        print_backend_(print_backend),
+        has_logged_printers_count_(has_logged_printers_count) {
   }
 
   void EnumeratePrinters() {
@@ -97,6 +124,12 @@ class PrintSystemTaskProxy
 
     printing::PrinterList printer_list;
     print_backend_->EnumeratePrinters(&printer_list);
+
+    if (!has_logged_printers_count_) {
+      // Record the total number of printers.
+      UMA_HISTOGRAM_COUNTS(kNumberOfPrinters, printer_list.size());
+    }
+
     int i = 0;
     for (printing::PrinterList::iterator index = printer_list.begin();
          index != printer_list.end(); ++index, ++i) {
@@ -200,6 +233,8 @@ class PrintSystemTaskProxy
 
   scoped_refptr<printing::PrintBackend> print_backend_;
 
+  bool has_logged_printers_count_;
+
   DISALLOW_COPY_AND_ASSIGN(PrintSystemTaskProxy);
 };
 
@@ -235,7 +270,11 @@ class PrintToPdfTask : public Task {
 FilePath* PrintPreviewHandler::last_saved_path_ = NULL;
 
 PrintPreviewHandler::PrintPreviewHandler()
-    : print_backend_(printing::PrintBackend::CreateInstance(NULL)) {
+    : print_backend_(printing::PrintBackend::CreateInstance(NULL)),
+      regenerate_preview_request_count_(0),
+      manage_printers_dialog_request_count_(0),
+      print_preview_failed_count_(0),
+      has_logged_printers_count_(false) {
 }
 
 PrintPreviewHandler::~PrintPreviewHandler() {
@@ -266,7 +305,11 @@ TabContents* PrintPreviewHandler::preview_tab() {
 
 void PrintPreviewHandler::HandleGetPrinters(const ListValue*) {
   scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(), print_backend_.get());
+      new PrintSystemTaskProxy(AsWeakPtr(),
+                               print_backend_.get(),
+                               has_logged_printers_count_);
+  has_logged_printers_count_ = true;
+
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
       NewRunnableMethod(task.get(),
@@ -274,9 +317,15 @@ void PrintPreviewHandler::HandleGetPrinters(const ListValue*) {
 }
 
 void PrintPreviewHandler::HandleGetPreview(const ListValue* args) {
+  // Increment request count.
+  ++regenerate_preview_request_count_;
+
   TabContents* initiator_tab = GetInitiatorTab();
-  if (!initiator_tab)
+  if (!initiator_tab) {
+    ++print_preview_failed_count_;
+    web_ui_->CallJavascriptFunction("printPreviewFailed");
     return;
+  }
   scoped_ptr<DictionaryValue> settings(GetSettingsDictionary(args));
   if (!settings.get())
     return;
@@ -286,6 +335,13 @@ void PrintPreviewHandler::HandleGetPreview(const ListValue* args) {
 }
 
 void PrintPreviewHandler::HandlePrint(const ListValue* args) {
+  ReportStats();
+
+  // Record the number of times the user requests to regenerate preview data
+  // before printing.
+  UMA_HISTOGRAM_COUNTS(kRegeneratePreviewRequestsRcvdBeforePrint,
+                       regenerate_preview_request_count_);
+
   TabContents* initiator_tab = GetInitiatorTab();
   if (initiator_tab) {
     RenderViewHost* rvh = initiator_tab->render_view_host();
@@ -303,6 +359,10 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
       TabContentsWrapper::GetCurrentWrapperForContents(preview_tab());
 
   if (print_to_pdf) {
+    UMA_HISTOGRAM_ENUMERATION(kUserAction,
+                              PRINT_TO_PDF,
+                              USERACTION_BUCKET_BOUNDARY);
+
     // Pre-populating select file dialog with print job title.
     string16 print_job_title_utf16 =
         preview_tab_wrapper->print_view_manager()->RenderSourceName();
@@ -320,6 +380,9 @@ void PrintPreviewHandler::HandlePrint(const ListValue* args) {
 
     SelectFile(default_filename);
   } else {
+    UMA_HISTOGRAM_ENUMERATION(kUserAction,
+                              PRINT_TO_PRINTER,
+                              USERACTION_BUCKET_BOUNDARY);
     g_browser_process->background_printing_manager()->OwnTabContents(
         preview_tab_wrapper);
 
@@ -339,7 +402,9 @@ void PrintPreviewHandler::HandleGetPrinterCapabilities(
     return;
 
   scoped_refptr<PrintSystemTaskProxy> task =
-      new PrintSystemTaskProxy(AsWeakPtr(), print_backend_.get());
+      new PrintSystemTaskProxy(AsWeakPtr(),
+                               print_backend_.get(),
+                               has_logged_printers_count_);
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
@@ -349,6 +414,11 @@ void PrintPreviewHandler::HandleGetPrinterCapabilities(
 }
 
 void PrintPreviewHandler::HandleShowSystemDialog(const ListValue* args) {
+  ReportStats();
+  UMA_HISTOGRAM_ENUMERATION(kUserAction,
+                            FALLBACK_TO_ADVANCED_SETTINGS_DIALOG,
+                            USERACTION_BUCKET_BOUNDARY);
+
   TabContents* initiator_tab = GetInitiatorTab();
   if (!initiator_tab)
     return;
@@ -362,11 +432,32 @@ void PrintPreviewHandler::HandleShowSystemDialog(const ListValue* args) {
 }
 
 void PrintPreviewHandler::HandleManagePrinters(const ListValue* args) {
+  ++manage_printers_dialog_request_count_;
   printing::PrinterManagerDialog::ShowPrinterManagerDialog();
 }
 
 void PrintPreviewHandler::HandleClosePreviewTab(const ListValue* args) {
+  ReportStats();
+  UMA_HISTOGRAM_ENUMERATION(kUserAction,
+                            CANCEL,
+                            USERACTION_BUCKET_BOUNDARY);
+
+  // Record the number of times the user requests to regenerate preview data
+  // before cancelling.
+  UMA_HISTOGRAM_COUNTS(kRegeneratePreviewRequestsRcvdBeforeCancel,
+                       regenerate_preview_request_count_);
+
   ActivateInitiatorTabAndClosePreviewTab();
+}
+
+void PrintPreviewHandler::ReportStats() {
+  if (print_preview_failed_count_ > 0) {
+    UMA_HISTOGRAM_COUNTS(kPreviewFailedInitiatorTabDoesNotExist,
+                         print_preview_failed_count_);
+  }
+
+  UMA_HISTOGRAM_COUNTS(kManagePrinters,
+                       manage_printers_dialog_request_count_);
 }
 
 void PrintPreviewHandler::ActivateInitiatorTabAndClosePreviewTab() {
@@ -400,7 +491,14 @@ TabContents* PrintPreviewHandler::GetInitiatorTab() {
 void PrintPreviewHandler::ClosePrintPreviewTab() {
   Browser* preview_tab_browser = BrowserList::FindBrowserWithID(
       preview_tab()->controller().window_id().id());
-  preview_tab_browser->CloseTabContents(preview_tab());
+  if (!preview_tab_browser)
+    return;
+  TabStripModel* tabstrip = preview_tab_browser->tabstrip_model();
+
+  // Keep print preview tab out of the recently closed tab list, because
+  // re-opening that page will just display a non-functional print preview page.
+  tabstrip->CloseTabContentsAt(tabstrip->GetIndexOfController(
+      &preview_tab()->controller()), TabStripModel::CLOSE_NONE);
 }
 
 void PrintPreviewHandler::SelectFile(const FilePath& default_filename) {
@@ -438,8 +536,10 @@ void PrintPreviewHandler::FileSelected(const FilePath& path,
   PrintPreviewUIHTMLSource::PrintPreviewData data;
   PrintPreviewUI* print_preview_ui = static_cast<PrintPreviewUI*>(web_ui_);
   print_preview_ui->html_source()->GetPrintPreviewData(&data);
-  DCHECK(data.first);
-  DCHECK_GT(data.second, 0U);
+  if (!data.first || !data.second) {
+    NOTREACHED();
+    return;
+  }
 
   printing::PreviewMetafile* metafile = new printing::PreviewMetafile;
   metafile->InitFromData(data.first->memory(), data.second);

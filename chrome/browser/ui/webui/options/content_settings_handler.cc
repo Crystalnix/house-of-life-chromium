@@ -4,6 +4,9 @@
 
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
 
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
@@ -126,7 +129,7 @@ DictionaryValue* GetExceptionForPage(
   DictionaryValue* exception = new DictionaryValue();
   exception->Set(
       kDisplayPattern,
-      new StringValue(pattern.AsString()));
+      new StringValue(pattern.ToString()));
   exception->Set(
       kSetting,
       new StringValue(ContentSettingToString(setting)));
@@ -205,8 +208,8 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "cookies_tab_label", IDS_COOKIES_TAB_LABEL },
     { "cookies_header", IDS_COOKIES_HEADER },
     { "cookies_allow", IDS_COOKIES_ALLOW_RADIO },
-    { "cookies_ask", IDS_COOKIES_ASK_EVERY_TIME_RADIO },
     { "cookies_block", IDS_COOKIES_BLOCK_RADIO },
+    { "cookies_session_only", IDS_COOKIES_SESSION_ONLY_RADIO },
     { "cookies_block_3rd_party", IDS_COOKIES_BLOCK_3RDPARTY_CHKBOX },
     { "cookies_clear_when_close", IDS_COOKIES_CLEAR_WHEN_CLOSE_CHKBOX },
     { "cookies_lso_clear_when_close", IDS_COOKIES_LSO_CLEAR_WHEN_CLOSE_CHKBOX },
@@ -641,7 +644,7 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
     // got destroyed before we received this message.
     if (settings_map) {
       settings_map->SetContentSetting(
-          ContentSettingsPattern(pattern),
+          ContentSettingsPattern::FromString(pattern),
           ContentSettingsTypeFromGroupName(type_string),
           "",
           CONTENT_SETTING_DEFAULT);
@@ -676,7 +679,7 @@ void ContentSettingsHandler::SetException(const ListValue* args) {
   if (!settings_map)
     return;
 
-  settings_map->SetContentSetting(ContentSettingsPattern(pattern),
+  settings_map->SetContentSetting(ContentSettingsPattern::FromString(pattern),
                                   type,
                                   "",
                                   ContentSettingFromString(setting));
@@ -692,7 +695,8 @@ void ContentSettingsHandler::CheckExceptionPatternValidity(
   std::string pattern_string;
   CHECK(args->GetString(arg_i++, &pattern_string));
 
-  ContentSettingsPattern pattern(pattern_string);
+  ContentSettingsPattern pattern = ContentSettingsPattern::FromString(
+      pattern_string);
 
   scoped_ptr<Value> mode_value(Value::CreateStringValue(mode_string));
   scoped_ptr<Value> pattern_value(Value::CreateStringValue(pattern_string));

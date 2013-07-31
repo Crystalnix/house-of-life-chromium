@@ -6,16 +6,16 @@
 
 #include "base/logging.h"
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/panels/panel_browser_frame_view.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
+#include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "views/window/window.h"
 
 BrowserWindow* Panel::CreateNativePanel(Browser* browser, Panel* panel) {
-  BrowserView* view = new PanelBrowserView(browser, panel);
-  BrowserFrame::Create(view, browser->profile());
-  view->GetWindow()->non_client_view()->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+  PanelBrowserView* view = new PanelBrowserView(browser, panel);
+  (new BrowserFrame(view))->InitBrowserFrame();
   return view;
 }
 
@@ -29,16 +29,54 @@ PanelBrowserView::PanelBrowserView(Browser* browser, Panel* panel)
 PanelBrowserView::~PanelBrowserView() {
 }
 
+void PanelBrowserView::Init() {
+  BrowserView::Init();
+
+  GetWidget()->SetAlwaysOnTop(true);
+  GetWindow()->non_client_view()->SetAccessibleName(
+      l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+}
+
 void PanelBrowserView::Close() {
   if (!panel_)
     return;
+
+  // Check if the panel is in the closing process, i.e. Panel::Close() is
+  // called.
+#ifndef NDEBUG
+  DCHECK(panel_->closing());
+#endif
+
   ::BrowserView::Close();
   panel_ = NULL;
+}
+
+void PanelBrowserView::UpdateTitleBar() {
+  ::BrowserView::UpdateTitleBar();
+  GetFrameView()->UpdateTitleBar();
 }
 
 bool PanelBrowserView::GetSavedWindowBounds(gfx::Rect* bounds) const {
   *bounds = panel_->GetRestoredBounds();
   return true;
+}
+
+void PanelBrowserView::OnWindowActivationChanged(bool active) {
+  ::BrowserView::OnWindowActivationChanged(active);
+  GetFrameView()->OnActivationChanged(active);
+}
+
+bool PanelBrowserView::AcceleratorPressed(
+    const views::Accelerator& accelerator) {
+  if (mouse_pressed_ && accelerator.key_code() == ui::VKEY_ESCAPE) {
+    OnTitleBarMouseCaptureLost();
+    return true;
+  }
+  return BrowserView::AcceleratorPressed(accelerator);
+}
+
+PanelBrowserFrameView* PanelBrowserView::GetFrameView() const {
+  return static_cast<PanelBrowserFrameView*>(frame()->GetFrameView());
 }
 
 bool PanelBrowserView::OnTitleBarMousePressed(const views::MouseEvent& event) {
@@ -65,14 +103,20 @@ bool PanelBrowserView::OnTitleBarMouseDragged(const views::MouseEvent& event) {
 }
 
 bool PanelBrowserView::OnTitleBarMouseReleased(const views::MouseEvent& event) {
+  return EndDragging(false);
+}
+
+bool PanelBrowserView::OnTitleBarMouseCaptureLost() {
+  return EndDragging(true);
+}
+
+bool PanelBrowserView::EndDragging(bool cancelled) {
   // Only handle clicks that started in our window.
   if (!mouse_pressed_)
     return false;
   mouse_pressed_ = false;
 
-  if (mouse_dragging_) {
-    mouse_dragging_ = false;
-    panel_->manager()->EndDragging(false);
-  }
+  panel_->manager()->EndDragging(cancelled || !mouse_dragging_);
+  mouse_dragging_ = false;
   return true;
 }

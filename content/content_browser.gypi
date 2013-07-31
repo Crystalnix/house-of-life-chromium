@@ -6,13 +6,15 @@
   'targets': [
     {
       'target_name': 'content_browser',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'content_common',
         '../app/app.gyp:app_resources',
-        '../ppapi/ppapi.gyp:ppapi_proxy',
+        '../ppapi/ppapi_internal.gyp:ppapi_proxy',
         '../skia/skia.gyp:skia',
         '../third_party/flac/flac.gyp:libflac',
+        # TODO(ericu): remove leveldb ref after crbug.com/6955013 is fixed.
+        '../third_party/leveldb/leveldb.gyp:leveldb',
         '../third_party/speex/speex.gyp:libspeex',
         '../third_party/WebKit/Source/WebKit/chromium/WebKit.gyp:webkit',
         '../third_party/zlib/zlib.gyp:zlib',
@@ -28,8 +30,6 @@
         'browser/appcache/appcache_frontend_proxy.h',
         'browser/appcache/chrome_appcache_service.cc',
         'browser/appcache/chrome_appcache_service.h',
-        'browser/appcache/view_appcache_internals_job_factory.cc',
-        'browser/appcache/view_appcache_internals_job_factory.h',
         'browser/browser_child_process_host.cc',
         'browser/browser_child_process_host.h',
         'browser/browser_message_filter.cc',
@@ -42,10 +42,6 @@
         'browser/cancelable_request.h',
         'browser/cert_store.cc',
         'browser/cert_store.h',
-        'browser/certificate_manager_model.cc',
-        'browser/certificate_manager_model.h',
-        'browser/certificate_viewer.cc',
-        'browser/certificate_viewer.h',
         'browser/child_process_launcher.cc',
         'browser/child_process_launcher.h',
         'browser/child_process_security_policy.cc',
@@ -76,6 +72,8 @@
         'browser/file_system/browser_file_system_helper.h',
         'browser/file_system/file_system_dispatcher_host.cc',
         'browser/file_system/file_system_dispatcher_host.h',
+        'browser/font_list_async.cc',
+        'browser/font_list_asnyc.h',
         'browser/geolocation/access_token_store.h',
         'browser/geolocation/arbitrator_dependency_factory.cc',
         'browser/geolocation/arbitrator_dependency_factory.h',
@@ -114,8 +112,6 @@
         'browser/geolocation/network_location_request.cc',
         'browser/geolocation/network_location_request.h',
         'browser/geolocation/osx_wifi.h',
-        'browser/geolocation/wifi_data_provider_chromeos.cc',
-        'browser/geolocation/wifi_data_provider_chromeos.h',
         'browser/geolocation/wifi_data_provider_common.cc',
         'browser/geolocation/wifi_data_provider_common.h',
         'browser/geolocation/wifi_data_provider_common_win.cc',
@@ -131,14 +127,14 @@
         'browser/geolocation/win7_location_api_win.h',
         'browser/geolocation/win7_location_provider_win.cc',
         'browser/geolocation/win7_location_provider_win.h',
-        'browser/gpu_blacklist.cc',
-        'browser/gpu_blacklist.h',
-        'browser/gpu_data_manager.cc',
-        'browser/gpu_data_manager.h',
-        'browser/gpu_process_host.cc',
-        'browser/gpu_process_host.h',
-        'browser/gpu_process_host_ui_shim.cc',
-        'browser/gpu_process_host_ui_shim.h',
+        'browser/gpu/gpu_blacklist.cc',
+        'browser/gpu/gpu_blacklist.h',
+        'browser/gpu/gpu_data_manager.cc',
+        'browser/gpu/gpu_data_manager.h',
+        'browser/gpu/gpu_process_host.cc',
+        'browser/gpu/gpu_process_host.h',
+        'browser/gpu/gpu_process_host_ui_shim.cc',
+        'browser/gpu/gpu_process_host_ui_shim.h',
         'browser/host_zoom_map.cc',
         'browser/host_zoom_map.h',
         'browser/in_process_webkit/browser_webkitclient_impl.cc',
@@ -278,6 +274,8 @@
         'browser/renderer_host/sync_resource_handler.h',
         'browser/renderer_host/x509_user_cert_resource_handler.cc',
         'browser/renderer_host/x509_user_cert_resource_handler.h',
+        'browser/resolve_proxy_msg_helper.cc',
+        'browser/resolve_proxy_msg_helper.h',
         'browser/resource_context.cc',
         'browser/resource_context.h',
         'browser/site_instance.cc',
@@ -363,7 +361,7 @@
         ['OS=="win"', {
           'msvs_guid': '639DB58D-32C2-435A-A711-65A12F62E442',
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:dbus-glib',
             # For FcLangSetAdd call in render_sandbox_host_linux.cc
@@ -371,12 +369,6 @@
             '../build/linux/system.gyp:gtk',
             # For XShm* in backing_store_x.cc
             '../build/linux/system.gyp:x11',
-          ],
-        }, {  # OS != "linux"
-          'sources!': [
-            # TODO(mattm): Cert manager stuff is really !USE_NSS.
-            'browser/certificate_manager_model.cc',
-            'browser/certificate_manager_model.h',
           ],
         }],
         ['OS=="linux" and chromeos==1', {

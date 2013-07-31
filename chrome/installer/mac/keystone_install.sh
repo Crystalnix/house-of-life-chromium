@@ -61,7 +61,9 @@ shopt -s nullglob
 ME="$(basename "${0}")"
 readonly ME
 
-declare GOOGLE_CHROME_UPDATER_DEBUG
+# Workaround for http://code.google.com/p/chromium/issues/detail?id=83180#c3
+# In bash 4.0, "declare VAR" no longer initializes VAR if not already set.
+: ${GOOGLE_CHROME_UPDATER_DEBUG:=}
 err() {
   local error="${1}"
 
@@ -81,7 +83,7 @@ note() {
   fi
 }
 
-declare g_temp_dir
+g_temp_dir=
 cleanup() {
   local status=${?}
 
@@ -372,6 +374,15 @@ ksadmin_supports_tagpath_tagkey() {
 ksadmin_supports_brandpath_brandkey() {
   # --brand-path and --brand-key were introduced in Keystone 1.0.8.1620.
   is_ksadmin_version_ge 1.0.8.1620
+
+  # The return value of is_ksadmin_version_ge is used as this function's
+  # return value.
+}
+
+# Returns 0 (true) if ksadmin supports --version-path and --version-key.
+ksadmin_supports_versionpath_versionkey() {
+  # --version-path and --version-key were introduced in Keystone 1.0.9.2318.
+  is_ksadmin_version_ge 1.0.9.2318
 
   # The return value of is_ksadmin_version_ge is used as this function's
   # return value.
@@ -987,39 +998,60 @@ main() {
   note "brand_plist = ${brand_plist}"
   note "brand_plist_path = ${brand_plist_path}"
 
-  # If the user manually updated their copy of Chrome, there might be new
-  # brand information in the app bundle, and that needs to be copied out into
-  # the file Keystone looks at.
-  if [[ -n "${old_brand}" ]]; then
-    local brand_dir
-    brand_dir="$(dirname "${brand_plist_path}")"
-    note "brand_dir = ${brand_dir}"
-    if ! mkdir -p "${brand_dir}"; then
-      err "couldn't mkdir brand_dir, continuing"
-    else
-      if ! defaults write "${brand_plist}" "${KS_BRAND_KEY}" \
-                          -string "${old_brand}"; then
-        err "couldn't write brand_plist, continuing"
-      elif [[ -n "${set_brand_file_access}" ]]; then
-        if ! chown "root:wheel" "${brand_plist_path}"; then
-          err "couldn't chown brand_plist_path, continuing"
-        else
-          if ! chmod 644 "${brand_plist_path}"; then
-            err "couldn't chmod brand_plist_path, continuing"
+  local ksadmin_brand_plist_path
+  local ksadmin_brand_key
+
+  # Only the stable channel, identified by an empty channel string, has a
+  # brand code. On the beta and dev channels, remove the brand plist if
+  # present. Its presence means that the ticket used to manage a
+  # stable-channel Chrome but the user has since replaced it with a beta or
+  # dev channel version. Since the canary channel can run side-by-side with
+  # another Chrome installation, don't remove the brand plist on that channel,
+  # but skip the rest of the brand logic.
+  if [[ "${channel}" = "beta" ]] || [[ "${channel}" = "dev" ]]; then
+    note "defeating brand code on channel ${channel}"
+    rm -f "${brand_plist_path}" 2>/dev/null || true
+  elif [[ -n "${channel}" ]]; then
+    # Canary channel.
+    note "skipping brand code on channel ${channel}"
+  else
+    # Stable channel.
+    # If the user manually updated their copy of Chrome, there might be new
+    # brand information in the app bundle, and that needs to be copied out
+    # into the file Keystone looks at.
+    if [[ -n "${old_brand}" ]]; then
+      local brand_dir
+      brand_dir="$(dirname "${brand_plist_path}")"
+      note "brand_dir = ${brand_dir}"
+      if ! mkdir -p "${brand_dir}"; then
+        err "couldn't mkdir brand_dir, continuing"
+      else
+        if ! defaults write "${brand_plist}" "${KS_BRAND_KEY}" \
+                            -string "${old_brand}"; then
+          err "couldn't write brand_plist, continuing"
+        elif [[ -n "${set_brand_file_access}" ]]; then
+          if ! chown "root:wheel" "${brand_plist_path}"; then
+            err "couldn't chown brand_plist_path, continuing"
+          else
+            if ! chmod 644 "${brand_plist_path}"; then
+              err "couldn't chmod brand_plist_path, continuing"
+            fi
           fi
         fi
       fi
     fi
+
+    # Confirm that the brand file exists.  It's optional.
+    ksadmin_brand_plist_path="${brand_plist_path}"
+    ksadmin_brand_key="${KS_BRAND_KEY}"
+
+    if [[ ! -f "${ksadmin_brand_plist_path}" ]]; then
+      # Clear any branding information.
+      ksadmin_brand_plist_path=
+      ksadmin_brand_key=
+    fi
   fi
 
-  # Confirm that the brand file exists.  It's optional.
-  local ksadmin_brand_plist_path="${brand_plist_path}"
-  local ksadmin_brand_key="${KS_BRAND_KEY}"
-  if [[ ! -f "${ksadmin_brand_plist_path}" ]]; then
-    # Clear any branding information.
-    ksadmin_brand_plist_path=
-    ksadmin_brand_key=
-  fi
   note "ksadmin_brand_plist_path = ${ksadmin_brand_plist_path}"
   note "ksadmin_brand_key = ${ksadmin_brand_key}"
 
@@ -1050,6 +1082,13 @@ main() {
     ksadmin_args+=(
       --brand-path "${ksadmin_brand_plist_path}"
       --brand-key "${ksadmin_brand_key}"
+    )
+  fi
+
+  if ksadmin_supports_versionpath_versionkey; then
+    ksadmin_args+=(
+      --version-path "${installed_app_plist_path}"
+      --version-key "${KS_VERSION_KEY}"
     )
   fi
 

@@ -73,6 +73,10 @@
           }],
         ],
       },],
+      ['os_posix == 1 and OS != "mac" and OS != "linux"', {
+        'platform_locale_settings_grd':
+            'app/resources/locale_settings_linux.grd',
+      },],
       ['OS=="mac"', {
         'tweak_info_plist_path': 'tools/build/mac/tweak_info_plist',
         'nacl_defines': [
@@ -89,10 +93,10 @@
             # The policy .grd file also needs the bundle id.
             'grit_defines': ['-D', 'mac_bundle_id=com.google.Chrome'],
           }, {  # else: branding!="Chrome"
-            'mac_bundle_id': 'org.chromium.Chromium',
+            'mac_bundle_id': 'org.houseoflife.BitPop',
             'mac_creator': 'Cr24',
             # The policy .grd file also needs the bundle id.
-            'grit_defines': ['-D', 'mac_bundle_id=org.chromium.Chromium'],
+            'grit_defines': ['-D', 'mac_bundle_id=org.houseoflife.BitPop'],
           }],  # branding
         ],  # conditions
       }],  # OS=="mac"
@@ -307,6 +311,13 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          'action_name': 'options_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/options_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
           'action_name': 'shared_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/shared_resources.grd',
@@ -358,6 +369,7 @@
           },
           'inputs': [
             '<(grit_grd_file)',
+            '<(frontend_folder)/devtools_frontend.html',
           ],
           'outputs': [
             '<(grit_out_dir)/grit/devtools_frontend_resources.h',
@@ -404,9 +416,10 @@
     },
     {
       'target_name': 'debugger',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '57823D8C-A317-4713-9125-2C91FDFD12D6',
       'dependencies': [
+        'chrome_extra_resources',
         'chrome_resources',
         'chrome_strings',
         '../base/base.gyp:base',
@@ -455,7 +468,7 @@
         'browser/debugger/inspectable_tab_proxy.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -464,7 +477,7 @@
     },
     {
       'target_name': 'utility',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '4D2B38E6-65FF-4F97-B88A-E441DF54EBF7',
       'dependencies': [
         '../base/base.gyp:base',
@@ -479,7 +492,7 @@
         '..',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -488,7 +501,7 @@
     },
     {
       'target_name': 'profile_import',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
       ],
@@ -502,10 +515,10 @@
       # Provides a syncapi dynamic library target from checked-in binaries,
       # or from compiling a stub implementation.
       'target_name': 'syncapi',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
-	'browser/sync/engine/http_post_provider_factory.h',
-	'browser/sync/engine/http_post_provider_interface.h',
+        'browser/sync/engine/http_post_provider_factory.h',
+        'browser/sync/engine/http_post_provider_interface.h',
         'browser/sync/engine/syncapi.cc',
         'browser/sync/engine/syncapi.h',
         'browser/sync/engine/configure_reason.h'
@@ -540,7 +553,7 @@
     },
     {
       'target_name': 'sync',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/engine/all_status.cc',
         'browser/sync/engine/all_status.h',
@@ -607,6 +620,10 @@
         'browser/sync/js_arg_list.cc',
         'browser/sync/js_arg_list.h',
         'browser/sync/js_backend.h',
+        'browser/sync/js_directory_change_listener.cc',
+        'browser/sync/js_directory_change_listener.h',
+        'browser/sync/js_event_details.cc',
+        'browser/sync/js_event_details.h',
         'browser/sync/js_event_handler.h',
         'browser/sync/js_event_handler_list.cc',
         'browser/sync/js_event_handler_list.h',
@@ -629,6 +646,7 @@
         'browser/sync/sessions/sync_session.h',
         'browser/sync/sessions/sync_session_context.cc',
         'browser/sync/sessions/sync_session_context.h',
+        'browser/sync/shared_value.h',
         'browser/sync/syncable/autofill_migration.h',
         'browser/sync/syncable/blob.h',
         'browser/sync/syncable/dir_open_result.h',
@@ -695,7 +713,7 @@
             'browser/sync/util/data_encryption.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -722,7 +740,7 @@
     # A library for sending and receiving server-issued notifications.
     {
       'target_name': 'sync_notifier',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'browser/sync/notifier/cache_invalidation_packet_handler.cc',
         'browser/sync/notifier/cache_invalidation_packet_handler.h',
@@ -764,7 +782,7 @@
     },
     {
       'target_name': 'service',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '2DA87614-55C5-4E56-A17E-0CD099786197',
       'dependencies': [
         'chrome_strings',
@@ -811,8 +829,6 @@
         'service/gaia/service_gaia_authenticator.h',
         'service/net/service_url_request_context.cc',
         'service/net/service_url_request_context.h',
-        'service/remoting/chromoting_host_manager.cc',
-        'service/remoting/chromoting_host_manager.h',
       ],
       'include_dirs': [
         '..',
@@ -828,7 +844,7 @@
             'service/cloud_print/print_system_win.cc',
           ],
         }],
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -844,17 +860,6 @@
           ],
           'sources': [
             'service/cloud_print/print_system_cups.cc',
-          ],
-        }],
-        ['remoting==1', {
-          'dependencies': [
-            '../remoting/remoting.gyp:chromoting_host',
-          ],
-        }],
-        ['remoting==0', {
-          'sources!': [
-            'service/remoting/chromoting_host_manager.cc',
-            'service/remoting/chromoting_host_manager.h',
           ],
         }],
       ],
@@ -1206,6 +1211,7 @@
                   '<(grit_out_dir)/component_extension_resources.pak',
                   '<(grit_out_dir)/devtools_frontend_resources.pak',
                   '<(grit_out_dir)/devtools_resources.pak',
+                  '<(grit_out_dir)/options_resources.pak',
                   '<(grit_out_dir)/net_internals_resources.pak',
                   '<(grit_out_dir)/shared_resources.pak',
                   '<(grit_out_dir)/sync_internals_resources.pak',
@@ -1318,6 +1324,7 @@
             '../media/media.gyp:*',
             '../net/net.gyp:*',
             '../ppapi/ppapi.gyp:*',
+            '../ppapi/ppapi_internal.gyp:*',
             '../printing/printing.gyp:*',
             '../sdch/sdch.gyp:*',
             '../skia/skia.gyp:*',
@@ -1462,7 +1469,7 @@
         },
         {
           'target_name': 'automation',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '1556EF78-C7E6-43C8-951F-F6B43AC0DD12',
           'dependencies': [
             'theme_resources',
@@ -1525,7 +1532,7 @@
         },
       ]},  # 'targets'
     ],  # OS=="win"
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [{
         'target_name': 'packed_resources',
         'type': 'none',
@@ -1626,7 +1633,7 @@
           },
         ],
       }],  # targets
-    }],  # OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"
+    }],  # os_posix == 1 and OS != "mac"
   ],  # 'conditions'
 }
 

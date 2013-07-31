@@ -28,24 +28,16 @@
         'chromeos%': '<(chromeos)',
         'touchui%': '<(touchui)',
 
-        # To do a shared build on linux we need to be able to choose between
-        # type static_library and shared_library. We default to doing a static
-        # build but you can override this with "gyp -Dlibrary=shared_library"
-        # or you can add the following line (without the #) to
-        # ~/.gyp/include.gypi {'variables': {'library': 'shared_library'}}
-        # to compile as shared by default
-        'library%': 'static_library',
-
         # Compute the architecture that we're building on.
         'conditions': [
-          [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
-            # This handles the Linux platforms we generally deal with. Anything
-            # else gets passed through, which probably won't work very well; such
-            # hosts should pass an explicit target_arch to gyp.
-            'host_arch%':
-              '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/")',
-          }, {  # OS!="linux"
+          [ 'OS=="win" or OS=="mac"', {
             'host_arch%': 'ia32',
+          }, {
+            # This handles the Unix platforms for which there is some support.
+            # Anything else gets passed through, which probably won't work very
+            # well; such hosts should pass an explicit target_arch to gyp.
+            'host_arch%':
+              '<!(uname -m | sed -e "s/i.86/ia32/;s/x86_64/x64/;s/amd64/x64/;s/arm.*/arm/;s/i86pc/ia32/")',
           }],
 
           # Set default value of toolkit_views on for Windows, Chrome OS
@@ -62,8 +54,14 @@
       'chromeos%': '<(chromeos)',
       'touchui%': '<(touchui)',
       'host_arch%': '<(host_arch)',
-      'library%': '<(library)',
       'toolkit_views%': '<(toolkit_views)',
+
+      # We used to provide a variable for changing how libraries were built.
+      # This variable remains until we can clean up all the users.
+      # This needs to be one nested variables dict in so that dependent
+      # gyp files can make use of it in their outer variables.  (Yikes!)
+      # http://code.google.com/p/chromium/issues/detail?id=83308
+      'library%': 'static_library',
 
       # Override branding to select the desired branding flavor.
       'branding%': 'Chromium',
@@ -117,7 +115,7 @@
       # 'library' for static libraries.
       # By default, component is set to whatever library is set to and
       # it can be overriden by the GYP command line or by ~/.gyp/include.gypi.
-      'component%': '<(library)',
+      'component%': 'static_library',
 
       # Set to select the Title Case versions of strings in GRD files.
       'use_titlecase_in_grd_files%': 0,
@@ -140,6 +138,22 @@
       'clang_use_chrome_plugins%': 0,
 
       'conditions': [
+        # A flag for POSIX platforms
+        ['OS=="win"', {
+          'os_posix%': 0,
+        }, {
+          'os_posix%': 1,
+        }],
+
+        # Flags to use Gtk and X11 on non-Mac POSIX platforms
+        ['OS=="win" or OS=="mac"', {
+          'toolkit_uses_gtk%': 0,
+          'use_x11%': 0,
+        }, {
+          'toolkit_uses_gtk%': 1,
+          'use_x11%': 1,
+        }],
+
         # A flag to enable or disable our compile-time dependency
         # on gnome-keyring. If that dependency is disabled, no gnome-keyring
         # support will be available. This option is useful
@@ -184,7 +198,11 @@
     'buildtype%': '<(buildtype)',
     'target_arch%': '<(target_arch)',
     'host_arch%': '<(host_arch)',
+    'library%': 'static_library',
     'toolkit_views%': '<(toolkit_views)',
+    'os_posix%': '<(os_posix)',
+    'toolkit_uses_gtk%': '<(toolkit_uses_gtk)',
+    'use_x11%': '<(use_x11)',
     'use_gnome_keyring%': '<(use_gnome_keyring)',
     'linux_fpic%': '<(linux_fpic)',
     'enable_flapper_hacks%': '<(enable_flapper_hacks)',
@@ -198,7 +216,6 @@
     'arm_neon%': '<(arm_neon)',
     'sysroot%': '<(sysroot)',
     'disable_sse2%': '<(disable_sse2)',
-    'library%': '<(library)',
     'component%': '<(component)',
     'use_titlecase_in_grd_files%': '<(use_titlecase_in_grd_files)',
     'use_third_party_translations%': '<(use_third_party_translations)',
@@ -339,6 +356,8 @@
 
     # Set to 1 to link against libgnome-keyring instead of using dlopen().
     'linux_link_gnome_keyring%': 0,
+    # Set to 1 to link against gsettings APIs instead of using dlopen().
+    'linux_link_gsettings%': 0,
 
     # Used to disable Native Client at compile time, for platforms where it
     # isn't supported
@@ -405,7 +424,7 @@
     'icu_src_dir': '../third_party/icu',
 
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+      ['os_posix==1 and OS!="mac"', {
         # This will set gcc_version to XY if you are running gcc X.Y.*.
         # This is used to tweak build flags for gcc 4.4.
         'gcc_version%': '<!(python <(DEPTH)/build/compiler_version.py)',
@@ -421,7 +440,7 @@
             'linux_dump_symbols%': 1,
           }],
         ],
-      }],  # OS=="linux" or OS=="freebsd" or OS=="openbsd"
+      }],  # os_posix==1 and OS!="mac"
 
       ['OS=="mac"', {
         'conditions': [
@@ -433,7 +452,7 @@
           ['branding=="Chrome"', {
             'mac_product_name%': 'Google Chrome',
           }, { # else: branding!="Chrome"
-            'mac_product_name%': 'Chromium',
+            'mac_product_name%': 'BitPop',
           }],
 
           # Feature variables for enabling Mac Breakpad and Keystone auto-update
@@ -483,7 +502,7 @@
         ],
       }],
 
-      ['OS=="mac" or (OS=="linux" and chromeos==0 and target_arch!="arm")', {
+      ['os_posix==1 and chromeos==0 and target_arch!="arm"', {
         'use_cups%': 1,
       }, {
         'use_cups%': 0,
@@ -497,11 +516,14 @@
         'libjpeg_gyp_path': '../third_party/libjpeg/libjpeg.gyp',
       }],  # use_libjpeg_turbo==1
 
-      # Use GConf, the GNOME configuration system.
+      # Options controlling the use of GConf (the classic GNOME configuration
+      # system) and GIO, which contains GSettings (the new GNOME config system).
       ['chromeos==1', {
         'use_gconf%': 0,
+        'use_gio%': 0,
       }, {
         'use_gconf%': 1,
+        'use_gio%': 1,
       }],
 
       # Set up -D and -E flags passed into grit.
@@ -534,7 +556,7 @@
       }],
       ['use_third_party_translations==1', {
         'grit_defines': ['-D', 'use_third_party_translations'],
-        'locales': ['ast', 'eu', 'gl', 'ka', 'ku', 'ug'],
+        'locales': ['ast', 'ca@valencia', 'eo', 'eu', 'gl', 'ka', 'ku', 'ug'],
       }],
 
       ['clang_use_chrome_plugins==1', {
@@ -542,7 +564,7 @@
             '<!(<(DEPTH)/tools/clang/scripts/plugin_flags.sh)',
       }],
 
-      # Set 1 to enable ibus support. Currently it is only supported in touchui.
+      # Set use_ibus to 1 to enable ibus support.
       ['touchui==1 and chromeos==1', {
         'use_ibus%': 1,
       }, {
@@ -732,7 +754,7 @@
     'target_conditions': [
       ['chromium_code==0', {
         'conditions': [
-          [ 'OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+          [ 'os_posix==1 and OS!="mac"', {
             # We don't want to get warnings from third-party code,
             # so remove any existing warning-enabling flags like -Wall.
             'cflags!': [
@@ -788,7 +810,7 @@
                           ['exclude', '(^|/)(cocoa|mac)/'],
                           ['exclude', '\\.mm?$' ] ],
           }],
-          ['OS!="linux" and OS!="freebsd" and OS!="openbsd"', {
+          ['toolkit_uses_gtk!=1', {
             'sources/': [
               ['exclude', '_(chromeos|gtk|x|x11|xdg)(_unittest)?\\.(h|cc)$'],
               ['exclude', '(^|/)gtk/'],
@@ -1023,16 +1045,19 @@
     },
   },
   'conditions': [
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix==1 and OS!="mac"', {
       'target_defaults': {
         # Enable -Werror by default, but put it in a variable so it can
         # be disabled in ~/.gyp/include.gypi on the valgrind builders.
         'variables': {
           # Use -fno-strict-aliasing, see http://crbug.com/32204
           'no_strict_aliasing%': 1,
-          'conditions': [['OS=="linux"', {'werror%': '-Werror',}],
-                         ['OS=="freebsd"', {'werror%': '',}],
-                         ['OS=="openbsd"', {'werror%': '',}],
+          'conditions': [
+            ['OS=="linux"', {
+              'werror%': '-Werror',
+              }, { # turn off -Werror on other Unices
+              'werror%': '',
+            }],
           ],
         },
         'cflags': [
@@ -1085,6 +1110,10 @@
               # The following flag is to disable --gc-sections linker
               # option for these bots.
               'no_gc_sections%': 0,
+
+              # TODO(bradnelson): reexamine how this is done if we change the
+              # expansion of configurations
+              'release_valgrind_build%': 0,
             },
             'cflags': [
               '-O>(release_optimize)',
@@ -1122,7 +1151,7 @@
               # At gyp time, we test the linker for ICF support; this flag
               # is then provided to us by gyp.  (Currently only gold supports
               # an --icf flag.)
-              ['LINKER_SUPPORTS_ICF==1', {
+              ['LINKER_SUPPORTS_ICF==1 and release_valgrind_build==0', {
                 'ldflags': [
                   '-Wl,--icf=safe',
                 ]
@@ -1308,22 +1337,6 @@
           ['linux_breakpad==1', {
             'cflags': [ '-g' ],
             'defines': ['USE_LINUX_BREAKPAD'],
-          }],
-          ['library=="shared_library"', {
-            # When building with shared libraries, remove the visiblity-hiding
-            # flag.
-            'cflags!': [ '-fvisibility=hidden' ],
-            'conditions': [
-              ['target_arch=="x64" or target_arch=="arm"', {
-                # Shared libraries need -fPIC on x86-64 and arm
-                'cflags': ['-fPIC']
-              }]
-            ],
-            'ldflags!': [
-              # --as-needed confuses library interdependencies.
-              # See http://code.google.com/p/chromium/issues/detail?id=61430
-              '-Wl,--as-needed',
-            ],
           }],
           ['linux_use_heapchecker==1', {
             'variables': {'linux_use_tcmalloc%': 1},
@@ -1626,7 +1639,7 @@
         },
       },
     }],
-    ['disable_nacl==1 or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['disable_nacl==1', {
       'target_defaults': {
         'defines': [
           'DISABLE_NACL',

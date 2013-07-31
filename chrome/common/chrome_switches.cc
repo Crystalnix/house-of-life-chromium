@@ -5,6 +5,7 @@
 #include "chrome/common/chrome_switches.h"
 
 #include "base/base_switches.h"
+#include "base/command_line.h"
 
 namespace switches {
 
@@ -16,6 +17,10 @@ namespace switches {
 // Activate (make foreground) myself on launch.  Helpful when Chrome
 // is launched on the command line (e.g. by Selenium).  Only needed on Mac.
 const char kActivateOnLaunch[]              = "activate-on-launch";
+
+// Allow third party content included on a page to prompt for a HTTP
+// basic auth username/password pair.
+const char kAllowCrossOriginAuthPrompt[]    = "allow-cross-origin-auth-prompt";
 
 // On ChromeOS, file:// access is disabled except for certain whitelisted
 // directories. This switch re-enables file:// for testing.
@@ -31,6 +36,10 @@ const char kAllowOutdatedPlugins[]          = "allow-outdated-plugins";
 // gallery site. Normally prevented for security reasons, but can be
 // useful for automation testing of the gallery.
 const char kAllowScriptingGallery[]         = "allow-scripting-gallery";
+
+// Specifies comma separated list of extension ids to grant access to local
+// websocket proxy.
+const char kAllowWebSocketProxy[]           = "allow-websocket-proxy";
 
 // This prevents Chrome from requiring authorization to run certain widely
 // installed but less commonly used plug-ins.
@@ -144,6 +153,10 @@ const char kCountry[]                       = "country";
 // Path to the inspector files on disk (allows reloading of devtool files
 // without having to restart the browser).
 const char kDebugDevToolsFrontend[]         = "debug-devtools-frontend";
+
+// Enables a frame context menu item that toggles the frame in and out of glass
+// mode (Windows Vista and up only).
+const char kDebugEnableFrameToggle[]        = "debug-enable-frame-toggle";
 
 // Enables support to debug printing subsystem.
 const char kDebugPrint[]                    = "debug-print";
@@ -383,6 +396,10 @@ const char kEnableCloudPrintProxy[]         = "enable-cloud-print-proxy";
 // Enables the Cloud Print dialog hosting code.
 const char kEnableCloudPrint[]              = "enable-cloud-print";
 
+// Enables compact navigation mode, which removes the toolbar and moves most of
+// UI to the tab strip.
+const char kEnableCompactNavigation[]       = "enable-compact-navigation";
+
 // Enables compositing to texture instead of display.
 const char kEnableCompositeToTexture[]      = "enable-composite-to-texture";
 
@@ -392,6 +409,11 @@ const char kEnableConnectBackupJobs[]       = "enable-connect-backup-jobs";
 
 // Enables web developers to create apps for Chrome without using crx packages.
 const char kEnableCrxlessWebApps[]          = "enable-crxless-web-apps";
+
+// Enables retrieval of PAC URLs from DHCP as per the WPAD standard. Note
+// that this feature is not supported on all platforms, and using the flag
+// is a no-op on such platforms.
+const char kEnableDhcpWpad[]                = "enable-dhcp-wpad";
 
 // Enable DNS side checking of certificates. Still experimental, should only
 // be used by developers at the current time.
@@ -418,9 +440,6 @@ const char kEnableFastback[]                = "enable-fastback";
 // testing, for example page cycler and layout tests.  See bug 1157243.
 const char kEnableFileCookies[]             = "enable-file-cookies";
 
-// Enable the use of the HistoryQuickProvider for autocomplete results.
-const char kEnableHistoryQuickProvider[]    = "enable-history-quick-provider";
-
 // Enable the JavaScript Full Screen API.
 const char kEnableFullScreen[]              = "enable-fullscreen";
 
@@ -442,6 +461,11 @@ const char kEnableIPCFuzzing[]               = "enable-ipc-fuzzing";
 // is needed for a domain which shares an IP with an existing connection,
 // attempt to use the existing connection.
 const char kEnableIPPooling[]               = "enable-ip-pooling";
+
+// Enables MAC cookies in the network stack.  These cookies use HMAC to
+// protect session state from passive network attackers.
+// http://tools.ietf.org/html/draft-hammer-oauth-v2-mac-token
+const char kEnableMacCookies[]              = "enable-mac-cookies";
 
 // Allows reporting memory info (JS heap size) to page.
 const char kEnableMemoryInfo[]              = "enable-memory-info";
@@ -466,9 +490,6 @@ const char kEnablePanels[]                  = "enable-panels";
 
 // Enable speculative TCP/IP preconnection.
 const char kEnablePreconnect[]              = "enable-preconnect";
-
-// Enable print preview (work in progress).
-const char kEnablePrintPreview[]            = "enable-print-preview";
 
 // Enable the IsSearchProviderInstalled and InstallSearchProvider with an extra
 // parameter to indicate if the provider should be the default.
@@ -593,8 +614,14 @@ const char kHomePage[]                      = "homepage";
 // proxy connection, and the endpoint host in a SOCKS proxy connection).
 const char kHostRules[]                     = "host-rules";
 
-// The maximum number of concurrent host resolve requests (i.e. DNS) to allow.
+// The maximum number of concurrent host resolve requests (i.e. DNS) to allow
+// (not counting backup attempts which would also consume threads).
+// --host-resolver-retry-attempts must be set to zero for this to be exact.
 const char kHostResolverParallelism[]       = "host-resolver-parallelism";
+
+// The maximum number of retry attempts to resolve the host. Set this to zero
+// to disable host resolver retry attempts.
+const char kHostResolverRetryAttempts[]     = "host-resolver-retry-attempts";
 
 // These mappings only apply to the host resolver.
 const char kHostResolverRules[]             = "host-resolver-rules";
@@ -992,12 +1019,6 @@ const char kDOMLogin[]                      = "dom-login";
 // Enables device policy support on ChromeOS.
 const char kEnableDevicePolicy[]            = "enable-device-policy";
 
-// Enable all 802.1X EAP Wi-Fi connection modes, like EAP-TLS and LEAP.
-// TODO(jamescook): Remove this when all major 802.1X modes are supported
-// through the full network stack, specifically those that require TPM and
-// client-side certificates.
-const char kEnableExperimentalEap[]         = "enable-experimental-eap";
-
 // Enables VPN support on ChromeOS.
 const char kEnableVPN[]                     = "enable-vpn";
 
@@ -1111,11 +1132,6 @@ const char kEnableExposeForTabs[]           = "enable-expose-for-tabs";
 const char kKioskMode[]                     = "kiosk";
 #endif
 
-// Enables the experimental global gnome menu.
-#if defined(TOOLKIT_GTK)
-extern const char kGlobalGnomeMenu[]        = "global-gnome-menu";
-#endif
-
 // Enables debug paint in views framework. Enabling this causes the damaged
 // region being painted to flash in red.
 #if defined(TOOLKIT_VIEWS)
@@ -1153,6 +1169,21 @@ const char kExposePrivateExtensionApi[]   = "expose-private-extension-api";
 const char kTouchDevices[]                  = "touch-devices";
 #endif
 
+#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+// Disable print preview (Not exposed via about:flags. Only used for testing.)
+const char kDisablePrintPreview[]           = "disable-print-preview";
+
+bool IsPrintPreviewEnabled() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kDisablePrintPreview);
+}
+#else
+// Enable print preview (no PDF viewer, thus not supported with Chromium).
+const char kEnablePrintPreview[]            = "enable-print-preview";
+
+bool IsPrintPreviewEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(kEnablePrintPreview);
+}
+#endif
 
 // -----------------------------------------------------------------------------
 // DO NOT ADD YOUR CRAP TO THE BOTTOM OF THIS FILE.

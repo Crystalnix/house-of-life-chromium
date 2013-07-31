@@ -10,8 +10,8 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/download/download_create_info.h"
 #include "chrome/browser/download/download_manager.h"
-#include "chrome/browser/history/download_create_info.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/browser/browser_thread.h"
@@ -23,11 +23,11 @@
 DownloadSBClient::DownloadSBClient(int32 download_id,
                                    const std::vector<GURL>& url_chain,
                                    const GURL& referrer_url)
-  : info_(NULL),
-    download_id_(download_id),
+  : download_id_(download_id),
     url_chain_(url_chain),
     referrer_url_(referrer_url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!url_chain.empty());
   ResourceDispatcherHost* rdh = g_browser_process->resource_dispatcher_host();
   if (rdh)
     sb_service_ = rdh->safe_browsing_service();
@@ -35,22 +35,19 @@ DownloadSBClient::DownloadSBClient(int32 download_id,
 
 DownloadSBClient::~DownloadSBClient() {}
 
-void DownloadSBClient::CheckDownloadUrl(DownloadCreateInfo* info,
-                                        UrlDoneCallback* callback) {
+void DownloadSBClient::CheckDownloadUrl(UrlDoneCallback* callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // It is not allowed to call this method twice.
   CHECK(!url_done_callback_.get() && !hash_done_callback_.get());
   CHECK(callback);
-  CHECK(info);
 
-  info_ = info;
   start_time_ = base::TimeTicks::Now();
   url_done_callback_.reset(callback);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       NewRunnableMethod(this,
                         &DownloadSBClient::CheckDownloadUrlOnIOThread,
-                        info->url_chain));
+                        url_chain_));
 }
 
 void DownloadSBClient::CheckDownloadHash(const std::string& hash,
@@ -124,7 +121,7 @@ void DownloadSBClient::SafeBrowsingCheckUrlDone(
   DVLOG(1) << "SafeBrowsingCheckUrlDone with result: " << result;
 
   bool is_dangerous = result != SafeBrowsingService::SAFE;
-  url_done_callback_->Run(info_, is_dangerous);
+  url_done_callback_->Run(download_id_, is_dangerous);
 
   if (sb_service_.get() && sb_service_->download_protection_enabled()) {
     UMA_HISTOGRAM_TIMES("SB2.DownloadUrlCheckDuration",
@@ -158,11 +155,16 @@ void DownloadSBClient::SafeBrowsingCheckHashDone(
 
 void DownloadSBClient::ReportMalware(
     SafeBrowsingService::UrlCheckResult result) {
+  std::string post_data;
+  for (size_t i = 0; i < url_chain_.size(); ++i)
+    post_data += url_chain_[i].spec() + "\n";
+
   sb_service_->ReportSafeBrowsingHit(url_chain_.back(),  // malicious_url
                                      url_chain_.front(), // page_url
                                      referrer_url_,
                                      true,
-                                     result);
+                                     result,
+                                     post_data);
 }
 
 void DownloadSBClient::UpdateDownloadCheckStats(SBStatsType stat_type) {

@@ -29,12 +29,10 @@
 #include "content/common/plugin_messages.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
-#include "net/url_request/url_request_job_tracker.h"
 #include "views/controls/button/text_button.h"
 #include "views/controls/native/native_view_host.h"
 #include "views/layout/grid_layout.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/root_view.h"
 #include "views/widget/widget.h"
 #include "views/window/window.h"
 
@@ -275,7 +273,7 @@ std::wstring AboutIPCDialog::GetWindowTitle() const {
 
 void AboutIPCDialog::Layout() {
   if (!message_list_.m_hWnd) {
-    HWND parent_window = GetRootView()->GetWidget()->GetNativeView();
+    HWND parent_window = GetWidget()->GetNativeView();
 
     RECT rect = {0, 0, 10, 10};
     HWND list_hwnd = message_list_.Create(parent_window,
@@ -365,7 +363,7 @@ void AboutIPCDialog::ButtonPressed(
   } else if (button == clear_button_) {
     message_list_.DeleteAllItems();
   } else if (button == filter_button_) {
-    RunSettingsDialog(GetRootView()->GetWidget()->GetNativeView());
+    RunSettingsDialog(GetWidget()->GetNativeView());
   }
 }
 

@@ -10,6 +10,7 @@
 #include "ipc/ipc_channel.h"
 #include "webkit/glue/window_open_disposition.h"
 
+class RenderViewHost;
 struct ViewHostMsg_FrameNavigate_Params;
 
 // An observer API implemented by classes which are interested in various page
@@ -18,7 +19,9 @@ class TabContentsObserver : public IPC::Channel::Listener,
                             public IPC::Message::Sender {
  public:
   // Use this as a member variable in a class that uses the empty constructor
-  // version of this interface.
+  // version of this interface.  On destruction of TabContents being observed,
+  // the registrar must either be destroyed or explicitly set to observe
+  // another TabContents.
   class Registrar {
    public:
     explicit Registrar(TabContentsObserver* observer);
@@ -47,11 +50,16 @@ class TabContentsObserver : public IPC::Channel::Listener,
   virtual void DidNavigateAnyFramePostCommit(
       const NavigationController::LoadCommittedDetails& details,
       const ViewHostMsg_FrameNavigate_Params& params);
-  virtual void DidStartProvisionalLoadForFrame(int64 frame_id,
-                                               bool is_main_frame,
-                                               const GURL& validated_url,
-                                               bool is_error_page);
-  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url);
+  // |render_view_host| is the RenderViewHost for which the provisional load is
+  // happening.
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      RenderViewHost* render_view_host);
+  virtual void ProvisionalChangeToMainFrameUrl(const GURL& url,
+                                               bool has_opener_set);
   virtual void DidCommitProvisionalLoadForFrame(
       int64 frame_id,
       bool is_main_frame,
@@ -63,6 +71,7 @@ class TabContentsObserver : public IPC::Channel::Listener,
                                       int error_code);
   virtual void DocumentLoadedInFrame(int64 frame_id);
   virtual void DidFinishLoad(int64 frame_id);
+  virtual void DidGetUserGesture();
 
   virtual void DidStartLoading();
   virtual void DidStopLoading();
@@ -118,6 +127,7 @@ class TabContentsObserver : public IPC::Channel::Listener,
  protected:
   friend class Registrar;
 
+  // Called from TabContents in response to having |this| added as an observer.
   void SetTabContents(TabContents* tab_contents);
 
  private:

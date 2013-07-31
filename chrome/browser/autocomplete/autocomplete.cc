@@ -27,6 +27,7 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/ui/webui/history_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -48,7 +49,6 @@ using base::TimeDelta;
 
 AutocompleteInput::AutocompleteInput()
   : type_(INVALID),
-    initial_prevent_inline_autocomplete_(false),
     prevent_inline_autocomplete_(false),
     prefer_keyword_(false),
     allow_exact_keyword_match_(true),
@@ -61,17 +61,14 @@ AutocompleteInput::AutocompleteInput(const string16& text,
                                      bool prefer_keyword,
                                      bool allow_exact_keyword_match,
                                      MatchesRequested matches_requested)
-    : original_text_(text),
-      desired_tld_(desired_tld),
-      initial_prevent_inline_autocomplete_(prevent_inline_autocomplete),
+    : desired_tld_(desired_tld),
       prevent_inline_autocomplete_(prevent_inline_autocomplete),
       prefer_keyword_(prefer_keyword),
       allow_exact_keyword_match_(allow_exact_keyword_match),
       matches_requested_(matches_requested) {
-  // Trim whitespace from edges of input; don't inline autocomplete if there
-  // was trailing whitespace.
-  if (TrimWhitespace(text, TRIM_ALL, &text_) & TRIM_TRAILING)
-    prevent_inline_autocomplete_ = true;
+  // None of the providers care about leading white space so we always trim it.
+  // Providers that care about trailing white space handle trimming themselves.
+  TrimWhitespace(text, TRIM_LEADING, &text_);
 
   GURL canonicalized_url;
   type_ = Parse(text_, desired_tld, &parts_, &scheme_, &canonicalized_url);
@@ -163,7 +160,7 @@ AutocompleteInput::Type AutocompleteInput::Parse(
       !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpScheme) &&
       !LowerCaseEqualsASCII(parsed_scheme, chrome::kHttpsScheme)) {
     // See if we know how to handle the URL internally.
-    if (net::URLRequest::IsHandledProtocol(UTF16ToASCII(parsed_scheme)))
+    if (ProfileIOData::IsHandledProtocol(UTF16ToASCII(parsed_scheme)))
       return URL;
 
     // There are also some schemes that we convert to other things before they
@@ -790,9 +787,7 @@ AutocompleteController::AutocompleteController(
   providers_.push_back(search_provider_);
   // TODO(mrossetti): Remove the following and permanently modify the
   // HistoryURLProvider to not search titles once HQP is turned on permanently.
-  bool hqp_enabled = CommandLine::ForCurrentProcess()->HasSwitch(
-                         switches::kEnableHistoryQuickProvider) &&
-                     !CommandLine::ForCurrentProcess()->HasSwitch(
+  bool hqp_enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
                          switches::kDisableHistoryQuickProvider);
   if (hqp_enabled)
     providers_.push_back(new HistoryQuickProvider(this, profile));

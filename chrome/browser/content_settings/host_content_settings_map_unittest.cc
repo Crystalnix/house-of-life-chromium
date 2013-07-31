@@ -83,7 +83,8 @@ TEST_F(HostContentSettingsMapTest, DefaultValues) {
 
   // Check returning individual settings.
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   EXPECT_EQ(CONTENT_SETTING_ALLOW,
             host_content_settings_map->GetContentSetting(
                 host, CONTENT_SETTINGS_TYPE_IMAGES, ""));
@@ -130,7 +131,8 @@ TEST_F(HostContentSettingsMapTest, DefaultValues) {
   EXPECT_TRUE(SettingsEqual(desired_settings, settings));
 
   // Check returning all hosts for a setting.
-  ContentSettingsPattern pattern2("[*.]example.org");
+  ContentSettingsPattern pattern2 =
+       ContentSettingsPattern::FromString("[*.]example.org");
   host_content_settings_map->SetContentSetting(pattern2,
       CONTENT_SETTINGS_TYPE_IMAGES, "", CONTENT_SETTING_BLOCK);
   host_content_settings_map->SetContentSetting(pattern2,
@@ -153,7 +155,8 @@ TEST_F(HostContentSettingsMapTest, DefaultValues) {
   EXPECT_EQ(0U, host_settings.size());
 
   // Check clearing one type.
-  ContentSettingsPattern pattern3("[*.]example.net");
+  ContentSettingsPattern pattern3 =
+      ContentSettingsPattern::FromString("[*.]example.net");
   host_content_settings_map->SetContentSetting(pattern,
       CONTENT_SETTINGS_TYPE_IMAGES, "", CONTENT_SETTING_BLOCK);
   host_content_settings_map->SetContentSetting(pattern2,
@@ -181,8 +184,10 @@ TEST_F(HostContentSettingsMapTest, Patterns) {
   GURL host1("http://example.com/");
   GURL host2("http://www.example.com/");
   GURL host3("http://example.org/");
-  ContentSettingsPattern pattern1("[*.]example.com");
-  ContentSettingsPattern pattern2("example.org");
+  ContentSettingsPattern pattern1 =
+       ContentSettingsPattern::FromString("[*.]example.com");
+  ContentSettingsPattern pattern2 =
+       ContentSettingsPattern::FromString("example.org");
   EXPECT_EQ(CONTENT_SETTING_ALLOW,
             host_content_settings_map->GetContentSetting(
                 host1, CONTENT_SETTINGS_TYPE_IMAGES, ""));
@@ -210,7 +215,8 @@ TEST_F(HostContentSettingsMapTest, Observer) {
       profile.GetHostContentSettingsMap();
   StubSettingsObserver observer;
 
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   host_content_settings_map->SetContentSetting(pattern,
       CONTENT_SETTINGS_TYPE_IMAGES, "", CONTENT_SETTING_ALLOW);
   EXPECT_EQ(host_content_settings_map, observer.last_notifier);
@@ -226,18 +232,12 @@ TEST_F(HostContentSettingsMapTest, Observer) {
   EXPECT_FALSE(observer.last_update_all_types);
   EXPECT_EQ(2, observer.counter);
 
-  host_content_settings_map->ResetToDefaults();
-  EXPECT_EQ(host_content_settings_map, observer.last_notifier);
-  EXPECT_TRUE(observer.last_update_all);
-  EXPECT_TRUE(observer.last_update_all_types);
-  EXPECT_EQ(3, observer.counter);
-
   host_content_settings_map->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_IMAGES, CONTENT_SETTING_BLOCK);
   EXPECT_EQ(host_content_settings_map, observer.last_notifier);
   EXPECT_TRUE(observer.last_update_all);
   EXPECT_FALSE(observer.last_update_all_types);
-  EXPECT_EQ(4, observer.counter);
+  EXPECT_EQ(3, observer.counter);
 }
 
 TEST_F(HostContentSettingsMapTest, ObserveDefaultPref) {
@@ -287,7 +287,8 @@ TEST_F(HostContentSettingsMapTest, ObserveExceptionPref) {
   scoped_ptr<Value> default_value(prefs->FindPreference(
       prefs::kContentSettingsPatterns)->GetValue()->DeepCopy());
 
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   GURL host("http://example.com");
 
   host_content_settings_map->SetContentSetting(pattern,
@@ -318,7 +319,8 @@ TEST_F(HostContentSettingsMapTest, HostTrimEndingDotCheck) {
   HostContentSettingsMap* host_content_settings_map =
       profile.GetHostContentSettingsMap();
 
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   GURL host_ending_with_dot("http://example.com./");
 
   EXPECT_EQ(CONTENT_SETTING_ALLOW,
@@ -398,9 +400,12 @@ TEST_F(HostContentSettingsMapTest, NestedSettings) {
       profile.GetHostContentSettingsMap();
 
   GURL host("http://a.b.example.com/");
-  ContentSettingsPattern pattern1("[*.]example.com");
-  ContentSettingsPattern pattern2("[*.]b.example.com");
-  ContentSettingsPattern pattern3("a.b.example.com");
+  ContentSettingsPattern pattern1 =
+       ContentSettingsPattern::FromString("[*.]example.com");
+  ContentSettingsPattern pattern2 =
+       ContentSettingsPattern::FromString("[*.]b.example.com");
+  ContentSettingsPattern pattern3 =
+       ContentSettingsPattern::FromString("a.b.example.com");
 
   host_content_settings_map->SetContentSetting(pattern1,
       CONTENT_SETTINGS_TYPE_IMAGES, "", CONTENT_SETTING_BLOCK);
@@ -455,7 +460,8 @@ TEST_F(HostContentSettingsMapTest, OffTheRecord) {
   profile.set_incognito(false);
 
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
 
   EXPECT_EQ(CONTENT_SETTING_ALLOW,
             host_content_settings_map->GetContentSetting(
@@ -605,7 +611,8 @@ TEST_F(HostContentSettingsMapTest, NonDefaultSettings) {
       profile.GetHostContentSettingsMap();
 
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
 
   ContentSettings desired_settings(CONTENT_SETTING_DEFAULT);
   ContentSettings settings =
@@ -632,7 +639,8 @@ TEST_F(HostContentSettingsMapTest, ResourceIdentifier) {
       profile.GetHostContentSettingsMap();
 
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   std::string resource1("someplugin");
   std::string resource2("otherplugin");
 
@@ -671,7 +679,8 @@ TEST_F(HostContentSettingsMapTest, ResourceIdentifierPrefs) {
       profile.GetHostContentSettingsMap();
 
   GURL host("http://example.com/");
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("[*.]example.com");
   std::string resource1("someplugin");
   std::string resource2("otherplugin");
 
@@ -745,7 +754,8 @@ TEST_F(HostContentSettingsMapTest,
   TestingPrefService* prefs = profile.GetTestingPrefService();
 
   // Set pattern for JavaScript setting.
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+       ContentSettingsPattern::FromString("[*.]example.com");
   host_content_settings_map->SetContentSetting(pattern,
       CONTENT_SETTINGS_TYPE_JAVASCRIPT, "", CONTENT_SETTING_BLOCK);
 
@@ -780,7 +790,8 @@ TEST_F(HostContentSettingsMapTest,
       CONTENT_SETTINGS_TYPE_JAVASCRIPT, CONTENT_SETTING_BLOCK);
 
   // Set an exception to allow "[*.]example.com"
-  ContentSettingsPattern pattern("[*.]example.com");
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("[*.]example.com");
   host_content_settings_map->SetContentSetting(pattern,
       CONTENT_SETTINGS_TYPE_JAVASCRIPT, "", CONTENT_SETTING_ALLOW);
 

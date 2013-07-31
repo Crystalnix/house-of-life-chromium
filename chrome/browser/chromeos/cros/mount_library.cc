@@ -12,10 +12,62 @@
 #include "content/browser/browser_thread.h"
 
 const char* kLibraryNotLoaded = "Cros Library not loaded";
+const char* kDeviceNotFound = "Device could not be found";
 
 namespace chromeos {
 
+MountLibrary::Disk::Disk(const std::string& device_path,
+     const std::string& mount_path,
+     const std::string& system_path,
+     const std::string& file_path,
+     const std::string& device_label,
+     const std::string& drive_label,
+     const std::string& parent_path,
+     DeviceType device_type,
+     uint64 total_size,
+     bool is_parent,
+     bool is_read_only,
+     bool has_media,
+     bool on_boot_device)
+    : device_path_(device_path),
+      mount_path_(mount_path),
+      system_path_(system_path),
+      file_path_(file_path),
+      device_label_(device_label),
+      drive_label_(drive_label),
+      parent_path_(parent_path),
+      device_type_(device_type),
+      total_size_(total_size),
+      is_parent_(is_parent),
+      is_read_only_(is_read_only),
+      has_media_(has_media),
+      on_boot_device_(on_boot_device) {
+  // Add trailing slash to mount path.
+  if (mount_path_.length() && mount_path_.at(mount_path_.length() -1) != '/')
+    mount_path_ = mount_path_.append("/");
+}
+
+MountLibrary::Disk::~Disk() {}
+
 class MountLibraryImpl : public MountLibrary {
+
+  struct UnmountDeviceRecursiveCallbackData {
+    MountLibraryImpl* const object;
+    void* user_data;
+    UnmountDeviceRecursiveCallbackType callback;
+    size_t pending_callbacks_count;
+    bool success;
+
+    UnmountDeviceRecursiveCallbackData(MountLibraryImpl* const o, void* ud,
+        UnmountDeviceRecursiveCallbackType cb, int count)
+         : object(o),
+          user_data(ud),
+          callback(cb),
+          pending_callbacks_count(count),
+          success(true) {
+    }
+  };
+
  public:
   MountLibraryImpl() : mount_status_connection_(NULL) {
     if (CrosLibrary::Get()->EnsureLoaded())
@@ -65,6 +117,53 @@ class MountLibraryImpl : public MountLibrary {
                            this);
   }
 
+  virtual void UnmountDeviceRecursive(const char* device_path,
+      UnmountDeviceRecursiveCallbackType callback, void* user_data)
+      OVERRIDE {
+    bool success = true;
+    const char* error_message = NULL;
+    std::vector<const char*> devices_to_unmount;
+
+    if (!CrosLibrary::Get()->EnsureLoaded()) {
+      success = false;
+      error_message = kLibraryNotLoaded;
+    } else {
+      // Get list of all devices to unmount.
+      int device_path_len = strlen(device_path);
+      for (DiskMap::iterator it = disks_.begin(); it != disks_.end(); ++it) {
+        if (strncmp(device_path, it->second->device_path().c_str(),
+            device_path_len) == 0) {
+          devices_to_unmount.push_back(it->second->device_path().c_str());
+        }
+      }
+
+      // We should detect at least original device.
+      if (devices_to_unmount.size() == 0) {
+        success = false;
+        error_message = kDeviceNotFound;
+      }
+    }
+
+    if (success) {
+      // We will send the same callback data object to all Unmount calls and use
+      // it to syncronize callbacks.
+      UnmountDeviceRecursiveCallbackData*
+          cb_data = new UnmountDeviceRecursiveCallbackData(this, user_data,
+          callback, devices_to_unmount.size());
+      for (std::vector<const char*>::iterator it = devices_to_unmount.begin();
+          it != devices_to_unmount.end();
+          ++it) {
+        UnmountRemovableDevice(*it,
+            &MountLibraryImpl::UnmountDeviceRecursiveCallback,
+            cb_data);
+      }
+    } else {
+      LOG(WARNING) << "Unmount recursive request failed for device "
+                   << device_path << ", with error: " << error_message;
+      callback(user_data, false);
+    }
+  }
+
   virtual void RequestMountInfoRefresh() OVERRIDE {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     if (!CrosLibrary::Get()->EnsureLoaded()) {
@@ -78,25 +177,9 @@ class MountLibraryImpl : public MountLibrary {
                      this);
   }
 
-  virtual void RefreshDiskProperties(const Disk* disk) OVERRIDE {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    DCHECK(disk);
-    if (!CrosLibrary::Get()->EnsureLoaded()) {
-      OnGetDiskProperties(disk->device_path().c_str(),
-                          NULL,
-                          MOUNT_METHOD_ERROR_LOCAL,
-                          kLibraryNotLoaded);
-      return;
-    }
-    GetDiskProperties(disk->device_path().c_str(),
-                      &MountLibraryImpl::GetDiskPropertiesCallback,
-                      this);
-  }
-
   const DiskMap& disks() const OVERRIDE { return disks_; }
 
  private:
-
   // Callback for MountRemovableDevice method.
   static void MountRemovableDeviceCallback(void* object,
                                            const char* device_path,
@@ -122,6 +205,36 @@ class MountLibraryImpl : public MountLibrary {
     self->OnUnmountRemovableDevice(device_path,
                                    error,
                                    error_message);
+  }
+
+  // Callback for UnmountDeviceRecursive.
+  static void UnmountDeviceRecursiveCallback(void* object,
+                                             const char* device_path,
+                                             const char* mount_path,
+                                             MountMethodErrorType error,
+                                             const char* error_message) {
+    DCHECK(object);
+    UnmountDeviceRecursiveCallbackData* cb_data =
+        static_cast<UnmountDeviceRecursiveCallbackData*>(object);
+
+    // Do standard processing for Unmount event.
+    cb_data->object->OnUnmountRemovableDevice(device_path,
+                                              error,
+                                              error_message);
+    if (error == MOUNT_METHOD_ERROR_LOCAL) {
+      cb_data->success = false;
+    } else if (error == MOUNT_METHOD_ERROR_NONE) {
+      LOG(WARNING) << device_path <<  " unmounted.";
+   }
+
+    // This is safe as long as all callbacks are called on the same thread as
+    // UnmountDeviceRecursive.
+    cb_data->pending_callbacks_count--;
+
+    if (cb_data->pending_callbacks_count == 0) {
+      cb_data->callback(cb_data->user_data, cb_data->success);
+      delete cb_data;
+    }
   }
 
   // Callback for disk information retrieval calls.
@@ -414,7 +527,9 @@ class MountLibraryStubImpl : public MountLibrary {
   virtual void RequestMountInfoRefresh() OVERRIDE {}
   virtual void MountPath(const char* device_path) OVERRIDE {}
   virtual void UnmountPath(const char* device_path) OVERRIDE {}
-  virtual bool IsBootPath(const char* device_path) OVERRIDE { return true; }
+  virtual void UnmountDeviceRecursive(const char* device_path,
+      UnmountDeviceRecursiveCallbackType callback, void* user_data)
+      OVERRIDE {}
 
  private:
   // The list of disks found.

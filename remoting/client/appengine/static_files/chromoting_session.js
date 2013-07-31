@@ -11,6 +11,7 @@ var MAX_DEBUG_LOG_SIZE = 1000;
 chromoting.messageId = 1;
 
 chromoting.scaleToFit = false;
+
 // Default to trying to sandboxed connections.
 chromoting.connectMethod = 'sandboxed';
 
@@ -18,17 +19,22 @@ chromoting.connectMethod = 'sandboxed';
 // to the plugin.
 function feedIq() {
   var xhr = new XMLHttpRequest();
+  addToDebugLog("xmpp proxy: " + chromoting.httpXmppProxy);
   xhr.open("GET", chromoting.httpXmppProxy + '/readIq?host_jid=' +
            encodeURIComponent(document.hostjid), true);
   xhr.withCredentials = true;
   xhr.onreadystatechange = function() {
     if (xhr.readyState == 4) {
-      if (xhr.status == 200 || xhr.status == 204) {
+      if (xhr.status == 200) {
         addToDebugLog('Receiving Iq: --' + xhr.responseText + '--');
         chromoting.plugin.onIq(xhr.responseText);
+      }
+      if (xhr.status == 200 || xhr.status == 204) {
         window.setTimeout(feedIq, 0);
       } else {
         addToDebugLog("HttpXmpp gateway returned code: " + xhr.status);
+        chromoting.plugin.disconnect();
+        setClientStateMessage("Failed");
       }
     }
   }
@@ -37,6 +43,7 @@ function feedIq() {
 
 function registerConnection() {
   var xhr = new XMLHttpRequest();
+  addToDebugLog("xmpp proxy: " + chromoting.httpXmppProxy);
   xhr.open("POST", chromoting.httpXmppProxy + '/newConnection', true);
   xhr.withCredentials = true;
   xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
@@ -47,10 +54,10 @@ function registerConnection() {
         var clientjid = xhr.responseText;
 
         chromoting.plugin.sendIq = sendIq;
+        // TODO:(jamiewalch): Pass in the correct nonce.
         chromoting.plugin.connectSandboxed(clientjid, chromoting.hostjid);
         // TODO(ajwong): This should just be feedIq();
         window.setTimeout(feedIq, 1000);
-        window.setTimeout(updateStatusBarStats, 1000);
       } else {
         addToDebugLog('FailedToConnect: --' + xhr.responseText +
                       '-- (status=' + xhr.status + ')');
@@ -60,7 +67,7 @@ function registerConnection() {
   }
   xhr.send('host_jid=' + encodeURIComponent(chromoting.hostjid) +
            '&username=' + encodeURIComponent(chromoting.username) +
-           '&password=' + encodeURIComponent(chromoting.xmppAuthToken));
+           '&password=' + encodeURIComponent(chromoting.talkToken));
   setClientStateMessage("Connecting")
 }
 
@@ -95,7 +102,7 @@ function init() {
   chromoting.username = document.username;
   chromoting.hostname = document.hostname;
   chromoting.hostjid = document.hostjid;
-  chromoting.xmppAuthToken = document.xmppAuthToken;
+  chromoting.talkToken = document.talkToken;
   chromoting.connectMethod = document.connectMethod;
 
   // Only allow https connections to the httpXmppProxy unless we're running in
@@ -125,9 +132,9 @@ function init() {
     if (chromoting.connectMethod == "sandboxed") {
       registerConnection();
     } else {
+      // TODO:(jamiewalch): Pass in the correct nonce.
       plugin.connect(chromoting.username, chromoting.hostjid,
-                     chromoting.xmppAuthToken);
-      window.setTimeout("updateStatusBarStats()", 1000);
+                     chromoting.talkToken, '');
     }
   } else {
     addToDebugLog('ERROR: chromoting plugin not loaded');
@@ -210,6 +217,7 @@ function connectionInfoUpdateCallback() {
   } else if (status == chromoting.plugin.STATUS_CONNECTED) {
     desktopSizeChanged();
     setClientStateMessageFade('Connected to ' + chromoting.hostname, 1000);
+    window.setTimeout(updateStatusBarStats, 1000);
   } else if (status == chromoting.plugin.STATUS_CLOSED) {
     setClientStateMessage('Closed');
   } else if (status == chromoting.plugin.STATUS_FAILED) {
@@ -322,6 +330,8 @@ function addToDebugLog(message) {
  * @param {string} message The message to display.
  */
 function updateStatusBarStats() {
+  if (chromoting.plugin.status != chromoting.plugin.STATUS_CONNECTED)
+    return;
   var videoBandwidth = chromoting.plugin.videoBandwidth;
   var videoCaptureLatency = chromoting.plugin.videoCaptureLatency;
   var videoEncodeLatency = chromoting.plugin.videoEncodeLatency;

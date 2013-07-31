@@ -46,8 +46,13 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
                                  bool minimal_changes) {
   matches_.clear();
 
+  // Don't bother with INVALID and FORCED_QUERY.  Also pass when looking for
+  // BEST_MATCH and there is no inline autocompletion because none of the HQP
+  // matches can score highly enough to qualify.
   if ((input.type() == AutocompleteInput::INVALID) ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+      (input.type() == AutocompleteInput::FORCED_QUERY) ||
+      (input.matches_requested() == AutocompleteInput::BEST_MATCH &&
+       input.prevent_inline_autocomplete()))
     return;
 
   autocomplete_input_ = input;
@@ -109,8 +114,10 @@ void HistoryQuickProvider::DoAutocomplete() {
        match_iter != matches.end(); ++match_iter) {
     const ScoredHistoryMatch& history_match(*match_iter);
     if (history_match.raw_score > 0) {
-      AutocompleteMatch ac_match = QuickMatchToACMatch(history_match,
-                                                       &max_match_score);
+      AutocompleteMatch ac_match = QuickMatchToACMatch(
+          history_match,
+          PreventInlineAutocomplete(autocomplete_input_),
+          &max_match_score);
       matches_.push_back(ac_match);
     }
   }
@@ -118,6 +125,7 @@ void HistoryQuickProvider::DoAutocomplete() {
 
 AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
     const ScoredHistoryMatch& history_match,
+    bool prevent_inline_autocomplete,
     int* max_match_score) {
   DCHECK(max_match_score);
   const history::URLRow& info = history_match.url_info;
@@ -142,12 +150,11 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
       SpansFromTermMatch(new_matches, match.contents.size(), true);
   match.fill_into_edit = match.contents;
 
-  if (autocomplete_input_.prevent_inline_autocomplete() ||
-      !history_match.can_inline) {
+  if (prevent_inline_autocomplete || !history_match.can_inline) {
     match.inline_autocomplete_offset = string16::npos;
   } else {
     match.inline_autocomplete_offset =
-        history_match.input_location + autocomplete_input_.text().length();
+        history_match.input_location + match.fill_into_edit.length();
     DCHECK_LE(match.inline_autocomplete_offset, match.fill_into_edit.length());
   }
 

@@ -4,7 +4,7 @@
 
 {
   'conditions': [
-    [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+    [ 'os_posix == 1 and OS != "mac"', {
       'conditions': [
         ['sysroot!=""', {
           'variables': {
@@ -23,7 +23,7 @@
     {
       'target_name': 'ssl',
       'product_name': 'ssl',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'ssl/authcert.c',
         'ssl/cmpcert.c',
@@ -105,7 +105,7 @@
             ],
           },
         ],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'defines': [
             # These macros are needed only for compiling the files in
             # ssl/bodge.

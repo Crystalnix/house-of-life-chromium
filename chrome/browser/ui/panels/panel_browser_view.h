@@ -6,10 +6,12 @@
 #define CHROME_BROWSER_UI_PANELS_PANEL_BROWSER_VIEW_H_
 #pragma once
 
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 
 class Browser;
 class Panel;
+class PanelBrowserFrameView;
 
 // A browser view that implements Panel specific behavior.
 class PanelBrowserView : public ::BrowserView {
@@ -24,12 +26,24 @@ class PanelBrowserView : public ::BrowserView {
   bool OnTitleBarMousePressed(const views::MouseEvent& event);
   bool OnTitleBarMouseDragged(const views::MouseEvent& event);
   bool OnTitleBarMouseReleased(const views::MouseEvent& event);
-
-  // Overridden from BrowserView:
-  virtual void Close();
-  virtual bool GetSavedWindowBounds(gfx::Rect* bounds) const;
+  bool OnTitleBarMouseCaptureLost();
 
  private:
+  friend class PanelBrowserViewTest;
+  FRIEND_TEST_ALL_PREFIXES(PanelBrowserViewTest, CreatePanel);
+
+  // Overridden from BrowserView:
+  virtual void Init() OVERRIDE;
+  virtual void Close() OVERRIDE;
+  virtual void UpdateTitleBar() OVERRIDE;
+  virtual bool GetSavedWindowBounds(gfx::Rect* bounds) const OVERRIDE;
+  virtual void OnWindowActivationChanged(bool active) OVERRIDE;
+  virtual bool AcceleratorPressed(const views::Accelerator& accelerator)
+      OVERRIDE;
+
+  PanelBrowserFrameView* GetFrameView() const;
+  bool EndDragging(bool cancelled);
+
   Panel* panel_;
 
   // Is the mouse button currently down?

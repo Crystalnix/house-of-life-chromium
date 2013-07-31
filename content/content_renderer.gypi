@@ -7,11 +7,11 @@
     {
       'target_name': 'content_renderer',
       'msvs_guid': '9AAA8CF2-9B3D-4895-8CB9-D70BBD125EAD',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'content_common',
         '../jingle/jingle.gyp:jingle_glue',
-        '../ppapi/ppapi.gyp:ppapi_proxy',
+        '../ppapi/ppapi_internal.gyp:ppapi_proxy',
         '../skia/skia.gyp:skia',
         '../third_party/ffmpeg/ffmpeg.gyp:ffmpeg',
         '../third_party/icu/icu.gyp:icuuc',
@@ -46,8 +46,8 @@
         'renderer/geolocation_dispatcher.h',
         'renderer/gpu_channel_host.cc',
         'renderer/gpu_channel_host.h',
-        'renderer/gpu_video_decoder_host.cc',
-        'renderer/gpu_video_decoder_host.h',
+        'renderer/gpu_video_decode_accelerator_host.cc',
+        'renderer/gpu_video_decode_accelerator_host.h',
         'renderer/gpu_video_service_host.cc',
         'renderer/gpu_video_service_host.h',
         'renderer/indexed_db_dispatcher.cc',
@@ -102,8 +102,6 @@
         'renderer/renderer_main_platform_delegate_linux.cc',
         'renderer/renderer_main_platform_delegate_mac.mm',
         'renderer/renderer_main_platform_delegate_win.cc',
-        'renderer/renderer_sandbox_support_linux.cc',
-        'renderer/renderer_sandbox_support_linux.h',
         'renderer/renderer_webapplicationcachehost_impl.cc',
         'renderer/renderer_webapplicationcachehost_impl.h',
         'renderer/renderer_webaudiodevice_impl.cc',
@@ -138,8 +136,6 @@
         'renderer/v8_value_converter.h',
         'renderer/video_capture_message_filter.cc',
         'renderer/video_capture_message_filter.h',
-        'renderer/video_decode_accelerator_host.cc',
-        'renderer/video_decode_accelerator_host.h',
         'renderer/webgraphicscontext3d_command_buffer_impl.cc',
         'renderer/webgraphicscontext3d_command_buffer_impl.h',
         'renderer/webplugin_delegate_proxy.cc',
@@ -179,7 +175,7 @@
             'renderer/command_buffer_proxy.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],

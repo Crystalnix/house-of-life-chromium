@@ -8,10 +8,11 @@
 // TYPE_UI, which URLRequest doesn't allow.
 //
 
-#include "base/message_loop.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
+#include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
+#include "base/scoped_temp_dir.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
@@ -25,10 +26,41 @@
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_path_manager.h"
+#include "webkit/fileapi/file_system_test_helper.h"
 #include "webkit/fileapi/file_system_util.h"
 #include "webkit/fileapi/local_file_system_file_util.h"
+#include "webkit/quota/quota_manager.h"
+
+using quota::QuotaManager;
 
 namespace fileapi {
+
+namespace {
+
+class MockQuotaManager : public QuotaManager {
+ public:
+  MockQuotaManager(const FilePath& base_dir, int64 quota)
+      : QuotaManager(false /* is_incognito */, base_dir,
+                     base::MessageLoopProxy::CreateForCurrentThread(),
+                     base::MessageLoopProxy::CreateForCurrentThread()),
+        usage_(0),
+        quota_(quota) {}
+
+  virtual void GetUsageAndQuota(const GURL& origin, quota::StorageType type,
+                                GetUsageAndQuotaCallback* callback) {
+    callback->Run(quota::kQuotaStatusOk, usage_, quota_);
+    delete callback;
+  }
+
+  void set_usage(int64 usage) { usage_ = usage; }
+  void set_quota(int64 quota) { quota_ = quota; }
+
+ private:
+  int64 usage_;
+  int64 quota_;
+};
+
+}  // namespace (anonymous)
 
 class FileSystemOperationWriteTest : public testing::Test {
  public:
@@ -61,10 +93,11 @@ class FileSystemOperationWriteTest : public testing::Test {
 
  protected:
   GURL URLForPath(const FilePath& path) const {
-    // Only the path will actually get used.
-    return GURL(GetFileSystemRootURI(GURL("http://www.example.com/"),
-        kFileSystemTypeTemporary).spec() + path.MaybeAsASCII());
+    return test_helper_.GetURLForPath(path);
   }
+
+  scoped_refptr<MockQuotaManager> quota_manager_;
+  FileSystemTestOriginHelper test_helper_;
 
   MessageLoop loop_;
 
@@ -82,25 +115,6 @@ class FileSystemOperationWriteTest : public testing::Test {
 };
 
 namespace {
-
-class MockFileSystemPathManager : public FileSystemPathManager {
- public:
-  MockFileSystemPathManager(const FilePath& filesystem_path)
-      : FileSystemPathManager(base::MessageLoopProxy::CreateForCurrentThread(),
-                              filesystem_path, NULL, false, true),
-        test_filesystem_path_(filesystem_path) {}
-
-  virtual FilePath ValidateFileSystemRootAndGetPathOnFileThread(
-      const GURL& origin_url,
-      FileSystemType type,
-      const FilePath& virtual_path,
-      bool create) {
-    return test_filesystem_path_;
-  }
-
- private:
-  FilePath test_filesystem_path_;
-};
 
 class TestURLRequestContext : public net::URLRequestContext {
  public:
@@ -136,10 +150,6 @@ class MockDispatcher : public FileSystemCallbackDispatcher {
     ADD_FAILURE();
   }
 
-  virtual void DidGetLocalPath(const FilePath& local_path) {
-    ADD_FAILURE();
-  }
-
   virtual void DidReadMetadata(
       const base::PlatformFileInfo& info,
       const FilePath& platform_path) {
@@ -170,8 +180,16 @@ class MockDispatcher : public FileSystemCallbackDispatcher {
 
 void FileSystemOperationWriteTest::SetUp() {
   ASSERT_TRUE(dir_.CreateUniqueTempDir());
-  filesystem_dir_ = dir_.path().AppendASCII("filesystem");
-  file_util::CreateDirectory(filesystem_dir_);
+  FilePath base_dir = dir_.path().AppendASCII("filesystem");
+
+  quota_manager_ = new MockQuotaManager(base_dir, 1024);
+  test_helper_.SetUp(base_dir,
+                     false /* incognito */,
+                     false /* unlimited quota */,
+                     quota_manager_->proxy(),
+                     LocalFileSystemFileUtil::GetInstance());
+  filesystem_dir_ = test_helper_.GetOriginRootPath();
+
   ASSERT_TRUE(file_util::CreateTemporaryFileInDir(filesystem_dir_, &file_));
   virtual_path_ = file_.BaseName();
 
@@ -180,23 +198,12 @@ void FileSystemOperationWriteTest::SetUp() {
 
 void FileSystemOperationWriteTest::TearDown() {
   net::URLRequest::RegisterProtocolFactory("blob", NULL);
+  quota_manager_ = NULL;
+  test_helper_.TearDown();
 }
 
 FileSystemOperation* FileSystemOperationWriteTest::operation() {
-  FileSystemOperation* operation = new FileSystemOperation(
-      new MockDispatcher(this),
-      base::MessageLoopProxy::CreateForCurrentThread(),
-      new FileSystemContext(base::MessageLoopProxy::CreateForCurrentThread(),
-                            base::MessageLoopProxy::CreateForCurrentThread(),
-                            NULL, FilePath(), false /* is_incognito */,
-                            true, true,
-                            new MockFileSystemPathManager(filesystem_dir_)),
-      LocalFileSystemFileUtil::GetInstance());
-  operation->file_system_operation_context()->set_src_type(
-      kFileSystemTypeTemporary);
-  operation->file_system_operation_context()->set_dest_type(
-      kFileSystemTypeTemporary);
-  return operation;
+  return test_helper_.NewOperation(new MockDispatcher(this));
 }
 
 TEST_F(FileSystemOperationWriteTest, TestWriteSuccess) {
@@ -300,6 +307,28 @@ TEST_F(FileSystemOperationWriteTest, TestWriteDir) {
 
   EXPECT_EQ(0, bytes_written());
   EXPECT_EQ(base::PLATFORM_FILE_ERROR_ACCESS_DENIED, status());
+  EXPECT_TRUE(complete());
+}
+
+TEST_F(FileSystemOperationWriteTest, TestWriteFailureByQuota) {
+  GURL blob_url("blob:success");
+  scoped_refptr<webkit_blob::BlobData> blob_data(new webkit_blob::BlobData());
+  blob_data->AppendData("Hello, world!\n");
+
+  scoped_refptr<TestURLRequestContext> url_request_context(
+      new TestURLRequestContext());
+  url_request_context->blob_storage_controller()->
+      RegisterBlobUrl(blob_url, blob_data);
+
+  quota_manager_->set_quota(10);
+  operation()->Write(url_request_context, URLForPath(virtual_path_), blob_url,
+                     0);
+  MessageLoop::current()->Run();
+
+  url_request_context->blob_storage_controller()->UnregisterBlobUrl(blob_url);
+
+  EXPECT_EQ(10, bytes_written());
+  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NO_SPACE, status());
   EXPECT_TRUE(complete());
 }
 

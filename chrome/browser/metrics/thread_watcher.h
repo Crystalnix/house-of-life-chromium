@@ -161,6 +161,12 @@ class ThreadWatcher {
   // ping_count_ will be initialized to kPingCount whenever user becomes active.
   static const int kPingCount;
 
+  // This value is used to determine if the watched thread is responsive or not.
+  // If unresponsive_count_ is less than kUnresponsiveCount then watched thread
+  // is considered as responsive (in responsive_count_histogram_) otherwise it
+  // is considered as unresponsive (in unresponsive_count_histogram_).
+  static const int kUnresponsiveCount;
+
   // The thread_id of the thread being watched. Only one instance can exist for
   // the given thread_id of the thread being watched.
   const BrowserThread::ID thread_id_;
@@ -217,6 +223,11 @@ class ThreadWatcher {
   // incremented by 1 when we got no response (GotNoResponse) from the watched
   // thread.
   int unresponsive_count_;
+
+  // This is set to true when we would have crashed the browser because the
+  // watched thread hasn't responded atleast 3 times. It is reset to false when
+  // watched thread responds with a pong message.
+  bool hung_processing_complete_;
 
   // We use this factory to create callback tasks for ThreadWatcher object. We
   // use this during ping-pong messaging between WatchDog thread and watched

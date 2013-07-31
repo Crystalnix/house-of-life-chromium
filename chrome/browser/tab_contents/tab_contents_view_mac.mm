@@ -169,7 +169,8 @@ void TabContentsViewMac::RenderViewCreated(RenderViewHost* host) {
   // We want updates whenever the intrinsic width of the webpage changes.
   // Put the RenderView into that mode. The preferred width is used for example
   // when the "zoom" button in the browser window is clicked.
-  host->EnablePreferredSizeChangedMode(kPreferredSizeWidth);
+  host->Send(new ViewMsg_EnablePreferredSizeChangedMode(
+      host->routing_id(), kPreferredSizeWidth));
 }
 
 void TabContentsViewMac::SetPageTitle(const std::wstring& title) {
@@ -299,6 +300,31 @@ void TabContentsViewMac::ShowCreatedWidgetInternal(
   // A RenderWidgetHostViewMac has lifetime scoped to the view. Now that it's
   // properly embedded (or purposefully ignored) we can release the retain we
   // took in CreateNewWidgetInternal().
+  RenderWidgetHostViewMac* widget_view_mac =
+      static_cast<RenderWidgetHostViewMac*>(widget_host_view);
+  [widget_view_mac->native_view() release];
+}
+
+RenderWidgetHostView* TabContentsViewMac::CreateNewFullscreenWidgetInternal(
+    int route_id) {
+  // A RenderWidgetHostViewMac has lifetime scoped to the view. We'll retain it
+  // to allow it to survive the trip without being hosted.
+  RenderWidgetHostView* widget_view =
+      TabContentsView::CreateNewFullscreenWidgetInternal(route_id);
+  RenderWidgetHostViewMac* widget_view_mac =
+      static_cast<RenderWidgetHostViewMac*>(widget_view);
+  [widget_view_mac->native_view() retain];
+
+  return widget_view;
+}
+
+void TabContentsViewMac::ShowCreatedFullscreenWidgetInternal(
+    RenderWidgetHostView* widget_host_view) {
+  TabContentsView::ShowCreatedFullscreenWidgetInternal(widget_host_view);
+
+  // A RenderWidgetHostViewMac has lifetime scoped to the view. Now that it's
+  // properly embedded (or purposely ignored) we can release the retain we took
+  // in CreateNewFullscreenWidgetInternal().
   RenderWidgetHostViewMac* widget_view_mac =
       static_cast<RenderWidgetHostViewMac*>(widget_host_view);
   [widget_view_mac->native_view() release];

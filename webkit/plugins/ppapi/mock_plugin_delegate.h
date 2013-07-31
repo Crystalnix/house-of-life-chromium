@@ -22,7 +22,7 @@ class MockPluginDelegate : public PluginDelegate {
   virtual PlatformImage2D* CreateImage2D(int width, int height);
   virtual PlatformContext3D* CreateContext3D();
   virtual PlatformVideoDecoder* CreateVideoDecoder(
-      PP_VideoDecoderConfig_Dev* decoder_config);
+      media::VideoDecodeAccelerator::Client* client);
   virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
                                      uint32_t sample_count,
                                      PlatformAudio::Client* client);
@@ -104,6 +104,7 @@ class MockPluginDelegate : public PluginDelegate {
   virtual webkit_glue::P2PTransport* CreateP2PTransport();
   virtual double GetLocalTimeZoneOffset(base::Time t);
   virtual std::string GetFlashCommandLineArgs();
+  virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size);
 };
 
 }  // namespace ppapi

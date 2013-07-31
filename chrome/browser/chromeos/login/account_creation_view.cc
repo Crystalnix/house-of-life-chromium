@@ -112,4 +112,12 @@ void AccountCreationView::SetAccountCreationViewDelegate(
   dom_view_->SetAccountCreationViewDelegate(delegate);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// AccountCreationView, protected:
+
+WebPageDomView* AccountCreationView::dom_view() {
+  return dom_view_;
+}
+
+
 }  // namespace chromeos

@@ -17,13 +17,14 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "net/url_request/url_request_context_getter.h"
 
 namespace {
 
 const FilePath::CharType kPolicyDir[] = FILE_PATH_LITERAL("Device Management");
 const FilePath::CharType kTokenCacheFile[] = FILE_PATH_LITERAL("Token");
 const FilePath::CharType kPolicyCacheFile[] = FILE_PATH_LITERAL("Policy");
+
+const int kServiceInitializationStartupDelay = 2000;
 
 }  // namespace
 
@@ -62,12 +63,18 @@ ProfilePolicyConnector::~ProfilePolicyConnector() {
   identity_strategy_.reset();
 }
 
+void ProfilePolicyConnector::ScheduleServiceInitialization(
+    int delay_milliseconds) {
+  if (cloud_policy_subsystem_.get())
+    cloud_policy_subsystem_->ScheduleServiceInitialization(delay_milliseconds);
+}
+
 void ProfilePolicyConnector::Initialize() {
-  // TODO(jkummerow, mnissler): Move this out of the browser startup path.
-  if (cloud_policy_subsystem_.get()) {
+  if (identity_strategy_.get())
+    identity_strategy_->LoadTokenCache();
+  if (cloud_policy_subsystem_.get())
     cloud_policy_subsystem_->Initialize(profile_->GetPrefs(),
-                                        profile_->GetRequestContext());
-  }
+                                        kServiceInitializationStartupDelay);
 }
 
 void ProfilePolicyConnector::Shutdown() {

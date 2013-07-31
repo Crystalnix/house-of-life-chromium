@@ -149,12 +149,19 @@ void MessageBubble::IsActiveChanged() {
 
 void MessageBubble::SetMouseCapture() {
   if (grab_enabled_)
-    WidgetGtk::SetMouseCapture();
+    NativeWidgetGtk::SetMouseCapture();
 }
 
 void MessageBubble::Close() {
   parent_ = NULL;
   Bubble::Close();
+}
+
+gboolean MessageBubble::OnButtonPress(GtkWidget* widget,
+                                      GdkEventButton* event) {
+  NativeWidgetGtk::OnButtonPress(widget, event);
+  // Never propagate event to parent.
+  return true;
 }
 
 }  // namespace chromeos

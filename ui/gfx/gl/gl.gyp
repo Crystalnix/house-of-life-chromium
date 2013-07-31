@@ -10,7 +10,7 @@
       ['exclude', '/(gtk|win|x11)_[^/]*\\.cc$'],
     ],
     'conditions': [
-      ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {'sources/': [
+      ['toolkit_uses_gtk == 1', {'sources/': [
         ['include', '/gtk/'],
         ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
         ['include', '/(gtk|x11)_[^/]*\\.cc$'],
@@ -34,7 +34,7 @@
   'targets': [
     {
       'target_name': 'gl',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
@@ -76,6 +76,11 @@
         'gl_interface.h',
         'gl_surface.cc',
         'gl_surface.h',
+        'gl_surface_linux.cc',
+        'gl_surface_mac.cc',
+        'gl_surface_stub.cc',
+        'gl_surface_stub.h',
+        'gl_surface_win.cc',
         'gl_surface_osmesa.cc',
         'gl_surface_osmesa.h',
         'gl_switches.cc',
@@ -118,7 +123,7 @@
         },
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="win"', {
+        ['OS != "mac"', {
           'sources': [
             'egl_util.cc',
             'egl_util.h',
@@ -133,7 +138,7 @@
             '<(DEPTH)/third_party/angle/include',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['use_x11 == 1', {
           'sources': [
             'gl_context_glx.cc',
             'gl_context_glx.h',

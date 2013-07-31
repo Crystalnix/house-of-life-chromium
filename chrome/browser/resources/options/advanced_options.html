@@ -210,19 +210,14 @@
     </div>
   </section>
 </if>
-<if expr="pp_ifdef('remoting') and not pp_ifdef('chromeos')">
-  <section id="remoting-section">
-    <h3 i18n-content="advancedSectionTitleRemoting"></h3>
-    <div>
-      <div id="remotingStatus" class="section-text"></div>
-      <div class="section-group">
-        <button id="remotingSetupButton"
-                i18n-content="remotingSetupButton"
-                style="display:none;"></button>
-        <button id="remotingStopButton"
-                i18n-content="remotingStopButton"
-                style="display:none;"></button>
-      </div>
+<if expr="os != 'darwin' and not pp_ifdef('chromeos')">
+  <section id="background-section">
+    <h3 i18n-content="advancedSectionTitleBackground"></h3>
+    <div class="checkbox">
+      <label>
+        <input id="backgroundModeCheckbox" type="checkbox">
+        <span i18n-content="backgroundModeCheckbox"></span>
+      </label>
     </div>
   </section>
 </if>

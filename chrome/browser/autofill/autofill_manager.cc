@@ -36,7 +36,6 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/notification_service.h"
 #include "content/common/notification_source.h"
 #include "content/common/notification_type.h"
@@ -223,8 +222,9 @@ bool FormIsHTTPS(FormStructure* form) {
 
 }  // namespace
 
-AutofillManager::AutofillManager(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
+AutofillManager::AutofillManager(TabContentsWrapper* tab_contents)
+    : TabContentsObserver(tab_contents->tab_contents()),
+      tab_contents_wrapper_(tab_contents),
       personal_data_(NULL),
       download_manager_(tab_contents->profile()),
       disable_download_manager_requests_(false),
@@ -250,16 +250,24 @@ void AutofillManager::RegisterBrowserPrefs(PrefService* prefs) {
 
 // static
 void AutofillManager::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kAutofillEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kAutofillEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
 #if defined(OS_MACOSX)
-  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled, true);
+  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
 #else
-  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled, false);
+  prefs->RegisterBooleanPref(prefs::kAutofillAuxiliaryProfilesEnabled,
+                             false,
+                             PrefService::UNSYNCABLE_PREF);
 #endif
   prefs->RegisterDoublePref(prefs::kAutofillPositiveUploadRate,
-                            kAutofillPositiveUploadRateDefaultValue);
+                            kAutofillPositiveUploadRateDefaultValue,
+                            PrefService::UNSYNCABLE_PREF);
   prefs->RegisterDoublePref(prefs::kAutofillNegativeUploadRate,
-                            kAutofillNegativeUploadRateDefaultValue);
+                            kAutofillNegativeUploadRateDefaultValue,
+                            PrefService::UNSYNCABLE_PREF);
 }
 
 void AutofillManager::DidNavigateMainFramePostCommit(
@@ -291,9 +299,7 @@ bool AutofillManager::OnMessageReceived(const IPC::Message& message) {
 
 void AutofillManager::OnFormSubmitted(const FormData& form) {
   // Let AutoComplete know as well.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents());
-  wrapper->autocomplete_history_manager()->OnFormSubmitted(form);
+  tab_contents_wrapper_->autocomplete_history_manager()->OnFormSubmitted(form);
 
   if (!IsAutofillEnabled())
     return;
@@ -427,10 +433,9 @@ void AutofillManager::OnQueryFormFieldAutofill(
   // Add the results from AutoComplete.  They come back asynchronously, so we
   // hand off what we generated and they will send the results back to the
   // renderer.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents());
-  wrapper->autocomplete_history_manager()->OnGetAutocompleteSuggestions(
-      query_id, field.name, field.value, values, labels, icons, unique_ids);
+  tab_contents_wrapper_->autocomplete_history_manager()->
+      OnGetAutocompleteSuggestions(
+          query_id, field.name, field.value, values, labels, icons, unique_ids);
 }
 
 void AutofillManager::OnFillAutofillFormData(int query_id,
@@ -625,7 +630,7 @@ void AutofillManager::DeterminePossibleFieldTypesForUpload(
   for (size_t i = 0; i < submitted_form->field_count(); i++) {
     const AutofillField* field = submitted_form->field(i);
     FieldTypeSet field_types;
-    personal_data_->GetPossibleFieldTypes(field->value, &field_types);
+    personal_data_->GetMatchingTypes(field->value, &field_types);
 
     DCHECK(!field_types.empty());
     submitted_form->set_possible_types(i, field_types);
@@ -641,7 +646,7 @@ void AutofillManager::ImportFormData(const FormStructure& submitted_form) {
   // it.
   scoped_ptr<const CreditCard> scoped_credit_card(imported_credit_card);
   if (imported_credit_card && tab_contents()) {
-    tab_contents()->AddInfoBar(
+    tab_contents_wrapper_->AddInfoBar(
         new AutofillCCInfoBarDelegate(tab_contents(),
                                       scoped_credit_card.release(),
                                       personal_data_,
@@ -663,11 +668,11 @@ void AutofillManager::UploadFormData(const FormStructure& submitted_form) {
       was_autofilled = true;
   }
 
-  FieldTypeSet available_types;
-  personal_data_->GetAvailableFieldTypes(&available_types);
+  FieldTypeSet non_empty_types;
+  personal_data_->GetNonEmptyTypes(&non_empty_types);
 
   download_manager_.StartUploadRequest(submitted_form, was_autofilled,
-                                       available_types);
+                                       non_empty_types);
 }
 
 void AutofillManager::Reset() {
@@ -676,9 +681,10 @@ void AutofillManager::Reset() {
   has_logged_address_suggestions_count_ = false;
 }
 
-AutofillManager::AutofillManager(TabContents* tab_contents,
+AutofillManager::AutofillManager(TabContentsWrapper* tab_contents,
                                  PersonalDataManager* personal_data)
-    : TabContentsObserver(tab_contents),
+    : TabContentsObserver(tab_contents->tab_contents()),
+      tab_contents_wrapper_(tab_contents),
       personal_data_(personal_data),
       download_manager_(NULL),
       disable_download_manager_requests_(true),

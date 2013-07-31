@@ -9,7 +9,6 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/common/content_settings_types.h"
 #include "content/browser/tab_contents/navigation_entry.h"
 #include "content/common/navigation_types.h"
 #include "content/common/page_transition_types.h"
@@ -27,7 +26,6 @@ class HistoryAddPageArgs;
 }
 
 struct ContextMenuParams;
-class DownloadItem;
 class GURL;
 class HtmlDialogUIDelegate;
 struct NativeWebKeyboardEvent;
@@ -131,12 +129,6 @@ class TabContentsDelegate {
   // Request the delegate to change the zoom level of the current tab.
   virtual void ContentsZoomChange(bool zoom_in);
 
-  // Notifies the delegate that something has changed about what content the
-  // TabContents is blocking.  Interested parties should call
-  // TabContents::IsContentBlocked() to see if something they care about has
-  // changed.
-  virtual void OnContentSettingsChange(TabContents* source);
-
   // Check whether this contents is inside a window dedicated to running a web
   // application.
   virtual bool IsApplication() const;
@@ -148,13 +140,6 @@ class TabContentsDelegate {
   // Whether the specified tab can be reloaded.
   // Reloading can be disabled e. g. for the DevTools window.
   virtual bool CanReloadContents(TabContents* source) const;
-
-  // Show a dialog with HTML content. |delegate| contains a pointer to the
-  // delegate who knows how to display the dialog (which file URL and JSON
-  // string input to use during initialization). |parent_window| is the window
-  // that should be parent of the dialog, or NULL for the default.
-  virtual void ShowHtmlDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window);
 
   // Invoked prior to showing before unload handler confirmation dialog.
   virtual void WillRunBeforeUnloadConfirm();
@@ -171,11 +156,6 @@ class TabContentsDelegate {
   virtual void BeforeUnloadFired(TabContents* tab,
                                  bool proceed,
                                  bool* proceed_to_fire_unload);
-
-  // Send IPC to external host. Default implementation is do nothing.
-  virtual void ForwardMessageToExternalHost(const std::string& message,
-                                            const std::string& origin,
-                                            const std::string& target);
 
   // If the delegate is hosting tabs externally.
   virtual bool IsExternalTabContainer() const;
@@ -215,10 +195,6 @@ class TabContentsDelegate {
   // render view widget during various animations (e.g. infobar closing).
   // This is used to make painting look smoother.
   virtual int GetExtraRenderViewHeight() const;
-
-  virtual bool CanDownload(int request_id);
-
-  virtual void OnStartDownload(DownloadItem* download, TabContents* tab);
 
   // Returns true if the context menu operation was handled by the delegate.
   virtual bool HandleContextMenu(const ContextMenuParams& params);
@@ -264,12 +240,6 @@ class TabContentsDelegate {
   // Shows the repost form confirmation dialog box.
   virtual void ShowRepostFormWarningDialog(TabContents* tab_contents);
 
-  // Shows the Content Settings page for a given content type.
-  virtual void ShowContentSettingsPage(ContentSettingsType content_type);
-
-  // Shows the cookies collected in the tab contents.
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents);
-
   // Allows delegate to override navigation to the history entries.
   // Returns true to allow TabContents to continue with the default processing.
   virtual bool OnGoToEntryOffset(int offset);
@@ -286,9 +256,6 @@ class TabContentsDelegate {
   // Notifies the delegate about the creation of a new TabContents. This
   // typically happens when popups are created.
   virtual void TabContentsCreated(TabContents* new_contents);
-
-  // Returns whether infobars are enabled. Overrideable by child classes.
-  virtual bool infobars_enabled();
 
   // Whether the renderer should report its preferred size when it changes by
   // calling UpdatePreferredSize().

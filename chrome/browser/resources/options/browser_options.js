@@ -63,6 +63,9 @@ cr.define('options', function() {
       $('toolbarShowBookmarksBar').onchange = function() {
         chrome.send('toggleShowBookmarksBar');
       };
+      $('autoCheckCheckbox').onchange = function() {
+          chrome.send('toggleAutomaticUpdates');
+      };
       $('defaultSearchManageEnginesButton').onclick = function(event) {
         OptionsPage.navigateToPage('searchEngines');
         chrome.send('coreOptionsUserMetricsAction',
@@ -194,24 +197,24 @@ cr.define('options', function() {
      * Updates the search engine popup with the given entries.
      * @param {Array} engines List of available search engines.
      * @param {number} defaultValue The value of the current default engine.
+     * @param {boolean} defaultManaged Whether the default search provider is
+     *     managed. If true, the default search provider can't be changed.
      */
-    updateSearchEngines_: function(engines, defaultValue) {
+    updateSearchEngines_: function(engines, defaultValue, defaultManaged) {
       this.clearSearchEngines_();
       engineSelect = $('defaultSearchEngine');
+      engineSelect.disabled = defaultManaged;
       engineCount = engines.length;
       var defaultIndex = -1;
       for (var i = 0; i < engineCount; i++) {
         var engine = engines[i];
         var option = new Option(engine['name'], engine['index']);
-        option.hasInstant = engine['hasInstant'];
         if (defaultValue == option.value)
           defaultIndex = i;
         engineSelect.appendChild(option);
       }
       if (defaultIndex >= 0)
         engineSelect.selectedIndex = defaultIndex;
-
-      this.setDefaultSearchEngine_();
     },
 
     /**
@@ -425,7 +428,6 @@ cr.define('options', function() {
       var selectedIndex = engineSelect.selectedIndex;
       if (selectedIndex >= 0) {
         var selection = engineSelect.options[selectedIndex];
-        $('instantEnableCheckbox').disabled = !selection.hasInstant;
         chrome.send('setDefaultSearchEngine', [String(selection.value)]);
       }
     },
@@ -466,8 +468,10 @@ cr.define('options', function() {
     }
   };
 
-  BrowserOptions.updateSearchEngines = function(engines, defaultValue) {
-    BrowserOptions.getInstance().updateSearchEngines_(engines, defaultValue);
+  BrowserOptions.updateSearchEngines = function(engines, defaultValue,
+                                                defaultManaged) {
+    BrowserOptions.getInstance().updateSearchEngines_(engines, defaultValue,
+                                                      defaultManaged);
   };
 
   BrowserOptions.updateStartupPages = function(pages) {

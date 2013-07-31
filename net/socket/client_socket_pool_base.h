@@ -38,6 +38,7 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
+#include "net/base/net_api.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
@@ -52,9 +53,9 @@ class ClientSocketHandle;
 // ConnectJob provides an abstract interface for "connecting" a socket.
 // The connection may involve host resolution, tcp connection, ssl connection,
 // etc.
-class ConnectJob {
+class NET_TEST ConnectJob {
  public:
-  class Delegate {
+  class NET_TEST Delegate {
    public:
     Delegate() {}
     virtual ~Delegate() {}
@@ -80,18 +81,12 @@ class ConnectJob {
   bool is_unused_preconnect() const {
     return preconnect_state_ == UNUSED_PRECONNECT;
   }
-  bool prefer_ipv4() const { return prefer_ipv4_; }
 
   // Initialized by the ClientSocketPoolBaseHelper.
   // TODO(willchan): Move most of the constructor arguments over here.  We
   // shouldn't give the ConnectJobFactory (subclasses) the ability to screw up
   // the initialization.
   void Initialize(bool is_preconnect);
-
-  // Instructs the ConnectJob to try IPv4 addresses first.  This can be useful
-  // when IPv6 is likely to be broken.
-  // TODO(wtc): this should be folded into the Initialize() method.
-  void set_prefer_ipv4() { prefer_ipv4_ = true; }
 
   // Releases |socket_| to the client.  On connection error, this should return
   // NULL.
@@ -148,8 +143,6 @@ class ConnectJob {
   BoundNetLog net_log_;
   // A ConnectJob is idle until Connect() has been called.
   bool idle_;
-  // True if we should try IPv4 addresses first.
-  bool prefer_ipv4_;
   PreconnectState preconnect_state_;
 
   DISALLOW_COPY_AND_ASSIGN(ConnectJob);
@@ -162,7 +155,7 @@ namespace internal {
 // ClientSocketPoolBase adds templated definitions built on top of
 // ClientSocketPoolBaseHelper.  This class is not for external use, please use
 // ClientSocketPoolBase instead.
-class ClientSocketPoolBaseHelper
+class NET_TEST ClientSocketPoolBaseHelper
     : public ConnectJob::Delegate,
       public NetworkChangeNotifier::IPAddressObserver {
  public:
@@ -174,7 +167,7 @@ class ClientSocketPoolBaseHelper
     NO_IDLE_SOCKETS = 0x1,  // Do not return an idle socket. Create a new one.
   };
 
-  class Request {
+  class NET_TEST Request {
    public:
     Request(ClientSocketHandle* handle,
             CompletionCallback* callback,

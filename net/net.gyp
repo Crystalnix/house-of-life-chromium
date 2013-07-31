@@ -9,7 +9,7 @@
   'targets': [
     {
       'target_name': 'net',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
@@ -58,7 +58,6 @@
         'base/cookie_monster.cc',
         'base/cookie_monster.h',
         'base/cookie_options.h',
-        'base/cookie_policy.h',
         'base/cookie_store.cc',
         'base/cookie_store.h',
         'base/crypto_module.h',
@@ -408,6 +407,16 @@
         'http/proxy_client_socket.h',
         'ocsp/nss_ocsp.cc',
         'ocsp/nss_ocsp.h',
+        'proxy/dhcp_proxy_script_fetcher.cc',
+        'proxy/dhcp_proxy_script_fetcher.h',
+        'proxy/dhcp_proxy_script_fetcher_factory.cc',
+        'proxy/dhcp_proxy_script_fetcher_factory.h',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win.cc',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win.h',
+        'proxy/dhcp_proxy_script_fetcher_win.cc',
+        'proxy/dhcp_proxy_script_fetcher_win.h',
+        'proxy/dhcpcsvc_init_win.cc',
+        'proxy/dhcpcsvc_init_win.h',
         'proxy/init_proxy_resolver.cc',
         'proxy/init_proxy_resolver.h',
         'proxy/multi_threaded_proxy_resolver.cc',
@@ -595,10 +604,10 @@
         'url_request/url_request_http_job.h',
         'url_request/url_request_job.cc',
         'url_request/url_request_job.h',
+        'url_request/url_request_job_factory.cc',
+        'url_request/url_request_job_factory.h',
         'url_request/url_request_job_manager.cc',
         'url_request/url_request_job_manager.h',
-        'url_request/url_request_job_tracker.cc',
-        'url_request/url_request_job_tracker.h',
         'url_request/url_request_netlog_params.cc',
         'url_request/url_request_netlog_params.h',
         'url_request/url_request_redirect_job.cc',
@@ -717,10 +726,11 @@
             ],
           },
         ],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gconf',
               '../build/linux/system.gyp:gdk',
+              '../build/linux/system.gyp:gio',
               '../build/linux/system.gyp:libresolv',
             ],
             'conditions': [
@@ -760,8 +770,11 @@
             'sources!': [
               'http/http_auth_handler_ntlm_portable.cc',
               'socket/tcp_client_socket_libevent.cc',
+              'socket/tcp_client_socket_libevent.h',
               'socket/tcp_server_socket_libevent.cc',
+              'socket/tcp_server_socket_libevent.h',
               'udp/udp_socket_libevent.cc',
+              'udp/udp_socket_libevent.h',
             ],
             'dependencies': [
               '../third_party/nss/nss.gyp:nss',
@@ -775,8 +788,11 @@
             ],
             'sources!': [
               'base/winsock_init.cc',
+              'base/winsock_init.h',
               'base/winsock_util.cc',
+              'base/winsock_util.h',
               'proxy/proxy_resolver_winhttp.cc',
+              'proxy/proxy_resolver_winhttp.h',
             ],
           },
         ],
@@ -804,6 +820,8 @@
         'net_test_support',
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../crypto/crypto.gyp:crypto',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
@@ -911,6 +929,9 @@
         'http/mock_sspi_library_win.h',
         'http/mock_sspi_library_win.cc',
         'http/url_security_manager_unittest.cc',
+        'proxy/dhcp_proxy_script_adapter_fetcher_win_unittest.cc',
+        'proxy/dhcp_proxy_script_fetcher_factory_unittest.cc',
+        'proxy/dhcp_proxy_script_fetcher_win_unittest.cc',
         'proxy/init_proxy_resolver_unittest.cc',
         'proxy/multi_threaded_proxy_resolver_unittest.cc',
         'proxy/network_delegate_error_observer_unittest.cc',
@@ -955,7 +976,7 @@
         'tools/dump_cache/url_utilities.cc',
         'tools/dump_cache/url_utilities_unittest.cc',
         'udp/udp_socket_unittest.cc',
-        'url_request/url_request_job_tracker_unittest.cc',
+        'url_request/url_request_job_factory_unittest.cc',
         'url_request/url_request_throttler_unittest.cc',
         'url_request/url_request_unittest.cc',
         'url_request/view_cache_helper_unittest.cc',
@@ -974,7 +995,7 @@
              'proxy/proxy_config_service_linux_unittest.cc',
           ],
         }],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'toolkit_uses_gtk == 1', {
             'dependencies': [
               '../build/linux/system.gyp:gtk',
               '../build/linux/system.gyp:nss',
@@ -986,7 +1007,7 @@
             ],
           }
         ],
-        [ 'OS == "linux"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1032,6 +1053,7 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_perf',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'AAC78796-B9A2-4CD9-BF89-09B03E92BF73',
@@ -1096,6 +1118,7 @@
         'net',
         'net_test_support',
         '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': '506F2468-6B1D-48E2-A67C-9D9C6BAC0EC5',
@@ -1105,7 +1128,7 @@
     },
     {
       'target_name': 'net_test_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'net',
         '../base/base.gyp:base',
@@ -1125,6 +1148,8 @@
         'disk_cache/disk_cache_test_util.h',
         'proxy/mock_proxy_resolver.cc',
         'proxy/mock_proxy_resolver.h',
+        'proxy/mock_proxy_script_fetcher.cc',
+        'proxy/mock_proxy_script_fetcher.h',
         'proxy/proxy_config_service_common_unittest.cc',
         'proxy/proxy_config_service_common_unittest.h',
         'socket/socket_test_util.cc',
@@ -1146,7 +1171,7 @@
             '../third_party/protobuf/protobuf.gyp:py_proto',
           ],
         }],
-        ['OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['use_openssl==1', {
               'dependencies': [
@@ -1159,7 +1184,7 @@
             }],
           ],
         }],
-        ['OS == "linux"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -1194,6 +1219,8 @@
       'dependencies': [
         'net',
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'DABB8796-B9A2-4CD9-BF89-09B03E92B123',
@@ -1207,6 +1234,7 @@
       'dependencies': [
         'net',
         '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../testing/gtest.gyp:gtest',
       ],
       'msvs_guid': 'DABB8796-B9A2-4CD9-BF89-09B03E92B124',
@@ -1226,7 +1254,7 @@
     },
     {
       'target_name': 'http_server',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'net',
         '../base/base.gyp:base',
@@ -1245,6 +1273,7 @@
       'type': 'executable',
       'dependencies': [
         'net',
+        '../base/base.gyp:base',
       ],
       'sources': [
         'tools/dnssec_chain_verify/dnssec_chain_verify.cc',
@@ -1263,7 +1292,7 @@
     },
   ],
   'conditions': [
-     ['OS=="linux"', {
+     ['os_posix == 1 and OS != "mac"', {
        'targets': [
          {
            'target_name': 'flip_in_mem_edsm_server',
@@ -1332,6 +1361,59 @@
              'tools/flip_server/thread.h',
              'tools/flip_server/url_to_filename_encoder.h',
              'tools/flip_server/url_utilities.h',
+           ],
+         },
+         {
+           'target_name': 'curvecp',
+           'type': 'static_library',
+           'dependencies': [
+             '../base/base.gyp:base',
+             'net.gyp:net',
+           ],
+           'sources': [
+             'curvecp/circular_buffer.cc',
+             'curvecp/circular_buffer.h',
+             'curvecp/client_packetizer.cc',
+             'curvecp/client_packetizer.h',
+             'curvecp/connection_key.cc',
+             'curvecp/connection_key.h',
+             'curvecp/curvecp_client_socket.cc',
+             'curvecp/curvecp_client_socket.h',
+             'curvecp/curvecp_server_socket.cc',
+             'curvecp/curvecp_server_socket.h',
+             'curvecp/messenger.h',
+             'curvecp/messenger.cc',
+             'curvecp/packetizer.h',
+             'curvecp/protocol.cc',
+             'curvecp/protocol.h',
+             'curvecp/received_block_list.cc',
+             'curvecp/received_block_list.h',
+             'curvecp/rtt_and_send_rate_calculator.cc',
+             'curvecp/rtt_and_send_rate_calculator.h',
+             'curvecp/sent_block_list.cc',
+             'curvecp/sent_block_list.h',
+             'curvecp/server_messenger.cc',
+             'curvecp/server_messenger.h',
+             'curvecp/server_packetizer.cc',
+             'curvecp/server_packetizer.h',
+           ],
+         },
+         {
+           'target_name': 'curvecp_unittests',
+           'type': 'executable',
+           'dependencies': [
+             '../base/base.gyp:base',
+             'net.gyp:curvecp',
+             'net.gyp:net',
+             'net_test_support',
+             '../testing/gmock.gyp:gmock',
+             '../testing/gtest.gyp:gtest',
+             '../third_party/zlib/zlib.gyp:zlib',
+           ],
+           'sources': [
+             'curvecp/curvecp_transfer_unittest.cc',
+             'curvecp/test_client.cc',
+             'curvecp/test_server.cc',
            ],
          },
        ]

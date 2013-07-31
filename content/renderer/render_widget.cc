@@ -5,17 +5,18 @@
 #include "content/renderer/render_widget.h"
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "build/build_config.h"
 #include "content/common/content_switches.h"
+#include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread.h"
 #include "content/renderer/renderer_webkitclient_impl.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "ipc/ipc_sync_message.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkShader.h"
@@ -68,12 +69,15 @@ RenderWidget::RenderWidget(RenderThreadBase* render_thread,
       current_paint_buf_(NULL),
       next_paint_flags_(0),
       update_reply_pending_(false),
+      using_asynchronous_swapbuffers_(false),
+      num_swapbuffers_complete_pending_(0),
       did_show_(false),
       is_hidden_(false),
       needs_repainting_on_restore_(false),
       has_focus_(false),
       handling_input_event_(false),
       closing_(false),
+      is_swapped_out_(false),
       input_method_is_active_(false),
       text_input_type_(WebKit::WebTextInputTypeNone),
       popup_type_(popup_type),
@@ -81,7 +85,8 @@ RenderWidget::RenderWidget(RenderThreadBase* render_thread,
       suppress_next_char_events_(false),
       is_accelerated_compositing_active_(false),
       animation_update_pending_(false),
-      animation_task_posted_(false) {
+      animation_task_posted_(false),
+      invalidation_task_posted_(false) {
   RenderProcess::current()->AddRefProcess();
   DCHECK(render_thread_);
 }
@@ -92,7 +97,9 @@ RenderWidget::~RenderWidget() {
     RenderProcess::current()->ReleaseTransportDIB(current_paint_buf_);
     current_paint_buf_ = NULL;
   }
-  RenderProcess::current()->ReleaseProcess();
+  // If we are swapped out, we have released already.
+  if (!is_swapped_out_)
+    RenderProcess::current()->ReleaseProcess();
 }
 
 // static
@@ -160,6 +167,20 @@ void RenderWidget::CompleteInit(gfx::NativeViewId parent_hwnd,
   Send(new ViewHostMsg_RenderViewReady(routing_id_));
 }
 
+void RenderWidget::SetSwappedOut(bool is_swapped_out) {
+  // We should only toggle between states.
+  DCHECK(is_swapped_out_ != is_swapped_out);
+  is_swapped_out_ = is_swapped_out;
+
+  // If we are swapping out, we will call ReleaseProcess, allowing the process
+  // to exit if all of its RenderViews are swapped out.  We wait until the
+  // WasSwappedOut call to do this, to avoid showing the sad tab.
+  // If we are swapping in, we call AddRefProcess to prevent the process from
+  // exiting.
+  if (!is_swapped_out)
+    RenderProcess::current()->AddRefProcess();
+}
+
 bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidget, message)
@@ -168,6 +189,7 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_WasRestored, OnWasRestored)
+    IPC_MESSAGE_HANDLER(ViewMsg_WasSwappedOut, OnWasSwappedOut)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateRect_ACK, OnUpdateRectAck)
     IPC_MESSAGE_HANDLER(ViewMsg_HandleInputEvent, OnHandleInputEvent)
     IPC_MESSAGE_HANDLER(ViewMsg_MouseCaptureLost, OnMouseCaptureLost)
@@ -185,8 +207,11 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
 }
 
 bool RenderWidget::Send(IPC::Message* message) {
-  // Don't send any messages after the browser has told us to close.
-  if (closing_) {
+  // Don't send any messages after the browser has told us to close, and filter
+  // most outgoing messages while swapped out.
+  if ((is_swapped_out_ &&
+       !content::SwappedOutMessages::CanSendWhileSwappedOut(message)) ||
+      closing_) {
     delete message;
     return false;
   }
@@ -299,13 +324,21 @@ void RenderWidget::OnWasRestored(bool needs_repainting) {
   }
 }
 
+void RenderWidget::OnWasSwappedOut() {
+  // If we have been swapped out and no one else is using this process,
+  // it's safe to exit now.  If we get swapped back in, we will call
+  // AddRefProcess in SetSwappedOut.
+  if (is_swapped_out_)
+    RenderProcess::current()->ReleaseProcess();
+}
+
 void RenderWidget::OnRequestMoveAck() {
   DCHECK(pending_window_rect_count_);
   pending_window_rect_count_--;
 }
 
 void RenderWidget::OnUpdateRectAck() {
-  GPU_TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
+  TRACE_EVENT0("renderer", "RenderWidget::OnUpdateRectAck");
   DCHECK(update_reply_pending());
   update_reply_pending_ = false;
 
@@ -316,14 +349,68 @@ void RenderWidget::OnUpdateRectAck() {
     current_paint_buf_ = NULL;
   }
 
+  // If swapbuffers is still pending, then defer the update until the
+  // swapbuffers occurs.
+  if (num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending) {
+    TRACE_EVENT0("renderer", "EarlyOut_SwapStillPending");
+    return;
+  }
+
   // Notify subclasses.
   DidFlushPaint();
 
   // Continue painting if necessary...
-  CallDoDeferredUpdate();
+  DoDeferredUpdateAndSendInputAck();
+}
+
+bool RenderWidget::SupportsAsynchronousSwapBuffers()
+{
+  return false;
+}
+
+void RenderWidget::OnSwapBuffersAborted()
+{
+  TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersAborted");
+  num_swapbuffers_complete_pending_ = 0;
+  using_asynchronous_swapbuffers_ = false;
+  // Schedule another frame so the compositor learns about it.
+  scheduleComposite();
+}
+
+void RenderWidget::OnSwapBuffersComplete()
+{
+  TRACE_EVENT0("renderer", "RenderWidget::OnSwapBuffersComplete");
+  // When compositing deactivates, we reset the swapbuffers pending count.  The
+  // swapbuffers acks may still arrive, however.
+  if (num_swapbuffers_complete_pending_ == 0) {
+    TRACE_EVENT0("renderer", "EarlyOut_ZeroSwapbuffersPending");
+    return;
+  }
+  num_swapbuffers_complete_pending_--;
+
+  // If update reply is still pending, then defer the update until that reply
+  // occurs.
+  if (update_reply_pending_){
+    TRACE_EVENT0("renderer", "EarlyOut_UpdateReplyPending");
+    return;
+  }
+
+  // If we are not accelerated rendering, then this is a stale swapbuffers from
+  // when we were previously rendering.
+  if (!is_accelerated_compositing_active_) {
+    TRACE_EVENT0("renderer", "EarlyOut_AcceleratedCompositingOff");
+    return;
+  }
+
+  // Notify subclasses.
+  DidFlushPaint();
+
+  // Continue painting if necessary...
+  DoDeferredUpdateAndSendInputAck();
 }
 
 void RenderWidget::OnHandleInputEvent(const IPC::Message& message) {
+  TRACE_EVENT0("renderer", "RenderWidget::OnHandleInputEvent");
   void* iter = NULL;
 
   const char* data;
@@ -506,7 +593,7 @@ void RenderWidget::AnimationCallback() {
                                base::TimeDelta::FromMilliseconds(30),
                                25);
   }
-  CallDoDeferredUpdate();
+  DoDeferredUpdateAndSendInputAck();
 }
 
 void RenderWidget::AnimateIfNeeded() {
@@ -522,10 +609,6 @@ void RenderWidget::AnimateIfNeeded() {
         this, &RenderWidget::AnimationCallback), 16);
     animation_task_posted_ = true;
     animation_update_pending_ = false;
-    // Explicitly pump the WebCore Timer queue to avoid starvation on OS X.
-    // See crbug.com/71735.
-    // TODO(jamesr) Remove this call once crbug.com/72007 is fixed.
-    RenderThread::current()->GetWebKitClientImpl()->DoTimeout();
     webwidget_->animate();
     return;
   }
@@ -545,7 +628,12 @@ void RenderWidget::AnimateIfNeeded() {
       NewRunnableMethod(this, &RenderWidget::AnimationCallback), delay);
 }
 
-void RenderWidget::CallDoDeferredUpdate() {
+void RenderWidget::InvalidationCallback() {
+  invalidation_task_posted_ = false;
+  DoDeferredUpdateAndSendInputAck();
+}
+
+void RenderWidget::DoDeferredUpdateAndSendInputAck() {
   DoDeferredUpdate();
 
   if (pending_input_event_ack_.get())
@@ -553,18 +641,29 @@ void RenderWidget::CallDoDeferredUpdate() {
 }
 
 void RenderWidget::DoDeferredUpdate() {
-  GPU_TRACE_EVENT0("renderer", "RenderWidget::DoDeferredUpdate");
+  TRACE_EVENT0("renderer", "RenderWidget::DoDeferredUpdate");
 
-  if (!webwidget_ || update_reply_pending())
+  if (!webwidget_)
     return;
+  if (update_reply_pending()) {
+    TRACE_EVENT0("renderer", "EarlyOut_UpdateReplyPending");
+    return;
+  }
+  if (num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending) {
+    TRACE_EVENT0("renderer", "EarlyOut_MaxSwapBuffersPending");
+    return;
+  }
 
   // Suppress updating when we are hidden.
   if (is_hidden_ || size_.IsEmpty()) {
     paint_aggregator_.ClearPendingUpdate();
     needs_repainting_on_restore_ = true;
+    TRACE_EVENT0("renderer", "EarlyOut_NotVisible");
     return;
   }
 
+  // Tracking of frame rate jitter
+  base::TimeTicks frame_begin_ticks = base::TimeTicks::Now();
   AnimateIfNeeded();
 
   // Layout may generate more invalidation.  It may also enable the
@@ -574,8 +673,27 @@ void RenderWidget::DoDeferredUpdate() {
 
   // Suppress painting if nothing is dirty.  This has to be done after updating
   // animations running layout as these may generate further invalidations.
-  if (!paint_aggregator_.HasPendingUpdate())
+  if (!paint_aggregator_.HasPendingUpdate()) {
+    TRACE_EVENT0("renderer", "EarlyOut_NoPendingUpdate");
     return;
+  }
+
+  if(!last_do_deferred_update_time_.is_null()) {
+    base::TimeDelta delay = frame_begin_ticks - last_do_deferred_update_time_;
+    if(is_accelerated_compositing_active_)
+      UMA_HISTOGRAM_CUSTOM_TIMES("Renderer4.AccelDoDeferredUpdateDelay",
+                                 delay,
+                                 base::TimeDelta::FromMilliseconds(1),
+                                 base::TimeDelta::FromMilliseconds(60),
+                                 30);
+    else
+      UMA_HISTOGRAM_CUSTOM_TIMES("Renderer4.SoftwareDoDeferredUpdateDelay",
+                                 delay,
+                                 base::TimeDelta::FromMilliseconds(1),
+                                 base::TimeDelta::FromMilliseconds(60),
+                                 30);
+  }
+  last_do_deferred_update_time_ = frame_begin_ticks;
 
   // OK, save the pending update to a local since painting may cause more
   // invalidation.  Some WebCore rendering objects only layout when painted.
@@ -643,6 +761,8 @@ void RenderWidget::DoDeferredUpdate() {
   } else {  // Accelerated compositing path
     // Begin painting.
     webwidget_->composite(false);
+    if (using_asynchronous_swapbuffers_)
+      num_swapbuffers_complete_pending_++;
   }
 
   // sending an ack to browser process that the paint is complete...
@@ -680,9 +800,6 @@ void RenderWidget::DoDeferredUpdate() {
 // WebWidgetClient
 
 void RenderWidget::didInvalidateRect(const WebRect& rect) {
-  // We only want one pending DoDeferredUpdate call at any time...
-  bool update_pending = paint_aggregator_.HasPendingUpdate();
-
   // The invalidated rect might be outside the bounds of the view.
   gfx::Rect view_rect(size_);
   gfx::Rect damaged_rect = view_rect.Intersect(rect);
@@ -692,11 +809,17 @@ void RenderWidget::didInvalidateRect(const WebRect& rect) {
   paint_aggregator_.InvalidateRect(damaged_rect);
 
   // We may not need to schedule another call to DoDeferredUpdate.
-  if (update_pending)
+  if (invalidation_task_posted_)
     return;
   if (!paint_aggregator_.HasPendingUpdate())
     return;
-  if (update_reply_pending())
+  if (update_reply_pending() ||
+      num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending)
+    return;
+
+  // When GPU rendering, combine pending animations and invalidations into
+  // a single update.
+  if (is_accelerated_compositing_active_ && animation_task_posted_)
     return;
 
   // Perform updating asynchronously.  This serves two purposes:
@@ -704,8 +827,9 @@ void RenderWidget::didInvalidateRect(const WebRect& rect) {
   //    on the call stack.
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
+  invalidation_task_posted_ = true;
   MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &RenderWidget::CallDoDeferredUpdate));
+      this, &RenderWidget::InvalidationCallback));
 }
 
 void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
@@ -713,9 +837,6 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   // TODO(nduca): stop WebViewImpl from sending scrolls in the first place.
   if (is_accelerated_compositing_active_)
     return;
-
-  // We only want one pending DoDeferredUpdate call at any time...
-  bool update_pending = paint_aggregator_.HasPendingUpdate();
 
   // The scrolled rect might be outside the bounds of the view.
   gfx::Rect view_rect(size_);
@@ -726,11 +847,17 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   paint_aggregator_.ScrollRect(dx, dy, damaged_rect);
 
   // We may not need to schedule another call to DoDeferredUpdate.
-  if (update_pending)
+  if (invalidation_task_posted_)
     return;
   if (!paint_aggregator_.HasPendingUpdate())
     return;
-  if (update_reply_pending())
+  if (update_reply_pending() ||
+      num_swapbuffers_complete_pending_ >= kMaxSwapBuffersPending)
+    return;
+
+  // When GPU rendering, combine pending animations and invalidations into
+  // a single update.
+  if (is_accelerated_compositing_active_ && animation_task_posted_)
     return;
 
   // Perform updating asynchronously.  This serves two purposes:
@@ -738,14 +865,20 @@ void RenderWidget::didScrollRect(int dx, int dy, const WebRect& clip_rect) {
   //    on the call stack.
   // 2) Allows us to collect more damage rects before painting to help coalesce
   //    the work that we will need to do.
+  invalidation_task_posted_ = true;
   MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &RenderWidget::CallDoDeferredUpdate));
+      this, &RenderWidget::InvalidationCallback));
 }
 
 void RenderWidget::didActivateAcceleratedCompositing(bool active) {
   is_accelerated_compositing_active_ = active;
   Send(new ViewHostMsg_DidActivateAcceleratedCompositing(
-    routing_id_, is_accelerated_compositing_active_));
+      routing_id_, is_accelerated_compositing_active_));
+
+  if (active)
+    using_asynchronous_swapbuffers_ = SupportsAsynchronousSwapBuffers();
+  else if (using_asynchronous_swapbuffers_)
+    using_asynchronous_swapbuffers_ = false;
 }
 
 void RenderWidget::scheduleComposite() {

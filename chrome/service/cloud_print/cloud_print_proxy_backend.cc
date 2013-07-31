@@ -10,9 +10,9 @@
 #include "base/file_util.h"
 #include "base/md5.h"
 #include "base/rand_util.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
-#include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/net/gaia/gaia_oauth_client.h"
@@ -69,6 +69,9 @@ class CloudPrintProxyBackend::Core
   void DoInitializeWithRobotToken(const std::string& robot_oauth_refresh_token,
                                   const std::string& robot_email,
                                   const std::string& proxy_id);
+  void DoInitializeWithRobotAuthCode(const std::string& robot_oauth_auth_code,
+                                     const std::string& robot_email,
+                                     const std::string& proxy_id);
 
   // Called on the CloudPrintProxyBackend core_thread_ to perform
   // shutdown.
@@ -265,9 +268,6 @@ class CloudPrintProxyBackend::Core
   bool job_poll_scheduled_;
   // Indicates whether we should poll for jobs when we lose XMPP connection.
   bool enable_job_poll_;
-  // The channel we are interested in receiving push notifications for.
-  // This is "cloudprint.google.com/proxy/<proxy_id>"
-  std::string push_notifications_channel_;
   scoped_ptr<gaia::GaiaOAuthClient> oauth_client_;
   scoped_ptr<CloudPrintTokenStore> token_store_;
 
@@ -343,6 +343,21 @@ bool CloudPrintProxyBackend::InitializeWithRobotToken(
   return true;
 }
 
+bool CloudPrintProxyBackend::InitializeWithRobotAuthCode(
+    const std::string& robot_oauth_auth_code,
+    const std::string& robot_email,
+    const std::string& proxy_id) {
+  if (!core_thread_.Start())
+    return false;
+  core_thread_.message_loop()->PostTask(FROM_HERE,
+      NewRunnableMethod(
+        core_.get(),
+        &CloudPrintProxyBackend::Core::DoInitializeWithRobotAuthCode,
+        robot_oauth_auth_code,
+        robot_email,
+        proxy_id));
+  return true;
+}
 
 void CloudPrintProxyBackend::Shutdown() {
   core_thread_.message_loop()->PostTask(FROM_HERE,
@@ -452,6 +467,22 @@ void CloudPrintProxyBackend::Core::DoInitializeWithRobotToken(
   RefreshAccessToken();
 }
 
+void CloudPrintProxyBackend::Core::DoInitializeWithRobotAuthCode(
+    const std::string& robot_oauth_auth_code,
+    const std::string& robot_email,
+    const std::string& proxy_id) {
+  robot_email_ = robot_email;
+  proxy_id_ = proxy_id;
+  // Now that we have an auth code we need to get the refresh and access tokens.
+  oauth_client_.reset(new gaia::GaiaOAuthClient(
+      gaia::kGaiaOAuth2Url,
+      g_service_process->GetServiceURLRequestContextGetter()));
+  oauth_client_->GetTokensFromAuthCode(oauth_client_info_,
+                                       robot_oauth_auth_code,
+                                       kCloudPrintAPIMaxRetryCount,
+                                       this);
+}
+
 void CloudPrintProxyBackend::Core::PostAuthInitialization() {
   DCHECK(MessageLoop::current() == backend_->core_thread_.message_loop());
   // Now we can get down to registering printers.
@@ -473,10 +504,7 @@ void CloudPrintProxyBackend::Core::PostAuthInitialization() {
         notifier_options));
     notifier::Subscription subscription;
     subscription.channel = kCloudPrintPushNotificationsSource;
-    subscription.channel.append("/proxy/");
-    subscription.channel.append(proxy_id_);
     subscription.from = kCloudPrintPushNotificationsSource;
-    push_notifications_channel_ = subscription.channel;
     talk_mediator_->AddSubscription(subscription);
     talk_mediator_->SetDelegate(this);
     talk_mediator_->SetAuthToken(
@@ -545,7 +573,8 @@ void CloudPrintProxyBackend::Core::DoShutdown() {
     index->second->Shutdown();
   }
   // Important to delete the TalkMediator on this thread.
-  talk_mediator_->Logout();
+  if (talk_mediator_.get())
+    talk_mediator_->Logout();
   talk_mediator_.reset();
   notifications_enabled_ = false;
   notifications_enabled_since_ = base::TimeTicks();
@@ -632,7 +661,7 @@ void CloudPrintProxyBackend::Core::OnReceivePrinterCaps(
                                                   mime_boundary,
                                                   std::string() , &post_data);
     CloudPrintHelpers::AddMultipartValueForUpload(
-        kPrinterStatusValue, StringPrintf("%d", info.printer_status),
+        kPrinterStatusValue, base::StringPrintf("%d", info.printer_status),
         mime_boundary, std::string(), &post_data);
     // Add printer options as tags.
     CloudPrintHelpers::GenerateMultipartPostDataForPrinterTags(info.options,
@@ -1045,7 +1074,7 @@ void CloudPrintProxyBackend::Core::OnIncomingNotification(
     const notifier::Notification& notification) {
   DCHECK(MessageLoop::current() == backend_->core_thread_.message_loop());
   VLOG(1) << "CP_PROXY: Incoming notification.";
-  if (0 == base::strcasecmp(push_notifications_channel_.c_str(),
+  if (0 == base::strcasecmp(kCloudPrintPushNotificationsSource,
                             notification.channel.c_str()))
     HandlePrinterNotification(notification.data);
 }

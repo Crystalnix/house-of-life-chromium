@@ -11,8 +11,8 @@
 #include <string>
 #include <vector>
 
-#include "base/compiler_specific.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/linked_ptr.h"
@@ -40,6 +40,7 @@
 
 class CrxInstaller;
 class ExtensionBrowserEventRouter;
+class ExtensionContentSettingsStore;
 class ExtensionInstallUI;
 class ExtensionPreferenceEventRouter;
 class ExtensionServiceBackend;
@@ -211,6 +212,9 @@ class ExtensionService
   // sub-profile (incognito to original profile, or vice versa).
   bool CanCrossIncognito(const Extension* extension);
 
+  // Returns true if the given extension can be loaded in incognito.
+  bool CanLoadInIncognito(const Extension* extension) const;
+
   // Whether this extension can inject scripts into pages with file URLs.
   bool AllowFileAccess(const Extension* extension);
   // Will reload the extension since this permission is applied at loading time
@@ -346,7 +350,7 @@ class ExtensionService
   // Returns an extension that contains any URL that overlaps with the given
   // extent, if one exists.
   const Extension* GetExtensionByOverlappingWebExtent(
-      const ExtensionExtent& extent);
+      const URLPatternSet& extent);
 
   // Returns true if |url| should get extension api bindings and be permitted
   // to make api calls. Note that this is independent of what extension
@@ -414,6 +418,8 @@ class ExtensionService
   // TODO(skerner): Change to const ExtensionPrefs& extension_prefs() const,
   // ExtensionPrefs* mutable_extension_prefs().
   ExtensionPrefs* extension_prefs();
+
+  ExtensionContentSettingsStore* GetExtensionContentSettingsStore();
 
   // Whether the extension service is ready.
   // TODO(skerner): Get rid of this method.  crbug.com/63756
@@ -571,10 +577,6 @@ class ExtensionService
   void RegisterNaClModule(const GURL& url, const std::string& mime_type);
   void UnregisterNaClModule(const GURL& url);
 
-  // Call UpdatePluginListWithNaClModules() after registering or unregistering
-  // a NaCl module to see those changes reflected in the PluginList.
-  void UpdatePluginListWithNaClModules();
-
   NaClModuleInfoList::iterator FindNaClModule(const GURL& url);
 
   base::WeakPtrFactory<ExtensionService> weak_ptr_factory_;
@@ -688,6 +690,9 @@ class ExtensionService
   bool external_extension_url_added_;
 
   NaClModuleInfoList nacl_module_list_;
+
+  // The back end needs to reference nacl_module_list_.
+  friend class ExtensionServiceBackend;
 
   FRIEND_TEST_ALL_PREFIXES(ExtensionServiceTest,
                            InstallAppsWithUnlimtedStorage);

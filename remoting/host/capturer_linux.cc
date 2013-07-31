@@ -15,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "remoting/base/types.h"
 #include "remoting/host/capturer_helper.h"
+#include "remoting/host/differ.h"
 #include "remoting/host/x_server_pixel_buffer.h"
 
 namespace remoting {
@@ -22,6 +23,12 @@ namespace remoting {
 namespace {
 
 static const int kBytesPerPixel = 4;
+
+static bool ShouldUseXDamage() {
+  // For now, always use full-screen polling instead of the DAMAGE extension,
+  // as this extension is broken on many current systems OOTB.
+  return false;
+}
 
 // A class representing a full-frame pixel buffer
 class VideoFrameBuffer {
@@ -77,11 +84,38 @@ class CapturerLinux : public Capturer {
 
  private:
   bool Init();  // TODO(ajwong): Do we really want this to be synchronous?
-  void CalculateInvalidRects();
-  void CaptureRects(const InvalidRects& rects,
-                    Capturer::CaptureCompletedCallback* callback);
+
+  void InitXDamage();
+
+  // Read and handle all currently-pending XEvents.
+  // In the DAMAGE case, process the XDamage events and store the resulting
+  // damage rectangles in the CapturerHelper.
+  // In all cases, call ScreenConfigurationChanged() in response to any
+  // ConfigNotify events.
+  void ProcessPendingXEvents();
+
+  // Capture screen pixels, and return the data in a new CaptureData object,
+  // to be freed by the caller.
+  // In the DAMAGE case, the CapturerHelper already holds the list of invalid
+  // rectangles from ProcessPendingXEvents().
+  // In the non-DAMAGE case, this captures the whole screen, then calculates
+  // some invalid rectangles that include any differences between this and the
+  // previous capture.
+  CaptureData* CaptureFrame();
+
+  // Synchronize the current buffer with |last_buffer_|, by copying pixels from
+  // the area of |last_invalid_rects|.
+  // Note this only works on the assumption that kNumBuffers == 2, as
+  // |last_invalid_rects| holds the differences from the previous buffer and
+  // the one prior to that (which will then be the current buffer).
+  void SynchronizeFrame();
 
   void DeinitXlib();
+
+  // Capture a rectangle from |x_server_pixel_buffer_|, and copy the data into
+  // |capture_data|.
+  void CaptureRect(const gfx::Rect& rect, CaptureData* capture_data);
+
   // We expose two forms of blitting to handle variations in the pixel format.
   // In FastBlit, the operation is effectively a memcpy.
   void FastBlit(uint8* image, const gfx::Rect& rect, CaptureData* capture_data);
@@ -93,6 +127,7 @@ class CapturerLinux : public Capturer {
   Window root_window_;
 
   // XDamage information.
+  bool use_damage_;
   Damage damage_handle_;
   int damage_event_base_;
   int damage_error_base_;
@@ -119,6 +154,9 @@ class CapturerLinux : public Capturer {
   // Last capture buffer used.
   uint8* last_buffer_;
 
+  // |Differ| for use when polling for changes.
+  scoped_ptr<Differ> differ_;
+
   DISALLOW_COPY_AND_ASSIGN(CapturerLinux);
 };
 
@@ -126,6 +164,7 @@ CapturerLinux::CapturerLinux()
     : display_(NULL),
       gc_(NULL),
       root_window_(BadValue),
+      use_damage_(false),
       damage_handle_(BadValue),
       damage_event_base_(-1),
       damage_error_base_(-1),
@@ -164,26 +203,36 @@ bool CapturerLinux::Init() {
     return false;
   }
 
-  // Setup XDamage to report changes in the damage window.  Mark the whole
-  // window as invalid.
-  if (!XDamageQueryExtension(display_, &damage_event_base_,
-                             &damage_error_base_)) {
-    LOG(ERROR) << "Server does not support XDamage.";
-    DeinitXlib();
-    return false;
-  }
-  damage_handle_ = XDamageCreate(display_, root_window_,
-                                 XDamageReportDeltaRectangles);
-  if (damage_handle_ == BadValue) {
-    LOG(ERROR) << "Unable to create damage handle.";
-    DeinitXlib();
-    return false;
+  if (ShouldUseXDamage()) {
+    InitXDamage();
   }
 
   // Register for changes to the dimensions of the root window.
   XSelectInput(display_, root_window_, StructureNotifyMask);
 
   return true;
+}
+
+void CapturerLinux::InitXDamage() {
+  // Setup XDamage to report changes in the damage window.  Mark the whole
+  // window as invalid.
+  if (XDamageQueryExtension(display_, &damage_event_base_,
+                            &damage_error_base_)) {
+    damage_handle_ = XDamageCreate(display_, root_window_,
+                                   XDamageReportDeltaRectangles);
+    if (damage_handle_ == BadValue) {
+      LOG(ERROR) << "Unable to create damage handle.";
+    } else {
+      // TODO(lambroslambrou): Disable DAMAGE in situations where it is known
+      // to fail, such as when Desktop Effects are enabled, with graphics
+      // drivers (nVidia, ATI) that fail to report DAMAGE notifications
+      // properly.
+      use_damage_ = true;
+      LOG(INFO) << "Using XDamage extension.";
+    }
+  } else {
+    LOG(INFO) << "Server does not support XDamage.";
+  }
 }
 
 void CapturerLinux::ScreenConfigurationChanged() {
@@ -214,42 +263,60 @@ void CapturerLinux::InvalidateScreen(const gfx::Size& size) {
 
 void CapturerLinux::InvalidateFullScreen() {
   helper_.InvalidateFullScreen();
+  last_buffer_ = NULL;
 }
 
 void CapturerLinux::CaptureInvalidRects(
     CaptureCompletedCallback* callback) {
-  CalculateInvalidRects();
+  scoped_ptr<CaptureCompletedCallback> callback_deleter(callback);
 
-  InvalidRects rects;
-  helper_.SwapInvalidRects(rects);
+  // TODO(lambroslambrou): In the non-DAMAGE case, there should be no need
+  // for any X event processing in this class.
+  ProcessPendingXEvents();
 
-  CaptureRects(rects, callback);
+  // Resize the current buffer if there was a recent change of
+  // screen-resolution.
+  VideoFrameBuffer &current = buffers_[current_buffer_];
+  current.Update(display_, root_window_);
+  // Also refresh the Differ helper used by CaptureFrame(), if needed.
+  if (!use_damage_ && !last_buffer_) {
+    differ_.reset(new Differ(current.size().width(), current.size().height(),
+                             kBytesPerPixel, current.bytes_per_row()));
+  }
+
+  scoped_refptr<CaptureData> capture_data(CaptureFrame());
+
+  current_buffer_ = (current_buffer_ + 1) % kNumBuffers;
+  helper_.set_size_most_recent(capture_data->size());
+
+  callback->Run(capture_data);
 }
 
-void CapturerLinux::CalculateInvalidRects() {
+void CapturerLinux::ProcessPendingXEvents() {
   // Find the number of events that are outstanding "now."  We don't just loop
   // on XPending because we want to guarantee this terminates.
   int events_to_process = XPending(display_);
   XEvent e;
   InvalidRects invalid_rects;
+
   for (int i = 0; i < events_to_process; i++) {
     XNextEvent(display_, &e);
-    if (e.type == damage_event_base_ + XDamageNotify) {
-      // If we're doing a full screen capture, we should just drain the events.
+    if (use_damage_ && (e.type == damage_event_base_ + XDamageNotify)) {
       XDamageNotifyEvent *event = reinterpret_cast<XDamageNotifyEvent*>(&e);
-      gfx::Rect damage_rect(event->area.x, event->area.y, event->area.width,
-                            event->area.height);
 
       // TODO(hclam): Perform more checks on the rect.
-      if (damage_rect.width() <= 0 && damage_rect.height() <= 0)
+      if (event->area.width <= 0 || event->area.height <= 0)
         continue;
 
+      gfx::Rect damage_rect(event->area.x, event->area.y, event->area.width,
+                            event->area.height);
       invalid_rects.insert(damage_rect);
       VLOG(3) << "Damage received for rect at ("
               << damage_rect.x() << "," << damage_rect.y() << ") size ("
               << damage_rect.width() << "," << damage_rect.height() << ")";
     } else if (e.type == ConfigureNotify) {
       ScreenConfigurationChanged();
+      invalid_rects.clear();
     } else {
       LOG(WARNING) << "Got unknown event type: " << e.type;
     }
@@ -258,28 +325,71 @@ void CapturerLinux::CalculateInvalidRects() {
   helper_.InvalidateRects(invalid_rects);
 }
 
-void CapturerLinux::CaptureRects(
-    const InvalidRects& rects,
-    Capturer::CaptureCompletedCallback* callback) {
-  scoped_ptr<CaptureCompletedCallback> callback_deleter(callback);
-
+CaptureData* CapturerLinux::CaptureFrame() {
   VideoFrameBuffer& buffer = buffers_[current_buffer_];
-  buffer.Update(display_, root_window_);
   DataPlanes planes;
   planes.data[0] = buffer.ptr();
   planes.strides[0] = buffer.bytes_per_row();
 
-  scoped_refptr<CaptureData> capture_data(new CaptureData(
-      planes, buffer.size(), media::VideoFrame::RGB32));
+  CaptureData* capture_data = new CaptureData(planes, buffer.size(),
+                                              media::VideoFrame::RGB32);
 
+  // In the DAMAGE case, ensure the frame is up-to-date with the previous frame
+  // if any.  If there isn't a previous frame, that means a screen-resolution
+  // change occurred, and |invalid_rects| will be updated to include the whole
+  // screen.
+  if (use_damage_ && last_buffer_)
+    SynchronizeFrame();
+
+  InvalidRects invalid_rects;
+
+  x_server_pixel_buffer_.Synchronize();
+  if (use_damage_ && last_buffer_) {
+    helper_.SwapInvalidRects(invalid_rects);
+    for (InvalidRects::const_iterator it = invalid_rects.begin();
+         it != invalid_rects.end();
+         ++it) {
+      CaptureRect(*it, capture_data);
+    }
+    // TODO(ajwong): We should only repair the rects that were copied!
+    XDamageSubtract(display_, damage_handle_, None, None);
+  } else {
+    // Doing full-screen polling, or this is the first capture after a
+    // screen-resolution change.  In either case, need a full-screen capture.
+    gfx::Rect screen_rect(buffer.size());
+    CaptureRect(screen_rect, capture_data);
+
+    if (last_buffer_) {
+      // Full-screen polling, so calculate the invalid rects here, based on the
+      // changed pixels between current and previous buffers.
+      DCHECK(differ_ != NULL);
+      differ_->CalcDirtyRects(last_buffer_, buffer.ptr(), &invalid_rects);
+    } else {
+      // No previous buffer, so always invalidate the whole screen, whether
+      // or not DAMAGE is being used.  DAMAGE doesn't necessarily send a
+      // full-screen notification after a screen-resolution change, so
+      // this is done here.
+      invalid_rects.insert(screen_rect);
+    }
+  }
+
+  capture_data->mutable_dirty_rects() = invalid_rects;
+  last_invalid_rects_ = invalid_rects;
+  last_buffer_ = buffer.ptr();
+  return capture_data;
+}
+
+void CapturerLinux::SynchronizeFrame() {
   // Synchronize the current buffer with the last one since we do not capture
   // the entire desktop. Note that encoder may be reading from the previous
   // buffer at this time so thread access complaints are false positives.
 
   // TODO(hclam): We can reduce the amount of copying here by subtracting
   // |rects| from |last_invalid_rects_|.
+  DCHECK(last_buffer_);
+  VideoFrameBuffer& buffer = buffers_[current_buffer_];
   for (InvalidRects::const_iterator it = last_invalid_rects_.begin();
-       last_buffer_ && it != last_invalid_rects_.end();
+       it != last_invalid_rects_.end();
        ++it) {
     int offset = it->y() * buffer.bytes_per_row() + it->x() * kBytesPerPixel;
     for (int i = 0; i < it->height(); ++i) {
@@ -288,36 +398,6 @@ void CapturerLinux::CaptureRects(
       offset += buffer.size().width() * kBytesPerPixel;
     }
   }
-
-  x_server_pixel_buffer_.Synchronize();
-  for (InvalidRects::const_iterator it = rects.begin();
-       it != rects.end();
-       ++it) {
-    uint8* image = x_server_pixel_buffer_.CaptureRect(*it);
-    // Check if we can fastpath the blit.
-    int depth = x_server_pixel_buffer_.GetDepth();
-    int bpp = x_server_pixel_buffer_.GetBitsPerPixel();
-    bool is_rgb = x_server_pixel_buffer_.IsRgb();
-    if ((depth == 24 || depth == 32) && bpp == 32 && is_rgb) {
-      VLOG(3) << "Fast blitting";
-      FastBlit(image, *it, capture_data);
-    } else {
-      VLOG(3) << "Slow blitting";
-      SlowBlit(image, *it, capture_data);
-    }
-  }
-
-  // TODO(ajwong): We should only repair the rects that were copied!
-  XDamageSubtract(display_, damage_handle_, None, None);
-
-  capture_data->mutable_dirty_rects() = rects;
-  last_invalid_rects_ = rects;
-  last_buffer_ = buffer.ptr();
-
-  current_buffer_ = (current_buffer_ + 1) % kNumBuffers;
-  helper_.set_size_most_recent(capture_data->size());
-
-  callback->Run(capture_data);
 }
 
 void CapturerLinux::DeinitXlib() {
@@ -332,8 +412,23 @@ void CapturerLinux::DeinitXlib() {
   }
 }
 
+void CapturerLinux::CaptureRect(const gfx::Rect& rect,
+                                CaptureData* capture_data) {
+  uint8* image = x_server_pixel_buffer_.CaptureRect(rect);
+  int depth = x_server_pixel_buffer_.GetDepth();
+  int bpp = x_server_pixel_buffer_.GetBitsPerPixel();
+  bool is_rgb = x_server_pixel_buffer_.IsRgb();
+  if ((depth == 24 || depth == 32) && bpp == 32 && is_rgb) {
+    VLOG(3) << "Fast blitting";
+    FastBlit(image, rect, capture_data);
+  } else {
+    VLOG(3) << "Slow blitting";
+    SlowBlit(image, rect, capture_data);
+  }
+}
+
 void CapturerLinux::FastBlit(uint8* image, const gfx::Rect& rect,
-                                  CaptureData* capture_data) {
+                             CaptureData* capture_data) {
   uint8* src_pos = image;
   int src_stride = x_server_pixel_buffer_.GetStride();
   int dst_x = rect.x(), dst_y = rect.y();
@@ -355,7 +450,7 @@ void CapturerLinux::FastBlit(uint8* image, const gfx::Rect& rect,
 }
 
 void CapturerLinux::SlowBlit(uint8* image, const gfx::Rect& rect,
-                                  CaptureData* capture_data) {
+                             CaptureData* capture_data) {
   DataPlanes planes = capture_data->data_planes();
   uint8* dst_buffer = planes.data[0];
   const int dst_stride = planes.strides[0];

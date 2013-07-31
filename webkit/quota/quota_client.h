@@ -5,10 +5,11 @@
 #ifndef WEBKIT_QUOTA_QUOTA_CLIENT_H_
 #define WEBKIT_QUOTA_QUOTA_CLIENT_H_
 
-#include <set>
 #include <list>
+#include <set>
+#include <string>
 
-#include "base/callback.h"
+#include "base/callback_old.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "webkit/quota/quota_types.h"
@@ -23,6 +24,7 @@ class QuotaClient {
  public:
   typedef Callback1<int64>::Type GetUsageCallback;
   typedef Callback1<const std::set<GURL>&>::Type GetOriginsCallback;
+  typedef Callback1<QuotaStatusCode>::Type DeletionCallback;
 
   virtual ~QuotaClient() {}
 
@@ -36,6 +38,9 @@ class QuotaClient {
   };
 
   virtual ID id() const = 0;
+
+  // Called when the quota manager is destroyed.
+  virtual void OnQuotaManagerDestroyed() = 0;
 
   // Called by the QuotaManager.
   // Gets the amount of data stored in the storage specified by
@@ -54,8 +59,14 @@ class QuotaClient {
   virtual void GetOriginsForHost(StorageType type,
                                  const std::string& host,
                                  GetOriginsCallback* callback) = 0;
+
+  // Called by the QuotaManager.
+  virtual void DeleteOriginData(const GURL& origin,
+                                StorageType type,
+                                DeletionCallback* callback) = 0;
 };
 
+// TODO(dmikurube): Replace it to std::vector for efficiency.
 typedef std::list<QuotaClient*> QuotaClientList;
 
 }  // namespace quota

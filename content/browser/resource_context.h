@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_RESOURCE_CONTEXT_H_
 #define CONTENT_BROWSER_RESOURCE_CONTEXT_H_
 
+#include <map>
+
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -12,7 +14,6 @@
 class ChromeAppCacheService;
 class ChromeBlobStorageContext;
 class ExtensionInfoMap;
-class HostContentSettingsMap;
 class HostZoomMap;
 namespace fileapi {
 class FileSystemContext;
@@ -24,6 +25,9 @@ class URLRequestContext;
 namespace prerender {
 class PrerenderManager;
 }  // namespace prerender
+namespace quota {
+class QuotaManager;
+};  // namespace quota
 namespace webkit_database {
 class DatabaseTracker;
 }  // namespace webkit_database
@@ -37,6 +41,11 @@ namespace content {
 class ResourceContext {
  public:
   virtual ~ResourceContext();
+
+  // The user data allows the clients to associate data with this request.
+  // Multiple user data values can be stored under different keys.
+  void* GetUserData(const void* key) const;
+  void SetUserData(const void* key, void* data);
 
   net::HostResolver* host_resolver() const;
   void set_host_resolver(net::HostResolver* host_resolver);
@@ -56,16 +65,14 @@ class ResourceContext {
   ChromeBlobStorageContext* blob_storage_context() const;
   void set_blob_storage_context(ChromeBlobStorageContext* context);
 
+  quota::QuotaManager* quota_manager() const;
+  void set_quota_manager(quota::QuotaManager* quota_manager);
+
   HostZoomMap* host_zoom_map() const;
   void set_host_zoom_map(HostZoomMap* host_zoom_map);
 
   // =======================================================================
   // TODO(willchan): These don't belong in content/. Remove them eventually.
-
-  // TODO(jam): Kill this one.
-  HostContentSettingsMap* host_content_settings_map() const;
-  void set_host_content_settings_map(
-      HostContentSettingsMap* host_content_settings_map);
 
   // TODO(mpcomplete): Kill this one.
   const ExtensionInfoMap* extension_info_map() const;
@@ -88,12 +95,17 @@ class ResourceContext {
   webkit_database::DatabaseTracker* database_tracker_;
   fileapi::FileSystemContext* file_system_context_;
   ChromeBlobStorageContext* blob_storage_context_;
+  quota::QuotaManager* quota_manager_;
   HostZoomMap* host_zoom_map_;
+
+  // Externally-defined data accessible by key.
+  typedef std::map<const void*, void*> UserDataMap;
+  UserDataMap user_data_;
+
 
   // =======================================================================
   // TODO(willchan): These don't belong in content/. Remove them eventually.
 
-  HostContentSettingsMap* host_content_settings_map_;
   ExtensionInfoMap* extension_info_map_;
   base::WeakPtr<prerender::PrerenderManager> prerender_manager_;
 

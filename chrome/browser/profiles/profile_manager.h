@@ -22,28 +22,26 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
-#include "ui/base/system_monitor/system_monitor.h"
 
 class FilePath;
 class NewProfileLauncher;
 
+class ProfileManagerObserver {
+ public:
+  // This method is called when profile is ready. If profile creation has
+  // failed, method is called with |profile| equal to NULL.
+  virtual void OnProfileCreated(Profile* profile) = 0;
+
+  // If true, delete the observer after the profile has been created. Default
+  // is false.
+  virtual bool DeleteAfterCreation();
+};
+
 class ProfileManager : public base::NonThreadSafe,
-                       public ui::SystemMonitor::PowerObserver,
                        public BrowserList::Observer,
                        public NotificationObserver,
                        public Profile::Delegate {
  public:
-  class Observer {
-   public:
-    // This method is called when profile is ready. If profile creation has
-    // failed, method is called with |profile| equal to NULL.
-    virtual void OnProfileCreated(Profile* profile) = 0;
-
-    // If true, delete the observer after the profile has been created. Default
-    // is false.
-    virtual bool DeleteAfterCreation() { return false; }
-  };
-
   ProfileManager();
   virtual ~ProfileManager();
 
@@ -68,11 +66,11 @@ class ProfileManager : public base::NonThreadSafe,
   // when profile is created. If profile has already been created, observer
   // is called immediately. Should be called on the UI thread.
   void CreateProfileAsync(const FilePath& user_data_dir,
-                          Observer* observer);
+                          ProfileManagerObserver* observer);
 
   // Initiates default profile creation. If default profile has already been
   // created, observer is called immediately. Should be called on the UI thread.
-  static void CreateDefaultProfileAsync(Observer* observer);
+  static void CreateDefaultProfileAsync(ProfileManagerObserver* observer);
 
   // Returns the profile with the given |profile_id| or NULL if no such profile
   // exists.
@@ -96,10 +94,6 @@ class ProfileManager : public base::NonThreadSafe,
   // Returns created profiles. Note, profiles order is NOT guaranteed to be
   // related with the creation order.
   std::vector<Profile*> GetLoadedProfiles() const;
-
-  // PowerObserver notifications
-  virtual void OnSuspend();
-  virtual void OnResume();
 
   // NotificationObserver implementation.
   virtual void Observe(NotificationType type,
@@ -163,7 +157,7 @@ class ProfileManager : public base::NonThreadSafe,
     bool created;
     // List of observers which should be notified when profile initialization is
     // done. Note, when profile is fully loaded this vector will be empty.
-    std::vector<Observer*> observers;
+    std::vector<ProfileManagerObserver*> observers;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(ProfileInfo);

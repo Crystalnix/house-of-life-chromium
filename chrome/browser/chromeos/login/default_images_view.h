@@ -33,6 +33,7 @@ class DefaultImagesView : public views::View,
   };
 
   explicit DefaultImagesView(Delegate* delegate);
+  virtual ~DefaultImagesView();
 
   // Initializes this view, its children and layout.
   void Init();
@@ -40,6 +41,9 @@ class DefaultImagesView : public views::View,
   // Returns the index of the selected default image or -1 if there's no
   // selected image.
   int GetDefaultImageIndex() const;
+
+  // Allows to specify the selected image index specifically.
+  void SetDefaultImageIndex(int index);
 
   // Unselects the selected image if there's one.
   void ClearSelection();

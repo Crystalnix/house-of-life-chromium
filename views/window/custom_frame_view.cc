@@ -21,7 +21,7 @@
 #endif
 
 #if defined(OS_WIN)
-#include "views/window/window_win.h"
+#include "views/window/native_window_win.h"
 #endif
 
 namespace views {
@@ -236,7 +236,7 @@ gfx::Size CustomFrameView::GetPreferredSize() {
 
 void CustomFrameView::ButtonPressed(Button* sender, const views::Event& event) {
   if (sender == close_button_)
-    frame_->CloseWindow();
+    frame_->Close();
   else if (sender == minimize_button_)
     frame_->Minimize();
   else if (sender == maximize_button_)
@@ -568,7 +568,7 @@ void CustomFrameView::InitClass() {
   static bool initialized = false;
   if (!initialized) {
 #if defined(OS_WIN)
-    title_font_ = new gfx::Font(WindowWin::GetWindowTitleFont());
+    title_font_ = new gfx::Font(NativeWindowWin::GetWindowTitleFont());
 #elif defined(OS_LINUX)
     // TODO(ben): need to resolve what font this is.
     title_font_ = new gfx::Font();

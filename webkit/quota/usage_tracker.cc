@@ -5,6 +5,8 @@
 #include "webkit/quota/usage_tracker.h"
 
 #include <deque>
+#include <set>
+#include <string>
 
 #include "base/message_loop_proxy.h"
 #include "base/stl_util-inl.h"
@@ -39,7 +41,7 @@ class ClientUsageTracker::GatherUsageTaskBase : public QuotaTask {
     if (origins_to_process.empty()) {
       // Nothing to be done.
       CallCompleted();
-      delete this;
+      DeleteSoon();
     }
     for (std::set<GURL>::const_iterator iter = origins_to_process.begin();
          iter != origins_to_process.end();
@@ -59,7 +61,7 @@ class ClientUsageTracker::GatherUsageTaskBase : public QuotaTask {
 
  protected:
   virtual void Aborted() OVERRIDE {
-    delete this;
+    DeleteSoon();
   }
 
   UsageTracker* tracker() const { return tracker_; }
@@ -80,7 +82,7 @@ class ClientUsageTracker::GatherUsageTaskBase : public QuotaTask {
     if (pending_origins_.empty()) {
       // We're done.
       CallCompleted();
-      delete this;
+      DeleteSoon();
     }
   }
 
@@ -121,7 +123,7 @@ class ClientUsageTracker::GatherGlobalUsageTask
     client_tracker()->DidGetGlobalUsage(origin_usage_map());
   }
 
-private:
+ private:
   QuotaClient* client_;
   base::ScopedCallbackFactory<GatherUsageTaskBase> callback_factory_;
 
@@ -237,6 +239,17 @@ void UsageTracker::UpdateUsageCache(
   client_tracker->UpdateUsageCache(origin, delta);
 }
 
+void UsageTracker::GetCachedOrigins(std::set<GURL>* origins) const {
+  DCHECK(origins);
+  origins->clear();
+  for (ClientTrackerMap::const_iterator iter = client_tracker_map_.begin();
+       iter != client_tracker_map_.end();
+       ++iter) {
+    const std::set<GURL>& client_origins = iter->second->cached_origins();
+    origins->insert(client_origins.begin(), client_origins.end());
+  }
+}
+
 void UsageTracker::DidGetClientGlobalUsage(int64 usage) {
   global_usage_.usage += usage;
   if (--global_usage_.pending_clients == 0) {
@@ -252,7 +265,7 @@ void UsageTracker::DidGetClientHostUsage(const std::string& host, int64 usage) {
   if (--info.pending_clients == 0) {
     // All the clients have returned their usage data.  Dispatches the
     // pending callbacks.
-    host_usage_callbacks_.Run(host, info.usage);
+    host_usage_callbacks_.Run(host, host, info.usage);
     outstanding_host_usage_.erase(host);
   }
 }
@@ -372,9 +385,9 @@ void ClientUsageTracker::DidGetGlobalUsage(
     std::map<std::string, int64>::iterator found  =
         host_usage_map_.find(iter->first);
     if (found == host_usage_map_.end())
-      HostUsageCallbackMap::RunAt(iter, 0);
+      iter->second.Run(iter->first, 0);
     else
-      HostUsageCallbackMap::RunAt(iter, found->second);
+      iter->second.Run(iter->first, found->second);
   }
   host_usage_callbacks_.Clear();
 }
@@ -394,7 +407,7 @@ void ClientUsageTracker::DidGetHostUsage(
   }
 
   // Dispatches the host usage callback.
-  host_usage_callbacks_.Run(host, host_usage_map_[host]);
+  host_usage_callbacks_.Run(host, host, host_usage_map_[host]);
 }
 
 }  // namespace quota

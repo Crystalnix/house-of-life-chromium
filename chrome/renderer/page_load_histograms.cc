@@ -270,8 +270,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   // Histograms to determine if DNS prefetching has an impact on PLT.
-  static bool use_dns_histogram(base::FieldTrialList::Find("DnsImpact") &&
-      !base::FieldTrialList::Find("DnsImpact")->group_name().empty());
+  static const bool use_dns_histogram =
+      base::FieldTrialList::TrialExists("DnsImpact");
   if (use_dns_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.Abandoned", "DnsImpact"),
@@ -307,8 +307,7 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
 
   // Histograms to determine if content prefetching has an impact on PLT.
   static const bool prefetching_fieldtrial =
-      base::FieldTrialList::Find("Prefetch") &&
-      !base::FieldTrialList::Find("Prefetch")->group_name().empty();
+      base::FieldTrialList::TrialExists("Prefetch");
   if (prefetching_fieldtrial) {
     if (navigation_state->was_prefetcher()) {
       PLT_HISTOGRAM(base::FieldTrial::MakeName(
@@ -338,9 +337,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   // Histograms to determine if backup connection jobs have an impact on PLT.
-  static const bool connect_backup_jobs_fieldtrial(
-      base::FieldTrialList::Find("ConnnectBackupJobs") &&
-      !base::FieldTrialList::Find("ConnnectBackupJobs")->group_name().empty());
+  static const bool connect_backup_jobs_fieldtrial =
+      base::FieldTrialList::TrialExists("ConnnectBackupJobs");
   if (connect_backup_jobs_fieldtrial) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.Abandoned", "ConnnectBackupJobs"),
@@ -378,9 +376,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   // impact on PLT.
   // TODO(jar): Consider removing the per-link-type versions.  We
   //   really only need LINK_LOAD_NORMAL and NORMAL_LOAD.
-  static bool use_connection_impact_histogram(
-      base::FieldTrialList::Find("ConnCountImpact") &&
-      !base::FieldTrialList::Find("ConnCountImpact")->group_name().empty());
+  static const bool use_connection_impact_histogram =
+      base::FieldTrialList::TrialExists("ConnCountImpact");
   if (use_connection_impact_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.Abandoned", "ConnCountImpact"),
@@ -412,9 +409,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   // Histograms to determine effect of idle socket timeout.
-  static bool use_idle_socket_timeout_histogram(
-      base::FieldTrialList::Find("IdleSktToImpact") &&
-      !base::FieldTrialList::Find("IdleSktToImpact")->group_name().empty());
+  static const bool use_idle_socket_timeout_histogram =
+      base::FieldTrialList::TrialExists("IdleSktToImpact");
   if (use_idle_socket_timeout_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.Abandoned", "IdleSktToImpact"),
@@ -446,10 +442,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   }
 
   // Histograms to determine effect of number of connections per proxy.
-  static bool use_proxy_connection_impact_histogram(
-      base::FieldTrialList::Find("ProxyConnectionImpact") &&
-      !base::FieldTrialList::Find(
-          "ProxyConnectionImpact")->group_name().empty());
+  static const bool use_proxy_connection_impact_histogram =
+      base::FieldTrialList::TrialExists("ProxyConnectionImpact");
   if (use_proxy_connection_impact_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.Abandoned", "ProxyConnectionImpact"),
@@ -482,8 +476,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
 
   // Histograms to determine if SDCH has an impact.
   // TODO(jar): Consider removing per-link load types and the enumeration.
-  static bool use_sdch_histogram(base::FieldTrialList::Find("GlobalSdch") &&
-      !base::FieldTrialList::Find("GlobalSdch")->group_name().empty());
+  static const bool use_sdch_histogram =
+      base::FieldTrialList::TrialExists("GlobalSdch");
   if (use_sdch_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
         base::FieldTrial::MakeName("PLT.LoadType", "GlobalSdch"),
@@ -519,59 +513,47 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  // Histograms to determine if cache size has an impact on PLT.
-  static bool use_cache_histogram1(base::FieldTrialList::Find("CacheSize") &&
-      !base::FieldTrialList::Find("CacheSize")->group_name().empty());
-  if (use_cache_histogram1 && NavigationState::LINK_LOAD_NORMAL <= load_type &&
-      NavigationState::LINK_LOAD_CACHE_ONLY >= load_type) {
-    // TODO(mbelshe): Do we really want BeginToFinishDoc here?  It seems like
-    //                StartToFinish or BeginToFinish would be better.
-    PLT_HISTOGRAM(base::FieldTrial::MakeName(
-        "PLT.BeginToFinishDoc_LinkLoad", "CacheSize"), begin_to_finish_doc);
-  }
-
-  // Histograms to determine if cache throttling has an impact on PLT.
-  static bool use_cache_histogram2(
-      base::FieldTrialList::Find("CacheThrottle") &&
-      !base::FieldTrialList::Find("CacheThrottle")->group_name().empty());
-  if (use_cache_histogram2) {
+  // Histograms to determine the PLT impact of the cache's deleted list size.
+  static const bool use_cache_histogram =
+      base::FieldTrialList::TrialExists("CacheListSize");
+  if (use_cache_histogram) {
     UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("PLT.Abandoned", "CacheThrottle"),
+        base::FieldTrial::MakeName("PLT.Abandoned", "CacheListSize"),
         abandoned_page ? 1 : 0, 2);
     switch (load_type) {
       case NavigationState::RELOAD:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_Reload", "CacheThrottle"),
+            "PLT.BeginToFinish_Reload", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::HISTORY_LOAD:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_HistoryLoad", "CacheThrottle"),
+            "PLT.BeginToFinish_HistoryLoad", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::NORMAL_LOAD:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_NormalLoad", "CacheThrottle"),
+            "PLT.BeginToFinish_NormalLoad", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::LINK_LOAD_NORMAL:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadNormal", "CacheThrottle"),
+            "PLT.BeginToFinish_LinkLoadNormal", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::LINK_LOAD_RELOAD:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadReload", "CacheThrottle"),
+            "PLT.BeginToFinish_LinkLoadReload", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::LINK_LOAD_CACHE_STALE_OK:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadStaleOk", "CacheThrottle"),
+            "PLT.BeginToFinish_LinkLoadStaleOk", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       case NavigationState::LINK_LOAD_CACHE_ONLY:
         PLT_HISTOGRAM(base::FieldTrial::MakeName(
-            "PLT.BeginToFinish_LinkLoadCacheOnly", "CacheThrottle"),
+            "PLT.BeginToFinish_LinkLoadCacheOnly", "CacheListSize"),
             begin_to_finish_all_loads);
         break;
       default:
@@ -580,7 +562,7 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     if (NavigationState::RELOAD <= load_type &&
         NavigationState::LINK_LOAD_CACHE_ONLY >= load_type) {
       PLT_HISTOGRAM(base::FieldTrial::MakeName(
-          "PLT.BeginToFinish", "CacheThrottle"),
+          "PLT.BeginToFinish", "CacheListSize"),
            begin_to_finish_all_loads);
     }
   }
@@ -591,8 +573,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
   //   if we asked for a HTTP request, we got a HTTP request
   // Due to spdy version mismatches, it is possible that we ask for SPDY
   // but didn't get SPDY.
-  static bool use_spdy_histogram(base::FieldTrialList::Find("SpdyImpact") &&
-      !base::FieldTrialList::Find("SpdyImpact")->group_name().empty());
+  static const bool use_spdy_histogram =
+      base::FieldTrialList::TrialExists("SpdyImpact");
   if (use_spdy_histogram) {
     // We take extra effort to only compute these once.
     static bool in_spdy_trial = base::FieldTrialList::Find(
@@ -749,8 +731,8 @@ void PageLoadHistograms::Dump(WebFrame* frame) {
     }
   }
 
-  static bool false_start_trial(base::FieldTrialList::Find("SSLFalseStart") &&
-      !base::FieldTrialList::Find("SSLFalseStart")->group_name().empty());
+  static const bool false_start_trial =
+      base::FieldTrialList::TrialExists("SSLFalseStart");
   if (false_start_trial) {
     if (scheme_type == URLPattern::SCHEME_HTTPS) {
       switch (load_type) {

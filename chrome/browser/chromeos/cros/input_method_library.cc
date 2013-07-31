@@ -17,7 +17,6 @@
 #include "base/string_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/input_method/candidate_window.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
 #include "chrome/browser/chromeos/language_preferences.h"
@@ -25,6 +24,10 @@
 #include "content/common/notification_observer.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_service.h"
+
+#if !defined(TOUCH_UI)
+#include "chrome/browser/chromeos/input_method/candidate_window.h"
+#endif
 
 namespace {
 
@@ -63,8 +66,12 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
         defer_ime_startup_(false),
         enable_auto_ime_shutdown_(true),
         ibus_daemon_process_handle_(base::kNullProcessHandle),
+#if !defined(TOUCH_UI)
         initialized_successfully_(false),
         candidate_window_controller_(NULL) {
+#else
+        initialized_successfully_(false) {
+#endif
     // Observe APP_TERMINATING to stop input method daemon gracefully.
     // We should not use APP_EXITING here since logout might be canceled by
     // JavaScript after APP_EXITING is sent (crosbug.com/11055).
@@ -269,10 +276,11 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
     chromeos::SendHandwritingStroke(input_method_status_connection_, stroke);
   }
 
-  virtual void CancelHandwriting(int n_strokes) {
+  virtual void CancelHandwritingStrokes(int stroke_count) {
     if (!initialized_successfully_)
       return;
-    chromeos::CancelHandwriting(input_method_status_connection_, n_strokes);
+    // TODO(yusukes): Rename the libcros function to CancelHandwritingStrokes.
+    chromeos::CancelHandwriting(input_method_status_connection_, stroke_count);
   }
 
  private:
@@ -427,7 +435,40 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
     while (iter != pending_config_requests_.end()) {
       const std::string& section = iter->first.first;
       const std::string& config_name = iter->first.second;
-      const ImeConfigValue& value = iter->second;
+      ImeConfigValue& value = iter->second;
+
+      if (config_name == language_prefs::kPreloadEnginesConfigName &&
+          !tentative_current_input_method_id_.empty()) {
+        // We should use |tentative_current_input_method_id_| as the initial
+        // active input method for the following reasons:
+        //
+        // 1) Calls to ChangeInputMethod() will fail if the input method has not
+        // yet been added to preload_engines.  As such, the call is deferred
+        // until after all config values have been sent to the IME process.
+        //
+        // 2) We might have already changed the current input method to one
+        // of XKB layouts without going through the IBus daemon (we can do
+        // it without the IBus daemon started).
+        std::vector<std::string>::iterator engine_iter = std::find(
+            value.string_list_value.begin(),
+            value.string_list_value.end(),
+            tentative_current_input_method_id_);
+        if (engine_iter != value.string_list_value.end()) {
+          // Use std::rotate to keep the relative order of engines the same e.g.
+          // from "A,B,C" to "C,A,B".
+          // We don't have to |active_input_method_ids_|, which decides the
+          // order of engines in the switcher menu, since the relative order
+          // of |value.string_list_value| is not changed.
+          std::rotate(value.string_list_value.begin(),
+                      engine_iter,  // this becomes the new first element
+                      value.string_list_value.end());
+        } else {
+          LOG(WARNING) << tentative_current_input_method_id_
+                       << " is not in preload_engines: " << value.ToString();
+        }
+        tentative_current_input_method_id_.erase();
+      }
+
       if (chromeos::SetImeConfig(input_method_status_connection_,
                                  section.c_str(),
                                  config_name.c_str(),
@@ -442,23 +483,6 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
       } else {
         // If SetImeConfig() fails, subsequent calls will likely fail.
         break;
-      }
-    }
-    if (pending_config_requests_.empty()) {
-      // We should change the current input method to the one we have last
-      // remembered in ChangeInputMethod(), for the following reasons:
-      //
-      // 1) Calls to ChangeInputMethod() will fail if the input method has not
-      // yet been added to preload_engines.  As such, the call is deferred
-      // until after all config values have been sent to the IME process.
-      //
-      // 2) We might have already changed the current input method to one
-      // of XKB layouts without going through the IBus daemon (we can do
-      // it without the IBus daemon started).
-      if (ime_connected_ && !tentative_current_input_method_id_.empty()) {
-        ChangeInputMethodViaIBus(tentative_current_input_method_id_);
-        tentative_current_input_method_id_.clear();
-        active_input_methods_are_changed = true;
       }
     }
 
@@ -697,12 +721,14 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
       return false;
     }
 
+#if !defined(TOUCH_UI)
     if (!candidate_window_controller_.get()) {
       candidate_window_controller_.reset(new CandidateWindowController);
       if (!candidate_window_controller_->Init()) {
         LOG(WARNING) << "Failed to initialize the candidate window controller";
       }
     }
+#endif
 
     if (ibus_daemon_process_handle_ != base::kNullProcessHandle) {
       return false;  // ibus-daemon is already running.
@@ -770,7 +796,9 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
     if (type.value == NotificationType::APP_TERMINATING) {
       notification_registrar_.RemoveAll();
       StopInputMethodDaemon();
+#if !defined(TOUCH_UI)
       candidate_window_controller_.reset(NULL);
+#endif
     }
   }
 
@@ -830,7 +858,9 @@ class InputMethodLibraryImpl : public InputMethodLibrary,
 
   // The candidate window.  This will be deleted when the APP_TERMINATING
   // message is sent.
+#if !defined(TOUCH_UI)
   scoped_ptr<CandidateWindowController> candidate_window_controller_;
+#endif
 
   // The active input method ids cache.
   std::vector<std::string> active_input_method_ids_;
@@ -907,7 +937,7 @@ class InputMethodLibraryStubImpl : public InputMethodLibrary {
   }
 
   virtual void SendHandwritingStroke(const HandwritingStroke& stroke) {}
-  virtual void CancelHandwriting(int n_strokes) {}
+  virtual void CancelHandwritingStrokes(int stroke_count) {}
 
  private:
   typedef std::map<std::string, std::string> KeyboardOverlayMap;

@@ -50,7 +50,7 @@
 #include "views/focus/focus_manager.h"
 #include "views/focus/focus_util_win.h"
 // Included for views::kReflectedMessage - TODO(beng): move this to win_util.h!
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #include "webkit/glue/webaccessibility.h"
 #include "webkit/glue/webcursor.h"
 #include "webkit/plugins/npapi/plugin_constants_win.h"
@@ -1065,8 +1065,10 @@ void RenderWidgetHostViewWin::OnInputLangChange(DWORD character_set,
 }
 
 void RenderWidgetHostViewWin::OnThemeChanged() {
-  if (render_widget_host_)
-    render_widget_host_->SystemThemeChanged();
+  if (!render_widget_host_)
+    return;
+  render_widget_host_->Send(new ViewMsg_ThemeChanged(
+      render_widget_host_->routing_id()));
 }
 
 LRESULT RenderWidgetHostViewWin::OnNotify(int w_param, NMHDR* header) {
@@ -1581,25 +1583,19 @@ void RenderWidgetHostViewWin::ShowCompositorHostWindow(bool show) {
 }
 
 void RenderWidgetHostViewWin::SetAccessibilityFocus(int acc_obj_id) {
-  if (!browser_accessibility_manager_.get() ||
-      !render_widget_host_ ||
-      !render_widget_host_->process() ||
-      !render_widget_host_->process()->HasConnection()) {
+  if (!render_widget_host_)
     return;
-  }
 
-  render_widget_host_->SetAccessibilityFocus(acc_obj_id);
+  render_widget_host_->Send(new ViewMsg_SetAccessibilityFocus(
+      render_widget_host_->routing_id(), acc_obj_id));
 }
 
 void RenderWidgetHostViewWin::AccessibilityDoDefaultAction(int acc_obj_id) {
-  if (!browser_accessibility_manager_.get() ||
-      !render_widget_host_ ||
-      !render_widget_host_->process() ||
-      !render_widget_host_->process()->HasConnection()) {
+  if (!render_widget_host_)
     return;
-  }
 
-  render_widget_host_->AccessibilityDoDefaultAction(acc_obj_id);
+  render_widget_host_->Send(new ViewMsg_AccessibilityDoDefaultAction(
+      render_widget_host_->routing_id(), acc_obj_id));
 }
 
 LRESULT RenderWidgetHostViewWin::OnGetObject(UINT message, WPARAM wparam,

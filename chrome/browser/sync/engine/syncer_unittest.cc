@@ -14,6 +14,7 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/sync/engine/conflict_resolver.h"
@@ -26,6 +27,7 @@
 #include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/engine/syncproto.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
+#include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
 #include "chrome/browser/sync/sessions/sync_session_context.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/model_type.h"
@@ -2188,7 +2190,7 @@ TEST_F(SyncerTest, CommitManyItemsInOneGo) {
   {
     WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
     for (uint32 i = 0; i < items_to_commit; i++) {
-      string nameutf8 = StringPrintf("%d", i);
+      string nameutf8 = base::StringPrintf("%d", i);
       string name(nameutf8.begin(), nameutf8.end());
       MutableEntry e(&trans, CREATE, trans.root_id(), name);
       e.Put(IS_UNSYNCED, true);
@@ -3726,24 +3728,6 @@ TEST_F(SyncerTest, TestMoveSanitizedNamedFolder) {
   // We use the same sync ts as before so our times match up.
   mock_server_->AddUpdateDirectory(2, 1, ":::", 2, 2);
   SyncShareAsDelegate();
-}
-
-TEST(SortedCollectionsIntersect, SortedCollectionsIntersectTest) {
-  int negative[] = {-3, -2, -1};
-  int straddle[] = {-1, 0, 1};
-  int positive[] = {1, 2, 3};
-  EXPECT_TRUE(SortedCollectionsIntersect(negative, negative + 3,
-                                         straddle, straddle + 3));
-  EXPECT_FALSE(SortedCollectionsIntersect(negative, negative + 3,
-                                          positive, positive + 3));
-  EXPECT_TRUE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                         positive, positive + 3));
-  EXPECT_FALSE(SortedCollectionsIntersect(straddle + 2, straddle + 3,
-                                          positive, positive));
-  EXPECT_FALSE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                          positive + 1, positive + 1));
-  EXPECT_TRUE(SortedCollectionsIntersect(straddle, straddle + 3,
-                                         positive, positive + 1));
 }
 
 // Don't crash when this occurs.

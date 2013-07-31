@@ -26,10 +26,6 @@ class TranslateHelper;
 struct ThumbnailScore;
 struct ViewMsg_Navigate_Params;
 
-namespace WebKit {
-class WebView;
-}
-
 namespace safe_browsing {
 class PhishingClassifierDelegate;
 }
@@ -57,7 +53,8 @@ class ChromeRenderViewObserver : public RenderViewObserver,
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
-  virtual void DidChangeIcons(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void DidChangeIcon(WebKit::WebFrame* frame,
+                             WebKit::WebIconURL::Type icon_type) OVERRIDE;
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
   virtual void DidClearWindowObject(WebKit::WebFrame* frame) OVERRIDE;
@@ -73,8 +70,12 @@ class ChromeRenderViewObserver : public RenderViewObserver,
                              const WebKit::WebString& name,
                              const WebKit::WebString& display_name,
                              unsigned long estimated_size) OVERRIDE;
+  virtual bool allowFileSystem(WebKit::WebFrame* frame) OVERRIDE;
   virtual bool allowImages(WebKit::WebFrame* frame,
                            bool enabled_per_settings) OVERRIDE;
+  virtual bool allowIndexedDB(WebKit::WebFrame* frame,
+                              const WebKit::WebString& name,
+                              const WebKit::WebSecurityOrigin& origin) OVERRIDE;
   virtual bool allowPlugins(WebKit::WebFrame* frame,
                             bool enabled_per_settings) OVERRIDE;
   virtual bool allowScript(WebKit::WebFrame* frame,
@@ -82,8 +83,7 @@ class ChromeRenderViewObserver : public RenderViewObserver,
   virtual bool allowScriptExtension(WebKit::WebFrame* frame,
                                     const WebKit::WebString& extension_name,
                                     int extension_group) OVERRIDE;
-  // TODO(jam): add OVERRIDE once WebKit is rolled.
-  virtual bool allowStorage(WebKit::WebFrame* frame, bool local);
+  virtual bool allowStorage(WebKit::WebFrame* frame, bool local) OVERRIDE;
   virtual bool allowReadFromClipboard(WebKit::WebFrame* frame,
                                       bool default_value) OVERRIDE;
   virtual bool allowWriteToClipboard(WebKit::WebFrame* frame,

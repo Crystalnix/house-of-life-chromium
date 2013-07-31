@@ -34,6 +34,17 @@ bool PrerenderRenderViewHostObserver::OnMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(PrerenderRenderViewHostObserver, message)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidStartProvisionalLoadForFrame,
                         OnDidStartProvisionalLoadForFrame)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+
+  // If this was a DidStartProvisionalLoadForFrame message, we don't want to
+  // to consume it, so return false;
+  if (handled)
+    return false;
+
+  // The following messages we do want to consume.
+  handled = true;
+  IPC_BEGIN_MESSAGE_MAP(PrerenderRenderViewHostObserver, message)
     IPC_MESSAGE_HANDLER(IconHostMsg_UpdateFaviconURL, OnUpdateFaviconURL)
     IPC_MESSAGE_HANDLER(ViewHostMsg_MaybeCancelPrerenderForHTML5Media,
                         OnMaybeCancelPrerenderForHTML5Media)
@@ -41,6 +52,8 @@ bool PrerenderRenderViewHostObserver::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ViewHostMsg_RunJavaScriptMessage,
                         OnRunJavaScriptMessage)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewGone, OnRenderViewGone)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_CancelPrerenderForPrinting,
+                        OnCancelPrerenderForPrinting)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -84,9 +97,11 @@ void PrerenderRenderViewHostObserver::OnRenderViewGone(int status,
 void PrerenderRenderViewHostObserver::OnDidStartProvisionalLoadForFrame(
     int64 frame_id,
     bool is_main_frame,
+    bool has_opener_set,
     const GURL& url) {
   prerender_contents_->OnDidStartProvisionalLoadForFrame(frame_id,
                                                          is_main_frame,
+                                                         has_opener_set,
                                                          url);
 }
 
@@ -97,7 +112,11 @@ void PrerenderRenderViewHostObserver::OnUpdateFaviconURL(
 }
 
 void PrerenderRenderViewHostObserver::OnMaybeCancelPrerenderForHTML5Media() {
-  prerender_contents_->OnMaybeCancelPrerenderForHTML5Media();
+  prerender_contents_->Destroy(FINAL_STATUS_HTML5_MEDIA);
+}
+
+void PrerenderRenderViewHostObserver::OnCancelPrerenderForPrinting() {
+  prerender_contents_->Destroy(FINAL_STATUS_WINDOW_PRINT);
 }
 
 }

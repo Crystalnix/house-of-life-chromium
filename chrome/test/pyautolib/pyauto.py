@@ -196,6 +196,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     # Pass extra chrome flags for testing
     for flag in self.ExtraChromeFlagsOnChromeOS():
       args.append('--extra-chrome-flags=%s' % flag)
+    assert self.WaitUntil(lambda: self._IsSessionManagerReady(0))
     proc = subprocess.Popen(args, stdout=subprocess.PIPE)
     automation_channel_path = proc.communicate()[0].strip()
     assert len(automation_channel_path), 'Could not enable testing interface'
@@ -234,7 +235,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     ]
 
   @staticmethod
-  def IsSessionManagerReady(old_pid):
+  def _IsSessionManagerReady(old_pid):
     """Is the ChromeOS session_manager running and ready to accept DBus calls?
 
     Called after session_manager is killed to know when it has restarted.
@@ -276,6 +277,26 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     for item in os.listdir(chronos_dir):
       if item != 'user' and not item.startswith('.'):
         pyauto_utils.RemovePath(os.path.join(chronos_dir, item))
+
+  @staticmethod
+  def _IsInodeNew(path, old_inode):
+    """Determine whether an inode has changed. POSIX only.
+
+    Args:
+      path: The file path to check for changes.
+      old_inode: The old inode number.
+
+    Returns:
+      True if the path exists and its inode number is different from old_inode.
+      False otherwise.
+    """
+    try:
+      stat_result = os.stat(path)
+    except OSError:
+      return False
+    if not stat_result:
+      return False
+    return stat_result.st_ino != old_inode
 
   def RestartBrowser(self, clear_profile=True):
     """Restart the browser.
@@ -560,7 +581,10 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     This is a snapshot of the bookmark model; it is not a proxy and
     does not get updated as the bookmark model changes.
     """
-    return bookmark_model.BookmarkModel(self._GetBookmarksAsJSON())
+    bookmarks_as_json = self._GetBookmarksAsJSON()
+    if bookmarks_as_json == None:
+      raise JSONInterfaceError('Could not resolve browser proxy.')
+    return bookmark_model.BookmarkModel(bookmarks_as_json)
 
   def GetDownloadsInfo(self, windex=0):
     """Return info about downloads.
@@ -834,24 +858,6 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       'value': value,
     }
     self._GetResultFromJSONRequest(cmd_dict)
-
-  def SendWebkitKeypressEvent(self, key_code, tab_index=0, windex=0):
-    """Send webkit key press event to the browser.
-
-    Used to simulate key press from the keyboard to interact with the browser.
-    Simulates a key press which consists of a down key press and up key press.
-
-    Args:
-      key_code: the hex value associated with the keypress (virtual key code).
-      tab_index: tab index to work on. Defaults to 0 (first tab).
-      windex: window index to work on. Defaults to 0 (first window).
-    """
-    KEY_DOWN_TYPE = 0  # kRawKeyDownType
-    KEY_UP_TYPE = 3  # kKeyUpType
-
-    # Sending two requests, one each for "key down" and "key up".
-    self.SendWebkitKeyEvent(KEY_DOWN_TYPE, key_code, tab_index, windex)
-    self.SendWebkitKeyEvent(KEY_UP_TYPE, key_code, tab_index, windex)
 
   def SendWebkitKeyEvent(self, key_type, key_code, tab_index=0, windex=0):
     """Send a webkit key event to the browser.
@@ -1528,6 +1534,123 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     }
     return self._GetResultFromJSONRequest(cmd_dict, windex=window_index)
 
+  def AutofillTriggerSuggestions(self, field_id=None, tab_index=0, windex=0):
+    """Focuses a webpage form field and triggers the autofill popup in it.
+
+    This function focuses the specified input field in a webpage form, then
+    causes the autofill popup to appear in that field.  The underlying
+    automation hook sends a "down arrow" keypress event to trigger the autofill
+    popup.  This function waits until the popup is displayed before returning.
+
+    Args:
+      field_id: The string ID of the webpage form field to focus.  Can be
+                'None' (the default), in which case nothing is focused.  This
+                can be useful if the field has already been focused by other
+                means.
+      tab_index: Integer index of the tab to work on; defaults to 0 (first tab).
+      windex: Integer index of the browser window to work on; defaults to 0
+              (first window).
+
+    Returns:
+      True, if no errors were encountered, or False otherwise.
+
+    Raises:
+      pyauto_errors.JSONInterfaceError if the automation call returns an error.
+    """
+    # Focus the field with the specified ID, if necessary.
+    if field_id:
+      if not self.JavascriptFocusElementById(field_id, tab_index, windex):
+        return False
+
+    # Cause the autofill popup to be shown in the focused form field.
+    cmd_dict = {
+      'command': 'AutofillTriggerSuggestions',
+      'tab_index': tab_index,
+    }
+    self._GetResultFromJSONRequest(cmd_dict, windex=windex)
+    return True
+
+  def AutofillHighlightSuggestion(self, direction, tab_index=0, windex=0):
+    """Highlights the previous or next suggestion in an existing autofill popup.
+
+    This function assumes that an existing autofill popup is currently displayed
+    in a webpage form.  The underlying automation hook sends either a
+    "down arrow" or an "up arrow" keypress event to cause the next or previous
+    suggestion to be highlighted, respectively.  This function waits until
+    autofill displays a preview of the form's filled state before returning.
+
+    Use AutofillTriggerSuggestions() to trigger the autofill popup before
+    calling this function.  Use AutofillAcceptSelection() after calling this
+    function to accept a selection.
+
+    Args:
+      direction: The string direction in which to highlight an autofill
+                 suggestion.  Must be either "up" or "down".
+      tab_index: Integer index of the tab to work on; defaults to 0 (first tab).
+      windex: Integer index of the browser window to work on; defaults to 0
+              (first window).
+
+    Raises:
+      pyauto_errors.JSONInterfaceError if the automation call returns an error.
+    """
+    assert direction in ('up', 'down')
+    cmd_dict = {
+      'command': 'AutofillHighlightSuggestion',
+      'direction': direction,
+      'tab_index': tab_index,
+    }
+    self._GetResultFromJSONRequest(cmd_dict, windex=windex)
+
+  def AutofillAcceptSelection(self, tab_index=0, windex=0):
+    """Accepts the current selection in an already-displayed autofill popup.
+
+    This function assumes that a profile is already highlighted in an existing
+    autofill popup in a webpage form.  The underlying automation hook sends a
+    "return" keypress event to cause the highlighted profile to be accepted.
+    This function waits for the webpage form to be filled in with autofill data
+    before returning.  This function does not submit the webpage form.
+
+    Raises:
+      pyauto_errors.JSONInterfaceError if the automation call returns an error.
+    """
+    cmd_dict = {
+      'command': 'AutofillAcceptSelection',
+      'tab_index': tab_index,
+    }
+    self._GetResultFromJSONRequest(cmd_dict, windex=windex)
+
+  def AutofillPopulateForm(self, field_id, profile_index=0, tab_index=0,
+                           windex=0):
+    """Populates a webpage form using autofill data and keypress events.
+
+    This function focuses the specified input field in the form, and then
+    sends keypress events to the associated tab to cause the form to be
+    populated with information from the requested autofill profile.
+
+    Args:
+      field_id: The string ID of the webpage form field to focus for autofill
+                purposes.
+      profile_index: The index of the profile in the autofill popup to use to
+                     populate the form; defaults to 0 (first profile).
+      tab_index: Integer index of the tab to work on; defaults to 0 (first tab).
+      windex: Integer index of the browser window to work on; defaults to 0
+              (first window).
+
+    Returns:
+      True, if the webpage form is populated successfully, or False if not.
+
+    Raises:
+      pyauto_errors.JSONInterfaceError if an automation call returns an error.
+    """
+    if not self.AutofillTriggerSuggestions(field_id, tab_index, windex):
+      return False
+
+    for _ in range(profile_index + 1):
+      self.AutofillHighlightSuggestion('down', tab_index, windex)
+
+    self.AutofillAcceptSelection(tab_index, windex)
+    return True
+
   def AddHistoryItem(self, item):
     """Forge a history item for Chrome.
 
@@ -1674,7 +1797,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     }
     return self._GetResultFromJSONRequest(cmd_dict)
 
-  def AddSavedPassword(self, password_dict, window_index=0):
+  def AddSavedPassword(self, password_dict, windex=0):
     """Adds the given username-password combination to the saved passwords.
 
     Args:
@@ -1689,7 +1812,7 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
         'submit_element': 'submit',                  # The HTML element
         'action_target': 'https://www.example.com/login/',
         'blacklist': False }
-      window_index: window index, defaults to 0
+      windex: window index; defaults to 0 (first window).
 
     *Blacklist notes* To blacklist a site, add a blacklist password with the
     following dictionary items: origin_url, signon_realm, username_element,
@@ -1701,14 +1824,14 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       mode, adding the password should fail.
 
     Raises:
-      JSONInterfaceError on error.
+      pyauto_errors.JSONInterfaceError if the automation call returns an error.
     """
     cmd_dict = {  # Prepare command for the json interface
       'command': 'AddSavedPassword',
       'password': password_dict
     }
     return self._GetResultFromJSONRequest(
-        cmd_dict, windex=window_index)['password_added']
+        cmd_dict, windex=windex)['password_added']
 
   def RemoveSavedPassword(self, password_dict, window_index=0):
     """Removes the password matching the provided password dictionary.
@@ -1956,6 +2079,29 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     js = '%s(%s)' % (function, ', '.join(converted_args))
     logging.debug('Executing javascript: %s', js)
     return self.ExecuteJavascript(js, windex, tab_index)
+
+  def JavascriptFocusElementById(self, field_id, tab_index=0, windex=0):
+    """Uses Javascript to focus an element with the given ID in a webpage.
+
+    Args:
+      field_id: The string ID of the webpage form field to focus.
+      tab_index: Integer index of the tab to work on; defaults to 0 (first tab).
+      windex: Integer index of the browser window to work on; defaults to 0
+              (first window).
+
+    Returns:
+      True, on success, or False on failure.
+    """
+    focus_field_js = """
+        var field = document.getElementById("%s");
+        if (!field) {
+          window.domAutomationController.send("error");
+        } else {
+          field.focus();
+          window.domAutomationController.send("done");
+        }
+    """ % field_id
+    return self.ExecuteJavascript(focus_field_js, windex, tab_index) == 'done'
 
   def SignInToSync(self, username, password):
     """Signs in to sync using the given username and password.
@@ -2541,6 +2687,31 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     cmd_dict = { 'command': 'GetLoginInfo' }
     return self._GetResultFromJSONRequest(cmd_dict, windex=-1)
 
+  def _WaitForSessionManagerRestart(self, function):
+    """Call a function and wait for the ChromeOS session_manager to restart.
+
+    Args:
+      function: The function to call.
+    """
+    assert callable(function)
+    pgrep_process = subprocess.Popen(['pgrep', 'session_manager'],
+                                     stdout=subprocess.PIPE)
+    old_pid = pgrep_process.communicate()[0].strip()
+    function()
+    return self.WaitUntil(lambda: self._IsSessionManagerReady(old_pid))
+
+  def _WaitForInodeChange(self, path, function):
+    """Call a function and wait for the specified file path to change.
+
+    Args:
+      path: The file path to check for changes.
+      function: The function to call.
+    """
+    assert callable(function)
+    old_inode = os.stat(path).st_ino
+    function()
+    return self.WaitUntil(lambda: self._IsInodeNew(path, old_inode))
+
   def ShowCreateAccountUI(self):
     """Go to the account creation page.
 
@@ -2552,10 +2723,12 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       pyauto_errors.JSONInterfaceError if the automation call returns an error.
     """
     cmd_dict = { 'command': 'ShowCreateAccountUI' }
-    self._GetResultFromJSONRequest(cmd_dict, windex=-1)
-    # See note below under LoginAsGuest(). ShowCreateAccountUI() essentially
-    # logs the user in as guest in order to access the account creation page.
-    os.unlink(self._named_channel_id)
+    # See note below under LoginAsGuest(). ShowCreateAccountUI() logs
+    # the user in as guest in order to access the account creation page.
+    assert self._WaitForInodeChange(
+        self._named_channel_id,
+        lambda: self._GetResultFromJSONRequest(cmd_dict, windex=-1)), \
+        'Chrome did not reopen the testing channel after login as guest.'
     self.SetUp()
 
   def LoginAsGuest(self):
@@ -2568,11 +2741,13 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       pyauto_errors.JSONInterfaceError if the automation call returns an error.
     """
     cmd_dict = { 'command': 'LoginAsGuest' }
-    self._GetResultFromJSONRequest(cmd_dict, windex=-1)
     # Currently, logging in as guest causes session_manager to
     # restart Chrome, which will close the testing channel.
     # We need to call SetUp() again to reconnect to the new channel.
-    os.unlink(self._named_channel_id)
+    assert self._WaitForInodeChange(
+        self._named_channel_id,
+        lambda: self._GetResultFromJSONRequest(cmd_dict, windex=-1)), \
+        'Chrome did not reopen the testing channel after login as guest.'
     self.SetUp()
 
   def Login(self, username, password):
@@ -2605,11 +2780,11 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
     """
     assert self.GetLoginInfo()['is_logged_in'], \
         'Trying to log out when already logged out.'
-    pgrep_process = subprocess.Popen(['pgrep', 'session_manager'],
-                                     stdout=subprocess.PIPE)
-    old_pid = pgrep_process.communicate()[0].strip()
-    self.ApplyAccelerator(IDC_EXIT)
-    self.WaitUntil(lambda: self.IsSessionManagerReady(old_pid))
+    assert self._WaitForSessionManagerRestart(
+        lambda: self.ApplyAccelerator(IDC_EXIT)), \
+        'Session manager did not restart after logout.'
+
+    self.setUp()
 
   def LockScreen(self):
     """Locks the screen on chromeos.
@@ -2648,7 +2823,10 @@ class PyUITest(pyautolib.PyUITestBase, unittest.TestCase):
       pyauto_errors.JSONInterfaceError if the automation call returns an error.
     """
     cmd_dict = { 'command': 'SignoutInScreenLocker' }
-    self._GetResultFromJSONRequest(cmd_dict, windex=-1)
+    assert self._WaitForSessionManagerRestart(
+        lambda: self._GetResultFromJSONRequest(cmd_dict, windex=-1)), \
+        'Session manager did not restart after logout.'
+    self.setUp()
 
   def GetBatteryInfo(self):
     """Get details about battery state.
@@ -3377,12 +3555,7 @@ class Main(object):
     chrome_flags = self._options.chrome_flags
     # Set CHROME_HEADLESS. It enables crash reporter on posix.
     os.putenv('CHROME_HEADLESS', '1')
-    # --dom-automation added in PyUITestBase::PyUITestBase()
-
-    suite_args.append('--extra-chrome-flags=%s' % chrome_flags)
-    # Note: The suite_args passed here are ignored on windows since it
-    # overrides to obtain the command line for the current process directly.
-    # Refer CommandLine::Init().
+    os.putenv('EXTRA_CHROME_FLAGS', chrome_flags)
     pyauto_suite = PyUITestSuite(suite_args)
     test_names = self._ExpandTestNames(self._args)
     test_names *= self._options.repeat

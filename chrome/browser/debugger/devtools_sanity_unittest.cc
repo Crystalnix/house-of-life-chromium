@@ -4,7 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/debugger/devtools_client_host.h"
 #include "chrome/browser/debugger/devtools_manager.h"
@@ -55,6 +55,9 @@ const char kPauseWhenScriptIsRunning[] =
     "files/devtools/pause_when_script_is_running.html";
 const char kPageWithContentScript[] =
     "files/devtools/page_with_content_script.html";
+const char kChunkedTestPage[] = "chunked";
+const char kSlowTestPage[] =
+    "chunked?waitBeforeHeaders=100&waitBetweenChunks=100&chunksNumber=2";
 
 
 class DevToolsSanityTest : public InProcessBrowserTest {
@@ -85,8 +88,8 @@ class DevToolsSanityTest : public InProcessBrowserTest {
           ui_test_utils::ExecuteJavaScriptAndExtractString(
               client_contents_->render_view_host(),
               L"",
-              UTF8ToWide(StringPrintf("uiTests.runTest('%s')",
-                                      test_name.c_str())),
+              UTF8ToWide(base::StringPrintf("uiTests.runTest('%s')",
+                                            test_name.c_str())),
               &result));
       EXPECT_EQ("[OK]", result);
     } else {
@@ -286,6 +289,26 @@ IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPauseWhenLoadingDevTools) {
 // is already running.
 IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestPauseWhenScriptIsRunning) {
   RunTest("testPauseWhenScriptIsRunning", kPauseWhenScriptIsRunning);
+}
+
+// Tests network timing.
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkTiming) {
+  RunTest("testNetworkTiming", kSlowTestPage);
+}
+
+// Tests network size.
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkSize) {
+  RunTest("testNetworkSize", kChunkedTestPage);
+}
+
+// Tests raw headers text.
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkSyncSize) {
+  RunTest("testNetworkSyncSize", kChunkedTestPage);
+}
+
+// Tests raw headers text.
+IN_PROC_BROWSER_TEST_F(DevToolsSanityTest, TestNetworkRawHeadersText) {
+  RunTest("testNetworkRawHeadersText", kChunkedTestPage);
 }
 
 }  // namespace

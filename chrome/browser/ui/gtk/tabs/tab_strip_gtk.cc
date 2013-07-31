@@ -1649,7 +1649,7 @@ bool TabStripGtk::CompleteDrop(guchar* data, bool is_plain_text) {
   if (is_plain_text) {
     AutocompleteMatch match;
     model_->profile()->GetAutocompleteClassifier()->Classify(
-        UTF8ToUTF16(reinterpret_cast<char*>(data)), string16(), false,
+        UTF8ToUTF16(reinterpret_cast<char*>(data)), string16(), false, false,
         &match, NULL);
     url = match.destination_url;
   } else {
@@ -1983,7 +1983,7 @@ gboolean TabStripGtk::OnDragDrop(GtkWidget* widget, GdkDragContext* context,
 gboolean TabStripGtk::OnDragLeave(GtkWidget* widget, GdkDragContext* context,
                                   guint time) {
   // Destroy the drop indicator.
-  drop_info_.reset();
+  drop_info_->DestroyContainer();
 
   // Cancel any pending tab transition.
   hover_tab_selector_.CancelTabTransition();

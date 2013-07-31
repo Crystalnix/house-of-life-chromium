@@ -58,7 +58,8 @@ class AudioRendererBaseTest : public ::testing::Test {
 
     // Set up audio properties.
     ON_CALL(*decoder_, config())
-        .WillByDefault(Return(AudioDecoderConfig(16, 1, 44100)));
+        .WillByDefault(Return(AudioDecoderConfig(16, CHANNEL_LAYOUT_MONO,
+                                                 44100)));
   }
 
   virtual ~AudioRendererBaseTest() {
@@ -117,7 +118,7 @@ TEST_F(AudioRendererBaseTest, Initialize_Successful) {
   // Now seek to trigger prerolling, verifying the callback hasn't been
   // executed yet.
   EXPECT_CALL(*renderer_, CheckPoint(0));
-  renderer_->Seek(base::TimeDelta(), NewExpectedCallback());
+  renderer_->Seek(base::TimeDelta(), NewExpectedStatusCB(PIPELINE_OK));
   EXPECT_EQ(kMaxQueueSize, pending_reads_);
   renderer_->CheckPoint(0);
 
@@ -145,7 +146,7 @@ TEST_F(AudioRendererBaseTest, OneCompleteReadCycle) {
   // Now seek to trigger prerolling, verifying the callback hasn't been
   // executed yet.
   EXPECT_CALL(*renderer_, CheckPoint(0));
-  renderer_->Seek(base::TimeDelta(), NewExpectedCallback());
+  renderer_->Seek(base::TimeDelta(), NewExpectedStatusCB(PIPELINE_OK));
   EXPECT_EQ(kMaxQueueSize, pending_reads_);
   renderer_->CheckPoint(0);
 

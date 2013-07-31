@@ -33,12 +33,9 @@
         '../third_party/skia/gpu/src/GrGpuGLFixed.h',
         '../third_party/skia/gpu/src/GrGpuGLShaders.cpp',
         '../third_party/skia/gpu/src/GrGpuGLShaders.h',
-        '../third_party/skia/gpu/src/GrGpuGLShaders2.cpp',
-        '../third_party/skia/gpu/src/GrGpuGLShaders2.h',
         '../third_party/skia/gpu/src/GrInOrderDrawBuffer.cpp',
         '../third_party/skia/gpu/src/GrMatrix.cpp',
         '../third_party/skia/gpu/src/GrMemory.cpp',
-        '../third_party/skia/gpu/src/GrPath.cpp',
         '../third_party/skia/gpu/src/GrPathRenderer.cpp',
         '../third_party/skia/gpu/src/GrPathUtils.cpp',
         '../third_party/skia/gpu/src/GrRectanizer_fifo.cpp',
@@ -83,7 +80,6 @@
         '../third_party/skia/gpu/include/GrNoncopyable.h',
         '../third_party/skia/gpu/include/GrPaint.h',
         '../third_party/skia/gpu/include/GrPath.h',
-        '../third_party/skia/gpu/include/GrPathIter.h',
         '../third_party/skia/gpu/include/GrPathSink.h',
         '../third_party/skia/gpu/include/GrPoint.h',
         '../third_party/skia/gpu/include/GrRandom.h',
@@ -335,6 +331,7 @@
         '../third_party/skia/src/core/SkFloat.cpp',
         '../third_party/skia/src/core/SkFloat.h',
         '../third_party/skia/src/core/SkFloatBits.cpp',
+        '../third_party/skia/src/core/SkFontHost.cpp',
         '../third_party/skia/src/core/SkGeometry.cpp',
         '../third_party/skia/src/core/SkGlobals.cpp',
         '../third_party/skia/src/core/SkGlyphCache.cpp',
@@ -727,7 +724,7 @@
             ['exclude', '_mac\\.(cc|cpp|mm?)$'],
             ['exclude', '/mac/'] ],
         }],
-        [ 'OS != "linux" and OS != "freebsd" and OS != "openbsd" and OS != "solaris"', {
+        [ 'toolkit_uses_gtk == 0', {
           'sources/': [ ['exclude', '_(linux|gtk)\\.(cc|cpp)$'] ],
           'sources!': [
             '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
@@ -763,7 +760,7 @@
             'SK_RESTRICT=',
           ],
         }],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        [ 'toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gdk',
             '../build/linux/system.gyp:fontconfig',
@@ -780,7 +777,6 @@
             'ext/SkFontHost_fontconfig_direct.cpp',
             '../third_party/skia/src/core/SkBlitter_ARGB32_Subpixel.cpp',
             '../third_party/skia/src/ports/SkFontHost_FreeType_Subpixel.cpp',
-            '../third_party/skia/src/core/SkFontHost.cpp',
           ],
           'defines': [
             'SK_SUPPORT_LCDTEXT',
@@ -883,7 +879,7 @@
     # separately as well.
     {
       'target_name': 'skia_opts',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
         'config',
@@ -895,7 +891,7 @@
         '../third_party/skia/src/core',
       ],
       'conditions': [
-        [ '(OS == "linux" or OS == "freebsd" or OS == "openbsd") and target_arch != "arm"', {
+        [ 'os_posix == 1 and OS != "mac" and target_arch != "arm"', {
           'cflags': [
             '-msse2',
           ],

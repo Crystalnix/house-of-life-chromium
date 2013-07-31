@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/google/google_util.h"
@@ -16,13 +17,13 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
 #include "content/browser/geolocation/geolocation_provider.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/common/geolocation_messages.h"
 #include "content/common/notification_registrar.h"
 #include "content/common/notification_source.h"
@@ -439,10 +440,13 @@ void GeolocationInfoBarQueueController::ShowQueuedInfoBar(int render_process_id,
                                                           int render_view_id) {
   TabContents* tab_contents =
       tab_util::GetTabContentsByID(render_process_id, render_view_id);
+  TabContentsWrapper* wrapper = NULL;
+  if (tab_contents)
+    wrapper = TabContentsWrapper::GetCurrentWrapperForContents(tab_contents);
   for (PendingInfoBarRequests::iterator i = pending_infobar_requests_.begin();
        i != pending_infobar_requests_.end(); ) {
     if (i->IsForTab(render_process_id, render_view_id)) {
-      if (!tab_contents) {
+      if (!wrapper) {
         i = pending_infobar_requests_.erase(i);
         continue;
       }
@@ -458,7 +462,7 @@ void GeolocationInfoBarQueueController::ShowQueuedInfoBar(int render_process_id,
             tab_contents, this, render_process_id, render_view_id, i->bridge_id,
             i->requesting_frame,
             profile_->GetPrefs()->GetString(prefs::kAcceptLanguages));
-        tab_contents->AddInfoBar(i->infobar_delegate);
+        wrapper->AddInfoBar(i->infobar_delegate);
       }
       break;
     }
@@ -480,7 +484,9 @@ GeolocationInfoBarQueueController::PendingInfoBarRequests::iterator
 
   // TabContents will destroy the InfoBar, which will remove from our vector
   // asynchronously.
-  tab_contents->RemoveInfoBar(i->infobar_delegate);
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents);
+  wrapper->RemoveInfoBar(i->infobar_delegate);
   return ++i;
 }
 
@@ -578,13 +584,10 @@ void GeolocationPermissionContext::NotifyPermissionSet(
     bool allowed) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  TabContents* tab_contents =
-      tab_util::GetTabContentsByID(render_process_id, render_view_id);
-
   // TabContents may have gone away (or not exists for extension).
-  if (tab_contents) {
-    TabSpecificContentSettings* content_settings =
-        tab_contents->GetTabSpecificContentSettings();
+  TabSpecificContentSettings* content_settings =
+      TabSpecificContentSettings::Get(render_process_id, render_view_id);
+  if (content_settings) {
     content_settings->OnGeolocationPermissionSet(requesting_frame.GetOrigin(),
                                                  allowed);
   }

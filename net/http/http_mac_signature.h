@@ -10,7 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/time.h"
 #include "crypto/hmac.h"
+#include "net/base/net_api.h"
 
 namespace net {
 
@@ -20,16 +22,16 @@ namespace net {
 //
 //   http://tools.ietf.org/html/draft-hammer-oauth-v2-mac-token
 //
-class HttpMacSignature {
+class NET_TEST HttpMacSignature {
  public:
   HttpMacSignature();
   ~HttpMacSignature();
 
   // Returns whether this information is valid.
   bool AddStateInfo(const std::string& id,
+                    const base::Time& creation_date,
                     const std::string& mac_key,
-                    const std::string& mac_algorithm,
-                    const std::string& issuer);
+                    const std::string& mac_algorithm);
 
   // Returns whether this information is valid.
   bool AddHttpInfo(const std::string& method,
@@ -45,17 +47,17 @@ class HttpMacSignature {
   FRIEND_TEST_ALL_PREFIXES(HttpMacSignatureTest, GenerateNormalizedRequest);
   FRIEND_TEST_ALL_PREFIXES(HttpMacSignatureTest, GenerateMAC);
 
-  std::string GenerateHeaderString(const std::string& timestamp,
+  std::string GenerateHeaderString(const std::string& age,
                                    const std::string& nonce);
-  std::string GenerateNormalizedRequest(const std::string& timestamp,
+  std::string GenerateNormalizedRequest(const std::string& age,
                                         const std::string& nonce);
-  std::string GenerateMAC(const std::string& timestamp,
+  std::string GenerateMAC(const std::string& age,
                           const std::string& nonce);
 
   std::string id_;
+  base::Time creation_date_;
   std::string mac_key_;
   crypto::HMAC::HashAlgorithm mac_algorithm_;
-  std::string issuer_;
 
   std::string method_;
   std::string request_uri_;

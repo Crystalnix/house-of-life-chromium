@@ -6,11 +6,12 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/accessibility/browser_accessibility_state.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
 #include "content/browser/renderer_host/render_process_host.h"
@@ -22,7 +23,6 @@
 #include "content/common/notification_service.h"
 #include "content/common/result_codes.h"
 #include "content/common/view_messages.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "webkit/glue/webcursor.h"
@@ -502,11 +502,8 @@ void RenderWidgetHost::StopHangMonitorTimeout() {
   // started again shortly, which happens to be the common use case.
 }
 
-void RenderWidgetHost::SystemThemeChanged() {
-  Send(new ViewMsg_ThemeChanged(routing_id_));
-}
-
 void RenderWidgetHost::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardMouseEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -532,6 +529,7 @@ void RenderWidgetHost::OnMouseActivate() {
 
 void RenderWidgetHost::ForwardWheelEvent(
     const WebMouseWheelEvent& wheel_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardWheelEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -567,6 +565,7 @@ void RenderWidgetHost::ForwardWheelEvent(
 
 void RenderWidgetHost::ForwardKeyboardEvent(
     const NativeWebKeyboardEvent& key_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardKeyboardEvent");
   if (ignore_input_events_ || process_->ignore_input_events())
     return;
 
@@ -628,6 +627,8 @@ void RenderWidgetHost::ForwardKeyboardEvent(
 void RenderWidgetHost::ForwardInputEvent(const WebInputEvent& input_event,
                                          int event_size,
                                          bool is_keyboard_shortcut) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardInputEvent");
+
   if (!process_->HasConnection())
     return;
 
@@ -654,22 +655,10 @@ void RenderWidgetHost::ForwardInputEvent(const WebInputEvent& input_event,
   StartHangMonitorTimeout(TimeDelta::FromMilliseconds(kHungRendererDelayMs));
 }
 
-void RenderWidgetHost::ForwardEditCommand(const std::string& name,
-      const std::string& value) {
-  // We don't need an implementation of this function here since the
-  // only place we use this is for the case of dropdown menus and other
-  // edge cases for which edit commands don't make sense.
-}
-
-void RenderWidgetHost::ForwardEditCommandsForNextKeyEvent(
-    const EditCommands& edit_commands) {
-  // We don't need an implementation of this function here since this message is
-  // only handled by RenderView.
-}
-
 #if defined(TOUCH_UI)
 void RenderWidgetHost::ForwardTouchEvent(
     const WebKit::WebTouchEvent& touch_event) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::ForwardTouchEvent");
   ForwardInputEvent(touch_event, sizeof(WebKit::WebTouchEvent), false);
 }
 #endif
@@ -755,10 +744,6 @@ void RenderWidgetHost::ImeCancelComposition() {
             std::vector<WebKit::WebCompositionUnderline>(), 0, 0));
 }
 
-void RenderWidgetHost::SetActive(bool active) {
-  Send(new ViewMsg_SetActive(routing_id(), active));
-}
-
 void RenderWidgetHost::Destroy() {
   NotificationService::current()->Notify(
       NotificationType::RENDER_WIDGET_HOST_DESTROYED,
@@ -837,7 +822,7 @@ void RenderWidgetHost::OnMsgPaintAtSizeAck(int tag, const gfx::Size& size) {
 
 void RenderWidgetHost::OnMsgUpdateRect(
     const ViewHostMsg_UpdateRect_Params& params) {
-  GPU_TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgUpdateRect");
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgUpdateRect");
   TimeTicks paint_start = TimeTicks::Now();
 
   NotificationService::current()->Notify(
@@ -955,6 +940,8 @@ void RenderWidgetHost::OnMsgUpdateRect(
 }
 
 void RenderWidgetHost::OnMsgInputEventAck(const IPC::Message& message) {
+  TRACE_EVENT0("renderer_host", "RenderWidgetHost::OnMsgInputEventAck");
+
   // Log the time delta for processing an input event.
   TimeDelta delta = TimeTicks::Now() - input_event_start_time_;
   UMA_HISTOGRAM_TIMES("MPArch.RWH_InputEventDelta", delta);
@@ -1238,18 +1225,6 @@ void RenderWidgetHost::EnableRendererAccessibility() {
     // Renderer accessibility wasn't enabled on process launch. Enable it now.
     Send(new ViewMsg_EnableAccessibility(routing_id()));
   }
-}
-
-void RenderWidgetHost::SetAccessibilityFocus(int acc_obj_id) {
-  Send(new ViewMsg_SetAccessibilityFocus(routing_id(), acc_obj_id));
-}
-
-void RenderWidgetHost::AccessibilityDoDefaultAction(int acc_obj_id) {
-  Send(new ViewMsg_AccessibilityDoDefaultAction(routing_id(), acc_obj_id));
-}
-
-void RenderWidgetHost::AccessibilityNotificationsAck() {
-  Send(new ViewMsg_AccessibilityNotifications_ACK(routing_id()));
 }
 
 void RenderWidgetHost::ProcessKeyboardEventAck(int type, bool processed) {

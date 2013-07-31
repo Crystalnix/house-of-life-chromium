@@ -44,7 +44,6 @@
 #include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/dom_operation_notification_details.h"
 #include "chrome/browser/download/download_item.h"
-#include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/download/save_package.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
@@ -92,16 +91,19 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/json_value_serializer.h"
+#include "content/common/view_messages.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebFindOptions.h"
 #include "webkit/glue/password_form.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/external_tab_container_win.h"
 #endif  // defined(OS_WIN)
 
+using WebKit::WebFindOptions;
 using base::Time;
 
 AutomationProvider::AutomationProvider(Profile* profile)
@@ -111,7 +113,7 @@ AutomationProvider::AutomationProvider(Profile* profile)
       is_connected_(false),
       initial_tab_loads_complete_(false),
       network_library_initialized_(true) {
-  TRACE_EVENT_BEGIN("AutomationProvider::AutomationProvider", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::AutomationProvider", 0, "");
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -126,7 +128,7 @@ AutomationProvider::AutomationProvider(Profile* profile)
       new ExtensionTestResultNotificationObserver(this));
   g_browser_process->AddRefModule();
 
-  TRACE_EVENT_END("AutomationProvider::AutomationProvider", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::AutomationProvider", 0, "");
 }
 
 AutomationProvider::~AutomationProvider() {
@@ -137,7 +139,7 @@ AutomationProvider::~AutomationProvider() {
 }
 
 bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
-  TRACE_EVENT_BEGIN("AutomationProvider::InitializeChannel", 0, "");
+  TRACE_EVENT_BEGIN_ETW("AutomationProvider::InitializeChannel", 0, "");
 
   channel_id_ = channel_id;
   std::string effective_channel_id = channel_id;
@@ -176,7 +178,7 @@ bool AutomationProvider::InitializeChannel(const std::string& channel_id) {
     delete observer;
 #endif
 
-  TRACE_EVENT_END("AutomationProvider::InitializeChannel", 0, "");
+  TRACE_EVENT_END_ETW("AutomationProvider::InitializeChannel", 0, "");
 
   return true;
 }
@@ -252,7 +254,7 @@ DictionaryValue* AutomationProvider::GetDictionaryFromDownloadItem(
 
   DictionaryValue* dl_item_value = new DictionaryValue;
   dl_item_value->SetInteger("id", static_cast<int>(download->id()));
-  dl_item_value->SetString("url", download->url().spec());
+  dl_item_value->SetString("url", download->GetURL().spec());
   dl_item_value->SetString("referrer_url", download->referrer_url().spec());
   dl_item_value->SetString("file_name",
                            download->GetFileNameToReportUser().value());
@@ -502,12 +504,14 @@ void AutomationProvider::SendFindRequest(
   if (wrapper)
     wrapper->find_tab_helper()->set_current_find_request_id(request_id);
 
-  tab_contents->render_view_host()->StartFinding(
-      FindInPageNotificationObserver::kFindInPageRequestId,
-      search_string,
-      forward,
-      match_case,
-      find_next);
+  WebFindOptions options;
+  options.forward = forward;
+  options.matchCase = match_case;
+  options.findNext = find_next;
+  tab_contents->render_view_host()->Send(new ViewMsg_Find(
+      tab_contents->render_view_host()->routing_id(),
+      FindInPageNotificationObserver::kFindInPageRequestId, search_string,
+      options));
 }
 
 class SetProxyConfigTask : public Task {
@@ -704,7 +708,7 @@ void AutomationProvider::StopAsync(int tab_handle) {
     return;
   }
 
-  view->Stop();
+  view->Send(new ViewMsg_Stop(view->routing_id()));
 }
 
 void AutomationProvider::OnSetPageFontSize(int tab_handle,
@@ -784,6 +788,7 @@ void AutomationProvider::InstallExtension(const FilePath& crx_path,
 
     // Pass NULL for a silent install with no UI.
     scoped_refptr<CrxInstaller> installer(service->MakeCrxInstaller(NULL));
+    installer->set_install_cause(extension_misc::INSTALL_CAUSE_AUTOMATION);
     installer->InstallCrx(crx_path);
   } else {
     AutomationMsg_InstallExtension::WriteReplyParams(
@@ -816,6 +821,7 @@ void AutomationProvider::InstallExtensionAndGetHandle(
     ExtensionInstallUI* client =
         (with_ui ? new ExtensionInstallUI(profile_) : NULL);
     scoped_refptr<CrxInstaller> installer(service->MakeCrxInstaller(client));
+    installer->set_install_cause(extension_misc::INSTALL_CAUSE_AUTOMATION);
     installer->InstallCrx(crx_path);
   } else {
     AutomationMsg_InstallExtensionAndGetHandle::WriteReplyParams(

@@ -13,6 +13,7 @@
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/task.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
@@ -46,15 +47,6 @@ void HandlePrefetchTag(
     const GURL& url,
     const GURL& referrer,
     bool make_pending);
-
-// Given a renderer process id and view id, this will destroy any preloads and
-// pending preloads than are using or originated in the given render view.
-// Must be called on the UI thread.
-void DestroyPreloadForRenderView(
-    const base::WeakPtr<PrerenderManager>& prerender_manager_weak_ptr,
-    int render_process_id,
-    int render_view_id,
-    FinalStatus final_status);
 
 // PrerenderManager is responsible for initiating and keeping prerendered
 // views of webpages. All methods must be called on the UI thread unless
@@ -92,7 +84,7 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
 
   // Destroy all preloads for the given child route id pair and assign a final
   // status to them.
-  void DestroyPreloadForChildRouteIdPair(
+  virtual void DestroyPreloadForChildRouteIdPair(
       const std::pair<int, int>& child_route_id_pair,
       FinalStatus final_status);
 
@@ -100,8 +92,12 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // determines whether a preloaded version of the URL can be used,
   // and substitutes the prerendered RVH into the TabContents.  Returns
   // whether or not a prerendered RVH could be used or not.
-  bool MaybeUsePreloadedPage(TabContents* tab_contents, const GURL& url);
-  bool MaybeUsePreloadedPageOld(TabContents* tab_contents, const GURL& url);
+  bool MaybeUsePreloadedPage(TabContents* tab_contents,
+                             const GURL& url,
+                             bool has_opener_set);
+  bool MaybeUsePreloadedPageOld(TabContents* tab_contents,
+                                const GURL& url,
+                                bool has_opener_set);
 
   // Moves a PrerenderContents to the pending delete list from the list of
   // active prerenders when prerendering should be cancelled.
@@ -172,6 +168,14 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   bool IsTabContentsPrerendered(TabContents* tab_contents) const;
   bool WouldTabContentsBePrerendered(TabContents* tab_contents) const;
 
+  // Records that some visible tab navigated (or was redirected) to the
+  // provided URL.
+  void RecordNavigation(const GURL& url);
+
+  // Checks whether navigation to the provided URL has occured in a visible
+  // tab recently.
+  bool HasRecentlyBeenNavigatedTo(const GURL& url);
+
   // Extracts a urlencoded URL stored in a url= query parameter from a URL
   // supplied, if available, and stores it in alias_url.  Returns whether or not
   // the operation succeeded (i.e. a valid URL was found).
@@ -197,16 +201,23 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   friend class base::RefCountedThreadSafe<PrerenderManager>;
 
   struct PrerenderContentsData;
+  struct NavigationRecord;
 
   // Starts scheduling periodic cleanups.
   void StartSchedulingPeriodicCleanups();
   // Stops scheduling periodic cleanups if they're no longer needed.
   void MaybeStopSchedulingPeriodicCleanups();
 
-  // Deletes stale prerendered PrerenderContents.
+  // Deletes stale and cancelled prerendered PrerenderContents, as well as
+  // TabContents that have been replaced by prerendered TabContents.
   // Also identifies and kills PrerenderContents that use too much
   // resources.
   void PeriodicCleanup();
+
+  // Posts a task to call PeriodicCleanup.  Results in quicker destruction of
+  // objects.  If |this| is deleted before the task is run, the task will
+  // automatically be cancelled.
+  void PostCleanupTask();
 
   bool IsPrerenderElementFresh(const base::Time start) const;
   void DeleteOldEntries();
@@ -247,6 +258,9 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // so cannot immediately be deleted.
   void DeleteOldTabContents();
 
+  // Cleans up old NavigationRecord's.
+  void CleanUpOldNavigations();
+
   // Specifies whether prerendering is currently enabled for this
   // manager. The value can change dynamically during the lifetime
   // of the PrerenderManager.
@@ -263,8 +277,12 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   // List of prerendered elements.
   std::list<PrerenderContentsData> prerender_list_;
 
+  // List of recent navigations in this profile, sorted by ascending
+  // navigate_time_.
+  std::list<NavigationRecord> navigations_;
+
   // List of prerender elements to be deleted
-  std::list<PrerenderContentsData> pending_delete_list_;
+  std::list<PrerenderContents*> pending_delete_list_;
 
   // Set of TabContents which are currently displaying a prerendered page.
   base::hash_set<TabContents*> prerendered_tab_contents_set_;
@@ -299,6 +317,9 @@ class PrerenderManager : public base::SupportsWeakPtr<PrerenderManager>,
   base::TimeTicks last_prerender_start_time_;
 
   std::list<TabContentsWrapper*> old_tab_contents_list_;
+
+  // Cancels pending tasks on deletion.
+  ScopedRunnableMethodFactory<PrerenderManager> runnable_method_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PrerenderManager);
 };

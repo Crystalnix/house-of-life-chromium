@@ -4,21 +4,21 @@
 
 #include "chrome/browser/chromeos/login/user_controller.h"
 
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
-using views::WidgetGtk;
+using views::NativeWidgetGtk;
 
 namespace chromeos {
 
 namespace {
 
-class ControlsWidget : public WidgetGtk {
+class ControlsWidget : public NativeWidgetGtk {
  public:
-  ControlsWidget() {
+  ControlsWidget() : NativeWidgetGtk(new views::Widget) {
   }
 
  private:
-  // WidgetGtk overrides:
+  // NativeWidgetGtk overrides:
   virtual void OnMap(GtkWidget* widget) OVERRIDE {
     // For some reason, Controls window never gets first expose event,
     // which makes WM believe that the login screen is not ready.
@@ -35,10 +35,11 @@ class ControlsWidget : public WidgetGtk {
 
 // Widget that notifies window manager about clicking on itself.
 // Doesn't send anything if user is selected.
-class ClickNotifyingWidget : public WidgetGtk {
+class ClickNotifyingWidget : public NativeWidgetGtk {
  public:
   explicit ClickNotifyingWidget(UserController* controller)
-      : controller_(controller) {
+      : NativeWidgetGtk(new views::Widget),
+        controller_(controller) {
   }
 
  private:
@@ -46,7 +47,7 @@ class ClickNotifyingWidget : public WidgetGtk {
     if (!controller_->IsUserSelected())
       controller_->SelectUserRelative(0);
 
-    return WidgetGtk::OnButtonPress(widget, event);
+    return NativeWidgetGtk::OnButtonPress(widget, event);
   }
 
   UserController* controller_;
@@ -54,14 +55,16 @@ class ClickNotifyingWidget : public WidgetGtk {
   DISALLOW_COPY_AND_ASSIGN(ClickNotifyingWidget);
 };
 
-views::Widget* InitWidget(views::Widget* widget, const gfx::Rect& bounds) {
+views::Widget* InitWidget(views::NativeWidget* native_widget,
+                          const gfx::Rect& bounds) {
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
   params.transparent = true;
   params.bounds = bounds;
-  widget->Init(params);
-  GdkWindow* gdk_window = widget->GetNativeView()->window;
+  params.native_widget = native_widget;
+  native_widget->GetWidget()->Init(params);
+  GdkWindow* gdk_window = native_widget->GetWidget()->GetNativeView()->window;
   gdk_window_set_back_pixmap(gdk_window, NULL, false);
-  return widget;
+  return native_widget->GetWidget();
 }
 
 }  // namespace

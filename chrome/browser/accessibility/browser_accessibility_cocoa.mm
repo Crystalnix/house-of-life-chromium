@@ -37,7 +37,9 @@ static const RoleEntry roles[] = {
   { WebAccessibility::ROLE_NONE, NSAccessibilityUnknownRole },
   { WebAccessibility::ROLE_BUTTON, NSAccessibilityButtonRole },
   { WebAccessibility::ROLE_CHECKBOX, NSAccessibilityCheckBoxRole },
+  { WebAccessibility::ROLE_CELL, @"AXCell" },
   { WebAccessibility::ROLE_COLUMN, NSAccessibilityColumnRole },
+  { WebAccessibility::ROLE_COLUMN_HEADER, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_GRID, NSAccessibilityGridRole },
   { WebAccessibility::ROLE_GROUP, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_HEADING, @"AXHeading" },
@@ -45,13 +47,16 @@ static const RoleEntry roles[] = {
   { WebAccessibility::ROLE_IMAGE, NSAccessibilityImageRole },
   { WebAccessibility::ROLE_LINK, NSAccessibilityLinkRole },
   { WebAccessibility::ROLE_LIST, NSAccessibilityListRole },
+  { WebAccessibility::ROLE_POPUP_BUTTON, NSAccessibilityPopUpButtonRole },
   { WebAccessibility::ROLE_RADIO_BUTTON, NSAccessibilityRadioButtonRole },
   { WebAccessibility::ROLE_RADIO_GROUP, NSAccessibilityRadioGroupRole },
   { WebAccessibility::ROLE_ROW, NSAccessibilityRowRole },
+  { WebAccessibility::ROLE_ROW_HEADER, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_SCROLLAREA, NSAccessibilityScrollAreaRole },
   { WebAccessibility::ROLE_SCROLLBAR, NSAccessibilityScrollBarRole },
   { WebAccessibility::ROLE_STATIC_TEXT, NSAccessibilityStaticTextRole },
   { WebAccessibility::ROLE_TABLE, NSAccessibilityTableRole },
+  { WebAccessibility::ROLE_TABLE_HEADER_CONTAINER, NSAccessibilityGroupRole },
   { WebAccessibility::ROLE_TAB_GROUP, NSAccessibilityTabGroupRole },
   { WebAccessibility::ROLE_TEXT_FIELD, NSAccessibilityTextFieldRole },
   { WebAccessibility::ROLE_TEXTAREA, NSAccessibilityTextAreaRole },
@@ -103,6 +108,17 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
         [children_ addObjectsFromArray:[child children]];
       else
         [children_ addObject:child];
+    }
+
+    // Also, add indirect children (if any).
+    for (uint32 i = 0;
+         i < browserAccessibility_->indirect_child_ids().size();
+         ++i) {
+      int32 child_id = browserAccessibility_->indirect_child_ids()[i];
+      BrowserAccessibilityCocoa* child =
+          browserAccessibility_->manager()->GetFromRendererID(child_id)->
+              toBrowserAccessibilityCocoa();
+      [children_ addObject:child];
     }
   }
   return children_;
@@ -258,10 +274,29 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
         GetState(browserAccessibility_, WebAccessibility::STATE_TRAVERSED)];
   }
 
+  // AXTable attributes.
+  if ([[self role] isEqualToString:NSAccessibilityTableRole]) {
+    if ([attribute isEqualToString:NSAccessibilityRowsAttribute]) {
+      NSMutableArray* ret = [[[NSMutableArray alloc] init] autorelease];
+      for (BrowserAccessibilityCocoa* child in [self children]) {
+        if ([[child role] isEqualToString:NSAccessibilityRowRole])
+          [ret addObject:child];
+      }
+      return ret;
+    } else if ([attribute isEqualToString:NSAccessibilityColumnsAttribute]) {
+      NSMutableArray* ret = [[[NSMutableArray alloc] init] autorelease];
+      for (BrowserAccessibilityCocoa* child in [self children]) {
+        if ([[child role] isEqualToString:NSAccessibilityColumnRole])
+          [ret addObject:child];
+      }
+      return ret;
+    }
+  }
+
   // AXWebArea attributes.
   if ([attribute isEqualToString:@"AXLoaded"])
     return [NSNumber numberWithBool:YES];
-  if ([attribute isEqualToString:@"AXURL"]) {
+  if ([attribute isEqualToString:NSAccessibilityURLAttribute]) {
     WebAccessibility::Attribute urlAttribute =
         [[self role] isEqualToString:@"AXWebArea"] ?
             WebAccessibility::ATTR_DOC_URL :
@@ -419,11 +454,18 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
       NSAccessibilityTopLevelUIElementAttribute,
       NSAccessibilityValueAttribute,
       NSAccessibilityWindowAttribute,
-      @"AXURL",
+      NSAccessibilityURLAttribute,
       @"AXVisited",
       nil]];
 
   // Specific role attributes.
+  if ([self role] == NSAccessibilityTableRole) {
+    [ret addObjectsFromArray:[NSArray arrayWithObjects:
+        NSAccessibilityColumnsAttribute,
+        NSAccessibilityRowsAttribute,
+        nil]];
+  }
+
   if ([self role] == @"AXWebArea") {
     [ret addObjectsFromArray:[NSArray arrayWithObjects:
         @"AXLoaded",
@@ -473,11 +515,10 @@ bool GetState(BrowserAccessibility* accessibility, int state) {
 // that backs this object.
 - (void)accessibilityPerformAction:(NSString*)action {
   // TODO(feldstein): Support more actions.
-  if ([action isEqualToString:NSAccessibilityPressAction]) {
+  if ([action isEqualToString:NSAccessibilityPressAction])
     [delegate_ doDefaultAction:browserAccessibility_->renderer_id()];
-  } else if ([action isEqualToString:NSAccessibilityShowMenuAction]) {
-    // TODO(dtseng): implement.
-  }
+  else if ([action isEqualToString:NSAccessibilityShowMenuAction])
+    [delegate_ performShowMenuAction:self];
 }
 
 // Returns the description of the given action.

@@ -28,7 +28,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history.h"
-#include "chrome/browser/net/resolve_proxy_msg_helper.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
@@ -42,12 +41,13 @@
 #include "content/browser/content_browser_client.h"
 #include "content/browser/device_orientation/message_filter.h"
 #include "content/browser/geolocation/geolocation_dispatcher_host.h"
-#include "content/browser/gpu_data_manager.h"
-#include "content/browser/gpu_process_host.h"
+#include "content/browser/gpu/gpu_data_manager.h"
+#include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/in_process_webkit/dom_storage_message_filter.h"
 #include "content/browser/in_process_webkit/indexed_db_dispatcher_host.h"
 #include "content/browser/file_system/file_system_dispatcher_host.h"
 #include "content/browser/mime_registry_message_filter.h"
+#include "content/browser/resolve_proxy_msg_helper.h"
 #include "content/browser/plugin_service.h"
 #include "content/browser/renderer_host/audio_input_renderer_host.h"
 #include "content/browser/renderer_host/audio_renderer_host.h"
@@ -192,7 +192,7 @@ BrowserRenderProcessHost::BrowserRenderProcessHost(Profile* profile)
             base::TimeDelta::FromSeconds(5),
             this, &BrowserRenderProcessHost::ClearTransportDIBCache)),
       accessibility_enabled_(false),
-      extension_process_(false) {
+      is_initialized_(false) {
   widget_helper_ = new RenderWidgetHelper();
 
   WebCacheManager::GetInstance()->Add(id());
@@ -209,12 +209,12 @@ BrowserRenderProcessHost::BrowserRenderProcessHost(Profile* profile)
       base::PLATFORM_FILE_CREATE |
       base::PLATFORM_FILE_OPEN_ALWAYS |
       base::PLATFORM_FILE_CREATE_ALWAYS |
+      base::PLATFORM_FILE_OPEN_TRUNCATED |
       base::PLATFORM_FILE_READ |
       base::PLATFORM_FILE_WRITE |
       base::PLATFORM_FILE_EXCLUSIVE_READ |
       base::PLATFORM_FILE_EXCLUSIVE_WRITE |
       base::PLATFORM_FILE_ASYNC |
-      base::PLATFORM_FILE_TRUNCATE |
       base::PLATFORM_FILE_WRITE_ATTRIBUTES);
 
   // Note: When we create the BrowserRenderProcessHost, it's technically
@@ -239,18 +239,13 @@ BrowserRenderProcessHost::~BrowserRenderProcessHost() {
   ClearTransportDIBCache();
 }
 
-bool BrowserRenderProcessHost::Init(
-    bool is_accessibility_enabled, bool is_extensions_process) {
+bool BrowserRenderProcessHost::Init(bool is_accessibility_enabled) {
   // calling Init() more than once does nothing, this makes it more convenient
   // for the view host which may not be sure in some cases
   if (channel_.get())
     return true;
 
   accessibility_enabled_ = is_accessibility_enabled;
-
-  // It is possible for an extension process to be reused for non-extension
-  // content, e.g. if an extension calls window.open.
-  extension_process_ = extension_process_ || is_extensions_process;
 
   CommandLine::StringType renderer_prefix;
 #if defined(OS_POSIX)
@@ -280,9 +275,10 @@ bool BrowserRenderProcessHost::Init(
   // be doing.
   channel_->set_sync_messages_with_no_timeout_allowed(false);
 
-  CreateMessageFilters();
-
+  // Call the embedder first so that their IPC filters have priority.
   content::GetContentClient()->browser()->BrowserRenderProcessHostCreated(this);
+
+  CreateMessageFilters();
 
   if (run_renderer_in_process()) {
     // Crank up a thread and run the initialization there.  With the way that
@@ -331,6 +327,7 @@ bool BrowserRenderProcessHost::Init(
     fast_shutdown_started_ = false;
   }
 
+  is_initialized_ = true;
   return true;
 }
 
@@ -359,8 +356,7 @@ void BrowserRenderProcessHost::CreateMessageFilters() {
   channel_->AddFilter(
       new DOMStorageMessageFilter(id(), profile()->GetWebKitContext()));
   channel_->AddFilter(
-      new IndexedDBDispatcherHost(id(), profile()->GetWebKitContext(),
-                                  profile()->GetHostContentSettingsMap()));
+      new IndexedDBDispatcherHost(id(), profile()->GetWebKitContext()));
   channel_->AddFilter(
       GeolocationDispatcherHost::New(
           id(), profile()->GetGeolocationPermissionContext()));
@@ -370,8 +366,7 @@ void BrowserRenderProcessHost::CreateMessageFilters() {
       new PepperMessageFilter(&profile()->GetResourceContext()));
   channel_->AddFilter(new speech_input::SpeechInputDispatcherHost(id()));
   channel_->AddFilter(
-      new FileSystemDispatcherHost(&profile()->GetResourceContext(),
-                                   profile()->GetHostContentSettingsMap()));
+      new FileSystemDispatcherHost(&profile()->GetResourceContext()));
   channel_->AddFilter(new device_orientation::MessageFilter());
   channel_->AddFilter(
       new BlobMessageFilter(id(), profile()->GetBlobStorageContext()));
@@ -382,7 +377,8 @@ void BrowserRenderProcessHost::CreateMessageFilters() {
 
   SocketStreamDispatcherHost* socket_stream_dispatcher_host =
       new SocketStreamDispatcherHost(
-          new RendererURLRequestContextSelector(profile(), id()));
+          new RendererURLRequestContextSelector(profile(), id()),
+          &profile()->GetResourceContext());
   channel_->AddFilter(socket_stream_dispatcher_host);
 
   channel_->AddFilter(
@@ -411,9 +407,9 @@ void BrowserRenderProcessHost::CancelResourceRequests(int render_widget_id) {
   widget_helper_->CancelResourceRequests(render_widget_id);
 }
 
-void BrowserRenderProcessHost::CrossSiteClosePageACK(
-    const ViewMsg_ClosePage_Params& params) {
-  widget_helper_->CrossSiteClosePageACK(params);
+void BrowserRenderProcessHost::CrossSiteSwapOutACK(
+    const ViewMsg_SwapOut_Params& params) {
+  widget_helper_->CrossSiteSwapOutACK(params);
 }
 
 bool BrowserRenderProcessHost::WaitForUpdateMsg(
@@ -469,8 +465,8 @@ void BrowserRenderProcessHost::AppendRendererCommandLine(
   // Extensions use a special pseudo-process type to make them distinguishable,
   // even though they're just renderers.
   command_line->AppendSwitchASCII(switches::kProcessType,
-      extension_process_ ? switches::kExtensionProcess :
-                           switches::kRendererProcess);
+      is_extension_process_ ? switches::kExtensionProcess :
+                              switches::kRendererProcess);
 
   if (logging::DialogsAreSuppressed())
     command_line->AppendSwitch(switches::kNoErrorDialogs);
@@ -537,6 +533,13 @@ void BrowserRenderProcessHost::PropagateBrowserCommandLineToRenderer(
     switches::kDisableJavaScriptI18NAPI,
     switches::kDisableLocalStorage,
     switches::kDisableLogging,
+#if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
+    // Enabled by default in Google Chrome builds, except on CrOS.
+    switches::kDisablePrintPreview,
+#else
+    // Disabled by default in Chromium builds and on CrOS.
+    switches::kEnablePrintPreview,
+#endif
     switches::kDisableSeccompSandbox,
     switches::kDisableSessionStorage,
     switches::kDisableSharedWorkers,
@@ -560,7 +563,6 @@ void BrowserRenderProcessHost::PropagateBrowserCommandLineToRenderer(
     switches::kEnableP2PApi,
 #endif
     switches::kEnablePepperTesting,
-    switches::kEnablePrintPreview,
     switches::kEnableQuota,
     switches::kEnableRemoting,
     switches::kEnableResourceContentSettings,
@@ -755,8 +757,13 @@ void BrowserRenderProcessHost::ClearTransportDIBCache() {
 
 bool BrowserRenderProcessHost::Send(IPC::Message* msg) {
   if (!channel_.get()) {
-    delete msg;
-    return false;
+    if (!is_initialized_) {
+      queued_messages_.push(msg);
+      return true;
+    } else {
+      delete msg;
+      return false;
+    }
   }
 
   if (child_process_launcher_.get() && child_process_launcher_->IsStarting()) {
@@ -778,6 +785,8 @@ bool BrowserRenderProcessHost::OnMessageReceived(const IPC::Message& msg) {
     // Dispatch control messages.
     bool msg_is_ok = true;
     IPC_BEGIN_MESSAGE_MAP_EX(BrowserRenderProcessHost, msg, msg_is_ok)
+      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_ShutdownRequest,
+                          OnShutdownRequest)
       IPC_MESSAGE_HANDLER(ViewHostMsg_UpdatedCacheStats,
                           OnUpdatedCacheStats)
       IPC_MESSAGE_HANDLER(ViewHostMsg_SuddenTerminationChanged,
@@ -817,6 +826,10 @@ void BrowserRenderProcessHost::OnChannelConnected(int32 peer_pid) {
   Send(new ChildProcessMsg_SetIPCLoggingEnabled(
       IPC::Logging::GetInstance()->Enabled()));
 #endif
+
+  // Make sure the child checks with us before exiting, so that we do not try
+  // to schedule a new navigation in a swapped out and exiting renderer.
+  Send(new ChildProcessMsg_AskBeforeShutdown());
 }
 
 void BrowserRenderProcessHost::OnChannelError() {
@@ -839,15 +852,15 @@ void BrowserRenderProcessHost::OnChannelError() {
   if (status == base::TERMINATION_STATUS_PROCESS_CRASHED ||
       status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION) {
     UMA_HISTOGRAM_PERCENTAGE("BrowserRenderProcessHost.ChildCrashes",
-                             extension_process_ ? 2 : 1);
+                             is_extension_process_ ? 2 : 1);
   }
 
   if (status == base::TERMINATION_STATUS_PROCESS_WAS_KILLED) {
     UMA_HISTOGRAM_PERCENTAGE("BrowserRenderProcessHost.ChildKills",
-                             extension_process_ ? 2 : 1);
+                             is_extension_process_ ? 2 : 1);
   }
 
-  RendererClosedDetails details(status, exit_code, extension_process_);
+  RendererClosedDetails details(status, exit_code, is_extension_process_);
   NotificationService::current()->Notify(
       NotificationType::RENDERER_PROCESS_CLOSED,
       Source<RenderProcessHost>(this),
@@ -870,6 +883,20 @@ void BrowserRenderProcessHost::OnChannelError() {
 
   // this object is not deleted at this point and may be reused later.
   // TODO(darin): clean this up
+}
+
+void BrowserRenderProcessHost::OnShutdownRequest() {
+  // Don't shutdown if there are pending RenderViews being swapped back in.
+  if (pending_views_)
+    return;
+
+  // Notify any tabs that might have swapped out renderers from this process.
+  // They should not attempt to swap them back in.
+  NotificationService::current()->Notify(
+      NotificationType::RENDERER_PROCESS_CLOSING,
+      Source<RenderProcessHost>(this), NotificationService::NoDetails());
+
+  Send(new ChildProcessMsg_Shutdown());
 }
 
 void BrowserRenderProcessHost::OnUpdatedCacheStats(

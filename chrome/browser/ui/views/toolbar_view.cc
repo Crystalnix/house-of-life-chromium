@@ -40,7 +40,6 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/update_library.h"
-#include "views/controls/menu/menu_2.h"
 #endif
 #include "chrome/browser/ui/views/wrench_menu.h"
 
@@ -86,17 +85,13 @@ ToolbarView::ToolbarView(Browser* browser)
       back_(NULL),
       forward_(NULL),
       reload_(NULL),
-#if defined(OS_CHROMEOS)
-      feedback_(NULL),
-#endif
       home_(NULL),
       location_bar_(NULL),
       browser_actions_(NULL),
       app_menu_(NULL),
       profile_(NULL),
       browser_(browser),
-      profiles_menu_contents_(NULL),
-      destroyed_flag_(NULL) {
+      profiles_menu_contents_(NULL) {
   SetID(VIEW_ID_TOOLBAR);
 
   browser_->command_updater()->AddCommandObserver(IDC_BACK, this);
@@ -118,9 +113,6 @@ ToolbarView::ToolbarView(Browser* browser)
 }
 
 ToolbarView::~ToolbarView() {
-  if (destroyed_flag_)
-    *destroyed_flag_ = true;
-
   // NOTE: Don't remove the command observers here.  This object gets destroyed
   // after the Browser (which owns the CommandUpdater), so the CommandUpdater is
   // already gone.
@@ -153,7 +145,7 @@ void ToolbarView::Init(Profile* profile) {
   forward_->SetID(VIEW_ID_FORWARD_BUTTON);
 
   // Have to create this before |reload_| as |reload_|'s constructor needs it.
-  location_bar_ = new LocationBarView(profile, browser_->command_updater(),
+  location_bar_ = new LocationBarView(profile, browser_,
       model_, this, (display_mode_ == DISPLAYMODE_LOCATION) ?
           LocationBarView::POPUP : LocationBarView::NORMAL);
 
@@ -165,17 +157,6 @@ void ToolbarView::Init(Profile* profile) {
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_RELOAD)));
   reload_->SetAccessibleName(l10n_util::GetStringUTF16(IDS_ACCNAME_RELOAD));
   reload_->SetID(VIEW_ID_RELOAD_BUTTON);
-
-#if defined(OS_CHROMEOS)
-  feedback_ = new views::ImageButton(this);
-  feedback_->set_tag(IDC_FEEDBACK);
-  feedback_->set_triggerable_event_flags(ui::EF_LEFT_BUTTON_DOWN |
-                                         ui::EF_MIDDLE_BUTTON_DOWN);
-  feedback_->set_tag(IDC_FEEDBACK);
-  feedback_->SetTooltipText(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_FEEDBACK)));
-  feedback_->SetID(VIEW_ID_FEEDBACK_BUTTON);
-#endif
 
   home_ = new views::ImageButton(this);
   home_->set_triggerable_event_flags(ui::EF_LEFT_BUTTON_DOWN |
@@ -210,9 +191,6 @@ void ToolbarView::Init(Profile* profile) {
   AddChildView(home_);
   AddChildView(location_bar_);
   AddChildView(browser_actions_);
-#if defined(OS_CHROMEOS)
-  AddChildView(feedback_);
-#endif
   AddChildView(app_menu_);
 
   location_bar_->Init();
@@ -271,6 +249,61 @@ void ToolbarView::RemoveMenuListener(views::MenuListener* listener) {
   }
 }
 
+SkBitmap ToolbarView::GetAppMenuIcon(views::CustomButton::ButtonState state) {
+  ui::ThemeProvider* tp = GetThemeProvider();
+
+  int id = 0;
+  switch (state) {
+    case views::CustomButton::BS_NORMAL: id = IDR_TOOLS;   break;
+    case views::CustomButton::BS_HOT:    id = IDR_TOOLS_H; break;
+    case views::CustomButton::BS_PUSHED: id = IDR_TOOLS_P; break;
+    default:                             NOTREACHED();     break;
+  }
+  SkBitmap icon = *tp->GetBitmapNamed(id);
+
+#if defined(OS_WIN)
+  // Keep track of whether we were showing the badge before, so we don't send
+  // multiple UMA events for example when multiple Chrome windows are open.
+  static bool incompatibility_badge_showing = false;
+  // Save the old value before resetting it.
+  bool was_showing = incompatibility_badge_showing;
+  incompatibility_badge_showing = false;
+#endif
+
+  bool add_badge = IsUpgradeRecommended() || ShouldShowIncompatibilityWarning();
+  if (!add_badge)
+    return icon;
+
+  // Draw the chrome app menu icon onto the canvas.
+  scoped_ptr<gfx::CanvasSkia> canvas(
+      new gfx::CanvasSkia(icon.width(), icon.height(), false));
+  canvas->DrawBitmapInt(icon, 0, 0);
+
+  SkBitmap badge;
+  // Only one badge can be active at any given time. The Upgrade notification
+  // is deemed most important, then the DLL conflict badge.
+  if (IsUpgradeRecommended()) {
+    badge = *tp->GetBitmapNamed(
+        UpgradeDetector::GetInstance()->GetIconResourceID(
+            UpgradeDetector::UPGRADE_ICON_TYPE_BADGE));
+  } else if (ShouldShowIncompatibilityWarning()) {
+#if defined(OS_WIN)
+    if (!was_showing)
+      UserMetrics::RecordAction(UserMetricsAction("ConflictBadge"));
+    badge = *tp->GetBitmapNamed(IDR_CONFLICT_BADGE);
+    incompatibility_badge_showing = true;
+#else
+    NOTREACHED();
+#endif
+  } else {
+    NOTREACHED();
+  }
+
+  canvas->DrawBitmapInt(badge, icon.width() - badge.width(), kBadgeTopMargin);
+
+  return canvas->ExtractBitmap();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ToolbarView, AccessiblePaneView overrides:
 
@@ -301,8 +334,6 @@ bool ToolbarView::GetAcceleratorInfo(int id, ui::Accelerator* accel) {
 void ToolbarView::RunMenu(views::View* source, const gfx::Point& /* pt */) {
   DCHECK_EQ(VIEW_ID_APP_MENU, source->GetID());
 
-  bool destroyed_flag = false;
-  destroyed_flag_ = &destroyed_flag;
   wrench_menu_ = new WrenchMenu(browser_);
   wrench_menu_->Init(wrench_menu_model_.get());
 
@@ -310,10 +341,6 @@ void ToolbarView::RunMenu(views::View* source, const gfx::Point& /* pt */) {
     menu_listeners_[i]->OnMenuOpened();
 
   wrench_menu_->RunMenu(app_menu_);
-
-  if (destroyed_flag)
-    return;
-  destroyed_flag_ = NULL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -426,9 +453,6 @@ gfx::Size ToolbarView::GetPreferredSize() {
         (show_home_button_.GetValue() ?
             (home_->GetPreferredSize().width() + kButtonSpacing) : 0) +
         browser_actions_->GetPreferredSize().width() +
-#if defined(OS_CHROMEOS)
-        feedback_->GetPreferredSize().width() + kButtonSpacing +
-#endif
         app_menu_->GetPreferredSize().width() + kEdgeSpacing;
 
     static SkBitmap normal_background;
@@ -441,7 +465,7 @@ gfx::Size ToolbarView::GetPreferredSize() {
   }
 
   int vertical_spacing = PopupTopSpacing() +
-      (GetWindow()->non_client_view()->UseNativeFrame() ?
+      (GetWindow()->ShouldUseNativeFrame() ?
           kPopupBottomSpacingGlass : kPopupBottomSpacingNonGlass);
   return gfx::Size(0, location_bar_->GetPreferredSize().height() +
       vertical_spacing);
@@ -495,16 +519,9 @@ void ToolbarView::Layout() {
   }
 
   int browser_actions_width = browser_actions_->GetPreferredSize().width();
-#if defined(OS_CHROMEOS)
-  int feedback_menu_width = feedback_->GetPreferredSize().width() +
-                            kButtonSpacing;
-#endif
   int app_menu_width = app_menu_->GetPreferredSize().width();
   int location_x = home_->x() + home_->width() + kStandardSpacing;
   int available_width = width() - kEdgeSpacing - app_menu_width -
-#if defined(OS_CHROMEOS)
-      feedback_menu_width -
-#endif
       browser_actions_width - location_x;
 
   location_bar_->SetBounds(location_x, child_y, std::max(available_width, 0),
@@ -525,15 +542,8 @@ void ToolbarView::Layout() {
   // we extend the back button to the left edge.
   if (maximized)
     app_menu_width += kEdgeSpacing;
-#if defined(OS_CHROMEOS)
-  feedback_->SetBounds(browser_actions_->x() + browser_actions_width, child_y,
-                       feedback_->GetPreferredSize().width(), child_height);
-  app_menu_->SetBounds(feedback_->x() + feedback_->width() + kButtonSpacing,
-                       child_y, app_menu_width, child_height);
-#else
   app_menu_->SetBounds(browser_actions_->x() + browser_actions_width, child_y,
                        app_menu_width, child_height);
-#endif
 }
 
 void ToolbarView::OnPaint(gfx::Canvas* canvas) {
@@ -555,7 +565,7 @@ void ToolbarView::OnPaint(gfx::Canvas* canvas) {
   // it from the content area.  For non-glass, the NonClientView draws the
   // toolbar background below the location bar for us.
   // NOTE: Keep this in sync with BrowserView::GetInfoBarSeparatorColor()!
-  if (GetWindow()->non_client_view()->UseNativeFrame())
+  if (GetWindow()->ShouldUseNativeFrame())
     canvas->FillRectInt(SK_ColorBLACK, 0, height() - 1, width(), 1);
 }
 
@@ -629,13 +639,14 @@ bool ToolbarView::ShouldShowIncompatibilityWarning() {
 int ToolbarView::PopupTopSpacing() const {
   // TODO(beng): For some reason GetWindow() returns NULL here in some
   //             unidentified circumstances on ChromeOS. This means GetWidget()
-  //             succeeded but we were (probably) unable to locate a WidgetGtk*
-  //             on it using NativeWidget::GetNativeWidgetForNativeView.
+  //             succeeded but we were (probably) unable to locate a
+  //             NativeWidgetGtk* on it using
+  //             NativeWidget::GetNativeWidgetForNativeView.
   //             I am throwing in a NULL check for now to stop the hurt, but
   //             it's possible the crash may just show up somewhere else.
   const views::Window* window = GetWindow();
   DCHECK(window) << "If you hit this please talk to beng";
-  return window && window->non_client_view()->UseNativeFrame() ?
+  return window && window->ShouldUseNativeFrame() ?
       0 : kPopupTopSpacingNonGlass;
 }
 
@@ -673,15 +684,6 @@ void ToolbarView::LoadImages() {
   reload_->SetToggledImage(views::CustomButton::BS_DISABLED,
       tp->GetBitmapNamed(IDR_STOP_D));
 
-#if defined(OS_CHROMEOS)
-  feedback_->SetImage(views::CustomButton::BS_NORMAL,
-      tp->GetBitmapNamed(IDR_FEEDBACK));
-  feedback_->SetImage(views::CustomButton::BS_HOT,
-      tp->GetBitmapNamed(IDR_FEEDBACK_H));
-  feedback_->SetImage(views::CustomButton::BS_PUSHED,
-      tp->GetBitmapNamed(IDR_FEEDBACK_P));
-#endif
-
   home_->SetImage(views::CustomButton::BS_NORMAL, tp->GetBitmapNamed(IDR_HOME));
   home_->SetImage(views::CustomButton::BS_HOT, tp->GetBitmapNamed(IDR_HOME_H));
   home_->SetImage(views::CustomButton::BS_PUSHED,
@@ -697,59 +699,4 @@ void ToolbarView::UpdateAppMenuBadge() {
   app_menu_->SetHoverIcon(GetAppMenuIcon(views::CustomButton::BS_HOT));
   app_menu_->SetPushedIcon(GetAppMenuIcon(views::CustomButton::BS_PUSHED));
   SchedulePaint();
-}
-
-SkBitmap ToolbarView::GetAppMenuIcon(views::CustomButton::ButtonState state) {
-  ui::ThemeProvider* tp = GetThemeProvider();
-
-  int id = 0;
-  switch (state) {
-    case views::CustomButton::BS_NORMAL: id = IDR_TOOLS;   break;
-    case views::CustomButton::BS_HOT:    id = IDR_TOOLS_H; break;
-    case views::CustomButton::BS_PUSHED: id = IDR_TOOLS_P; break;
-    default:                             NOTREACHED();     break;
-  }
-  SkBitmap icon = *tp->GetBitmapNamed(id);
-
-#if defined(OS_WIN)
-  // Keep track of whether we were showing the badge before, so we don't send
-  // multiple UMA events for example when multiple Chrome windows are open.
-  static bool incompatibility_badge_showing = false;
-  // Save the old value before resetting it.
-  bool was_showing = incompatibility_badge_showing;
-  incompatibility_badge_showing = false;
-#endif
-
-  bool add_badge = IsUpgradeRecommended() || ShouldShowIncompatibilityWarning();
-  if (!add_badge)
-    return icon;
-
-  // Draw the chrome app menu icon onto the canvas.
-  scoped_ptr<gfx::CanvasSkia> canvas(
-      new gfx::CanvasSkia(icon.width(), icon.height(), false));
-  canvas->DrawBitmapInt(icon, 0, 0);
-
-  SkBitmap badge;
-  // Only one badge can be active at any given time. The Upgrade notification
-  // is deemed most important, then the DLL conflict badge.
-  if (IsUpgradeRecommended()) {
-    badge = *tp->GetBitmapNamed(
-        UpgradeDetector::GetInstance()->GetIconResourceID(
-            UpgradeDetector::UPGRADE_ICON_TYPE_BADGE));
-  } else if (ShouldShowIncompatibilityWarning()) {
-#if defined(OS_WIN)
-    if (!was_showing)
-      UserMetrics::RecordAction(UserMetricsAction("ConflictBadge"));
-    badge = *tp->GetBitmapNamed(IDR_CONFLICT_BADGE);
-    incompatibility_badge_showing = true;
-#else
-    NOTREACHED();
-#endif
-  } else {
-    NOTREACHED();
-  }
-
-  canvas->DrawBitmapInt(badge, icon.width() - badge.width(), kBadgeTopMargin);
-
-  return canvas->ExtractBitmap();
 }

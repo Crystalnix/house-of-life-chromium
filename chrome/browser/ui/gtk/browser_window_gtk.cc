@@ -78,10 +78,12 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/native_web_keyboard_event.h"
 #include "content/common/notification_service.h"
+#include "content/common/view_messages.h"
 #include "grit/app_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -1088,6 +1090,12 @@ void BrowserWindowGtk::Paste() {
   gtk_util::DoPaste(this);
 }
 
+void BrowserWindowGtk::ToggleTabStripMode() {
+}
+
+void BrowserWindowGtk::ToggleUseCompactNavigationBar() {
+}
+
 void BrowserWindowGtk::PrepareForInstant() {
   TabContentsWrapper* contents = contents_container_->tab();
   if (contents)
@@ -1175,7 +1183,7 @@ void BrowserWindowGtk::TabSelectedAt(TabContentsWrapper* old_contents,
 
   // Update various elements that are interested in knowing the current
   // TabContents.
-  infobar_container_->ChangeTabContents(new_contents->tab_contents());
+  infobar_container_->ChangeTabContents(new_contents);
   contents_container_->SetTab(new_contents);
   UpdateDevToolsForContents(new_contents->tab_contents());
 
@@ -1318,8 +1326,10 @@ gboolean BrowserWindowGtk::OnConfigure(GtkWidget* widget,
   GetLocationBar()->location_entry()->ClosePopup();
 
   TabContents* tab_contents = GetDisplayedTabContents();
-  if (tab_contents)
-    tab_contents->WindowMoveOrResizeStarted();
+  if (tab_contents) {
+    RenderViewHost* rvh = tab_contents->render_view_host();
+    rvh->Send(new ViewMsg_MoveOrResizeStarted(rvh->routing_id()));
+  }
 
   if (bounds_.size() != bounds.size())
     OnSizeChanged(bounds.width(), bounds.height());
@@ -1512,8 +1522,9 @@ void BrowserWindowGtk::RegisterUserPrefs(PrefService* prefs) {
       !prefs->HasPrefPath(prefs::kUseCustomChromeFrame)) {
     custom_frame_default = GetCustomFramePrefDefault();
   }
-  prefs->RegisterBooleanPref(
-      prefs::kUseCustomChromeFrame, custom_frame_default);
+  prefs->RegisterBooleanPref(prefs::kUseCustomChromeFrame,
+                             custom_frame_default,
+                             PrefService::SYNCABLE_PREF);
 }
 
 void BrowserWindowGtk::BookmarkBarIsFloating(bool is_floating) {
@@ -1600,10 +1611,8 @@ void BrowserWindowGtk::InitWidgets() {
   // fool the Unity desktop, which will mirror the contents of the first
   // GtkMenuBar it sees into the global menu bar. (It doesn't seem to check the
   // visibility of the GtkMenuBar, so we can just permanently hide it.)
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGlobalGnomeMenu)) {
-    global_menu_bar_.reset(new GlobalMenuBar(browser_.get()));
-    gtk_container_add(GTK_CONTAINER(window_vbox_), global_menu_bar_->widget());
-  }
+  global_menu_bar_.reset(new GlobalMenuBar(browser_.get()));
+  gtk_container_add(GTK_CONTAINER(window_vbox_), global_menu_bar_->widget());
 
   // The window container draws the custom browser frame.
   window_container_ = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);

@@ -41,7 +41,7 @@ MockPluginDelegate::PlatformContext3D* MockPluginDelegate::CreateContext3D() {
 
 MockPluginDelegate::PlatformVideoDecoder*
 MockPluginDelegate::CreateVideoDecoder(
-    PP_VideoDecoderConfig_Dev* decoder_config) {
+    media::VideoDecodeAccelerator::Client* client) {
   return NULL;
 }
 
@@ -241,6 +241,11 @@ double MockPluginDelegate::GetLocalTimeZoneOffset(base::Time t) {
 
 std::string MockPluginDelegate::GetFlashCommandLineArgs() {
   return std::string();
+}
+
+base::SharedMemory* MockPluginDelegate::CreateAnonymousSharedMemory(
+    uint32_t size) {
+  return NULL;
 }
 
 }  // namespace ppapi

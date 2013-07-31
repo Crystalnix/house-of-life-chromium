@@ -23,19 +23,20 @@
               'VCLinkerTool': {
                 'BaseAddress': '0x01c30000',
                 'DelayLoadDLLs': [
+                  'comdlg32.dll',
                   'crypt32.dll',
                   'cryptui.dll',
-                  'winhttp.dll',
-                  'wininet.dll',
-                  'wsock32.dll',
-                  'ws2_32.dll',
-                  'winspool.drv',
-                  'comdlg32.dll',
+                  'dhcpcsvc.dll',
                   'imagehlp.dll',
-                  'urlmon.dll',
                   'imm32.dll',
                   'iphlpapi.dll',
                   'setupapi.dll',
+                  'urlmon.dll',
+                  'winhttp.dll',
+                  'wininet.dll',
+                  'winspool.drv',
+                  'ws2_32.dll',
+                  'wsock32.dll',
                 ],
                 # Set /SUBSYSTEM:WINDOWS for chrome.dll (for consistency).
                 'SubSystem': '2',
@@ -119,6 +120,7 @@
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/chrome/theme_resources_standard.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
+                '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gfx_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
                 '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources.rc',
 
@@ -172,6 +174,9 @@
                 # Define the order of symbols within the framework.  This
                 # sets -order_file.
                 'ORDER_FILE': 'app/framework.order',
+                
+                # add Sparkle framework path
+                'FRAMEWORK_SEARCH_PATHS' : '../Sparkle/build/Release',
               },
               'sources': [
                 'app/chrome_command_ids.h',
@@ -277,6 +282,9 @@
                 # dependency here. flash_player.gyp will copy the Flash bundle
                 # into PRODUCT_DIR.
                 '../third_party/adobe/flash/flash_player.gyp:flash_player',
+              ],
+              'libraries': [
+                '../Sparkle/build/Release/Sparkle.framework',
               ],
               'rules': [
                 {
@@ -393,6 +401,7 @@
                       '<(grit_out_dir)/devtools_frontend_resources.pak',
                       '<(grit_out_dir)/devtools_resources.pak',
                       '<(grit_out_dir)/net_internals_resources.pak',
+                      '<(grit_out_dir)/options_resources.pak',
                       '<(grit_out_dir)/shared_resources.pak',
                       '<(grit_out_dir)/sync_internals_resources.pak',
                     ],
@@ -449,6 +458,14 @@
                     '${BUILT_PRODUCTS_DIR}/${WRAPPER_NAME}/Libraries'
                   ],
                 },
+                {
+                  'postbuild_name': 'Copy Sparkle.framework',
+                  'action': [
+                    'tools/build/mac/copy_framework_unversioned',
+                    '../Sparkle/build/Release/Sparkle.framework',
+                    '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Frameworks',
+                  ],
+                },
               ],
               'copies': [
                 {
@@ -478,6 +495,9 @@
                     ['disable_nacl!=1', {
                       'files': [
                         '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
+                        # We leave out nacl_irt_x86_64.nexe because we only
+                        # support x86-32 NaCl on Mac OS X.
+                        '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                       ],
                     }],
                   ],

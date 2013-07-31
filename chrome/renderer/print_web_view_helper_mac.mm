@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/metrics/histogram.h"
 #include "chrome/common/print_messages.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
@@ -73,6 +74,9 @@ bool PrintWebViewHelper::CreatePreviewDocument(
   gfx::Rect content_area(printParams.margin_left, printParams.margin_top,
                          printParams.printable_size.width(),
                          printParams.printable_size.height());
+  // Record the begin time.
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+
   if (params.pages.empty()) {
     for (int i = 0; i < page_count; ++i) {
       RenderPage(printParams.page_size, content_area, scale_factor, i, frame,
@@ -86,12 +90,19 @@ bool PrintWebViewHelper::CreatePreviewDocument(
                  static_cast<int>(params.pages[i]), frame, &metafile);
     }
   }
+
+  // Calculate the time taken to render the requested page for preview and add
+  // the net time in the histogram.
+  UMA_HISTOGRAM_TIMES("PrintPreview.RenderTime",
+                      base::TimeTicks::Now() - begin_time);
+
   metafile.FinishDocument();
 
   PrintHostMsg_DidPreviewDocument_Params preview_params;
   preview_params.data_size = metafile.GetDataSize();
   preview_params.document_cookie = params.params.document_cookie;
   preview_params.expected_pages_count = page_count;
+  preview_params.modifiable = IsModifiable(frame, node);
 
   // Ask the browser to create the shared memory for us.
   if (!CopyMetafileDataToSharedMem(&metafile,

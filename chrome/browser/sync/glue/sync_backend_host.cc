@@ -25,6 +25,7 @@
 #include "chrome/browser/sync/glue/password_model_worker.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/js_arg_list.h"
+#include "chrome/browser/sync/js_event_details.h"
 #include "chrome/browser/sync/notifier/sync_notifier.h"
 #include "chrome/browser/sync/notifier/sync_notifier_factory.h"
 #include "chrome/browser/sync/sessions/session_state.h"
@@ -105,15 +106,8 @@ void SyncBackendHost::Initialize(
   registrar_.workers[GROUP_DB] = new DatabaseModelWorker();
   registrar_.workers[GROUP_UI] = new UIModelWorker();
   registrar_.workers[GROUP_PASSIVE] = new ModelSafeWorker();
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSyncTypedUrls) || types.count(syncable::TYPED_URLS)) {
-    // TODO(tim): Bug 53916.  HistoryModelWorker crashes, so avoid adding it
-    // unless specifically requested until bug is fixed.
-    registrar_.workers[GROUP_HISTORY] =
-        new HistoryModelWorker(
-            profile_->GetHistoryService(Profile::IMPLICIT_ACCESS));
-  }
+  registrar_.workers[GROUP_HISTORY] = new HistoryModelWorker(
+      profile_->GetHistoryService(Profile::IMPLICIT_ACCESS));
 
   // Any datatypes that we want the syncer to pull down must
   // be in the routing_info map.  We set them to group passive, meaning that
@@ -456,7 +450,7 @@ void SyncBackendHost::FinishConfigureDataTypesOnFrontendLoop() {
   // If we've added types, we always want to request a nudge/config (even if
   // the initial sync is ended), in case we could not decrypt the data.
   if (pending_config_mode_state_->added_types.none()) {
-    VLOG(0) << "SyncBackendHost(" << this << "): No new types added. "
+    VLOG(1) << "SyncBackendHost(" << this << "): No new types added. "
             << "Calling ready_task directly";
     // No new types - just notify the caller that the types are available.
     pending_config_mode_state_->ready_task->Run();
@@ -466,7 +460,7 @@ void SyncBackendHost::FinishConfigureDataTypesOnFrontendLoop() {
     syncable::ModelTypeBitSet types_copy(pending_download_state_->added_types);
     if (IsNigoriEnabled())
       types_copy.set(syncable::NIGORI);
-    VLOG(0) <<  "SyncBackendHost(" << this << "):New Types added. "
+    VLOG(1) <<  "SyncBackendHost(" << this << "):New Types added. "
             << "Calling DoRequestConfig";
     core_thread_.message_loop()->PostTask(FROM_HERE,
          NewRunnableMethod(core_.get(),
@@ -515,6 +509,9 @@ void SyncBackendHost::ActivateDataType(
   // processors so it can receive updates.
   DCHECK_EQ(processors_.count(type), 0U);
   processors_[type] = change_processor;
+
+  // Start the change processor.
+  change_processor->Start(profile_, GetUserShare());
 }
 
 void SyncBackendHost::DeactivateDataType(
@@ -523,6 +520,8 @@ void SyncBackendHost::DeactivateDataType(
   base::AutoLock lock(registrar_lock_);
   registrar_.routing_info.erase(data_type_controller->type());
 
+  // Stop the change processor and remove it from the list of processors.
+  change_processor->Stop();
   std::map<syncable::ModelType, ChangeProcessor*>::size_type erased =
       processors_.erase(data_type_controller->type());
   DCHECK_EQ(erased, 1U);
@@ -1024,10 +1023,10 @@ void SyncBackendHost::Core::OnEncryptionComplete(
 }
 
 void SyncBackendHost::Core::RouteJsEvent(
-    const std::string& name, const JsArgList& args) {
+    const std::string& name, const JsEventDetails& details) {
   host_->frontend_loop_->PostTask(
       FROM_HERE, NewRunnableMethod(
-          this, &Core::RouteJsEventOnFrontendLoop, name, args));
+          this, &Core::RouteJsEventOnFrontendLoop, name, details));
 }
 
 void SyncBackendHost::Core::RouteJsMessageReply(
@@ -1069,13 +1068,13 @@ void SyncBackendHost::Core::HandleAuthErrorEventOnFrontendLoop(
 }
 
 void SyncBackendHost::Core::RouteJsEventOnFrontendLoop(
-    const std::string& name, const JsArgList& args) {
+    const std::string& name, const JsEventDetails& details) {
   if (!host_ || !parent_router_)
     return;
 
   DCHECK_EQ(MessageLoop::current(), host_->frontend_loop_);
 
-  parent_router_->RouteJsEvent(name, args);
+  parent_router_->RouteJsEvent(name, details);
 }
 
 void SyncBackendHost::Core::RouteJsMessageReplyOnFrontendLoop(

@@ -15,6 +15,7 @@
 #include "chrome/browser/autofill/autofill_metrics.h"
 #include "chrome/browser/autofill/form_structure.h"
 #include "chrome/browser/autofill/phone_number.h"
+#include "chrome/browser/autofill/phone_number_i18n.h"
 #include "chrome/browser/autofill/select_control_handler.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -102,6 +103,29 @@ bool IsMinimumAddress(const AutofillProfile& profile) {
          !profile.GetInfo(ADDRESS_HOME_ZIP).empty();
 }
 
+// Return true if the |field_type| and |value| are valid within the context
+// of importing a form.
+bool IsValidFieldTypeAndValue(const std::set<AutofillFieldType>& types_seen,
+                              AutofillFieldType field_type,
+                              const string16& value) {
+  // Abandon the import if two fields of the same type are encountered.
+  // This indicates ambiguous data or miscategorization of types.
+  // Make an exception for PHONE_HOME_NUMBER however as both prefix and
+  // suffix are stored against this type.
+  if (types_seen.count(field_type) &&
+      field_type != PHONE_HOME_NUMBER &&
+      field_type != PHONE_FAX_NUMBER) {
+    return false;
+  }
+
+  // Abandon the import if an email address value shows up in a field that is
+  // not an email address.
+  if (field_type != EMAIL_ADDRESS && IsValidEmail(value))
+    return false;
+
+  return true;
+}
+
 }  // namespace
 
 PersonalDataManager::~PersonalDataManager() {
@@ -144,7 +168,7 @@ void PersonalDataManager::OnWebDataServiceRequestDone(
     std::copy(web_profiles_.begin(), web_profiles_.end(),
               profile_pointers.begin());
     AutofillProfile::AdjustInferredLabels(&profile_pointers);
-    FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataLoaded());
+    FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataChanged());
   }
 }
 
@@ -202,6 +226,11 @@ bool PersonalDataManager::ImportFormData(
   // Detect and discard forms with multiple fields of the same type.
   std::set<AutofillFieldType> types_seen;
 
+  // We only set complete phone, so aggregate phone parts in these vars and set
+  // complete at the end.
+  PhoneNumber::PhoneCombineHelper home(AutofillType::PHONE_HOME);
+  PhoneNumber::PhoneCombineHelper fax(AutofillType::PHONE_FAX);
+
   for (size_t i = 0; i < form.field_count(); ++i) {
     const AutofillField* field = form.field(i);
     string16 value = CollapseWhitespace(field->value, false);
@@ -214,82 +243,37 @@ bool PersonalDataManager::ImportFormData(
     AutofillFieldType field_type = field->type();
     FieldTypeGroup group(AutofillType(field_type).group());
 
-    // Abandon the import if two fields of the same type are encountered.
-    // This indicates ambiguous data or miscategorization of types.
-    // Make an exception for PHONE_HOME_NUMBER however as both prefix and
-    // suffix are stored against this type.
-    if (types_seen.count(field_type) &&
-        field_type != PHONE_HOME_NUMBER  &&
-        field_type != PHONE_FAX_NUMBER) {
+    // If the |field_type| and |value| don't pass basic validity checks then
+    // abandon the import.
+    if (!IsValidFieldTypeAndValue(types_seen, field_type, value)) {
       imported_profile.reset();
       local_imported_credit_card.reset();
       break;
-    } else {
-      types_seen.insert(field_type);
     }
+
+    types_seen.insert(field_type);
 
     if (group == AutofillType::CREDIT_CARD) {
       // If the user has a password set, we have no way of setting credit
       // card numbers.
-      if (!HasPassword()) {
-        if (LowerCaseEqualsASCII(field->form_control_type, "month")) {
-          DCHECK_EQ(CREDIT_CARD_EXP_MONTH, field_type);
-          local_imported_credit_card->SetInfoForMonthInputType(value);
-        } else {
-          if (field_type == CREDIT_CARD_NUMBER) {
-            // Clean up any imported credit card numbers.
-            value = CreditCard::StripSeparators(value);
-          }
-          local_imported_credit_card->SetInfo(field_type, value);
+      if (LowerCaseEqualsASCII(field->form_control_type, "month")) {
+        DCHECK_EQ(CREDIT_CARD_EXP_MONTH, field_type);
+        local_imported_credit_card->SetInfoForMonthInputType(value);
+      } else {
+        if (field_type == CREDIT_CARD_NUMBER) {
+          // Clean up any imported credit card numbers.
+          value = CreditCard::StripSeparators(value);
         }
-        ++importable_credit_card_fields;
+        local_imported_credit_card->SetInfo(field_type, value);
       }
+      ++importable_credit_card_fields;
     } else {
-      // In the case of a phone number, if the whole phone number was entered
-      // into a single field, then parse it and set the sub components.
-      if (AutofillType(field_type).subgroup() ==
-              AutofillType::PHONE_WHOLE_NUMBER) {
-        string16 number;
-        string16 city_code;
-        string16 country_code;
-        PhoneNumber::ParsePhoneNumber(value,
-                                      &number,
-                                      &city_code,
-                                      &country_code);
-        if (number.empty())
-          continue;
-
-        if (group == AutofillType::PHONE_HOME) {
-          imported_profile->SetInfo(PHONE_HOME_COUNTRY_CODE, country_code);
-          imported_profile->SetInfo(PHONE_HOME_CITY_CODE, city_code);
-          imported_profile->SetInfo(PHONE_HOME_NUMBER, number);
-        } else if (group == AutofillType::PHONE_FAX) {
-          imported_profile->SetInfo(PHONE_FAX_COUNTRY_CODE, country_code);
-          imported_profile->SetInfo(PHONE_FAX_CITY_CODE, city_code);
-          imported_profile->SetInfo(PHONE_FAX_NUMBER, number);
-        }
-
-        continue;
-      }
-
-      // Phone and fax numbers can be split across multiple fields, so we
-      // might have already stored the prefix, and now be at the suffix.
-      // If so, combine them to form the full number.
-      if (group == AutofillType::PHONE_HOME ||
-          group == AutofillType::PHONE_FAX) {
-        AutofillFieldType number_type = PHONE_HOME_NUMBER;
-        if (group == AutofillType::PHONE_FAX)
-          number_type = PHONE_FAX_NUMBER;
-
-        string16 stored_number = imported_profile->GetInfo(number_type);
-        if (stored_number.size() ==
-                static_cast<size_t>(PhoneNumber::kPrefixLength) &&
-            value.size() == static_cast<size_t>(PhoneNumber::kSuffixLength)) {
-          value = stored_number + value;
-        }
-      }
-
-      imported_profile->SetInfo(field_type, value);
+      // We need to store phone data in the variables, before building the whole
+      // number at the end. The rest of the fields are set "as is".
+      // If the fields are not the phone fields in question both home.SetInfo()
+      // and fax.SetInfo() are going to return false.
+      if (!home.SetInfo(field_type, value) && !fax.SetInfo(field_type, value))
+        imported_profile->SetInfo(field_type, value);
 
       // Reject profiles with invalid country information.
       if (field_type == ADDRESS_HOME_COUNTRY &&
@@ -298,6 +282,33 @@ bool PersonalDataManager::ImportFormData(
         break;
       }
     }
+  }
+
+  // Build phone numbers if they are from parts.
+  if (imported_profile.get()) {
+    string16 constructed_number;
+    if (!home.empty()) {
+      if (!home.ParseNumber(imported_profile->CountryCode(),
+                            &constructed_number)) {
+        imported_profile.reset();
+      } else {
+        imported_profile->SetInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
+      }
+    }
+    if (!fax.empty()) {
+      if (!fax.ParseNumber(imported_profile->CountryCode(),
+                           &constructed_number)) {
+        imported_profile.reset();
+      } else {
+        imported_profile->SetInfo(PHONE_FAX_WHOLE_NUMBER, constructed_number);
+      }
+    }
+  }
+  // Normalize phone numbers.
+  if (imported_profile.get()) {
+    // Reject profile if even one of the phones is invalid.
+    if (!imported_profile->NormalizePhones())
+      imported_profile.reset();
   }
 
   // Reject the profile if minimum address and validation requirements are not
@@ -335,167 +346,71 @@ bool PersonalDataManager::ImportFormData(
   return imported_profile.get() || *imported_credit_card;
 }
 
-void PersonalDataManager::SetProfiles(std::vector<AutofillProfile>* profiles) {
-  if (profile_->IsOffTheRecord())
-    return;
-
-  // Remove empty profiles from input.
-  profiles->erase(
-      std::remove_if(profiles->begin(), profiles->end(),
-                     std::mem_fun_ref(&AutofillProfile::IsEmpty)),
-      profiles->end());
-
-  // Ensure that profile labels are up to date.  Currently, sync relies on
-  // labels to identify a profile.
-  // TODO(dhollowa): We need to deprecate labels and update the way sync
-  // identifies profiles.
-  std::vector<AutofillProfile*> profile_pointers(profiles->size());
-  std::transform(profiles->begin(), profiles->end(), profile_pointers.begin(),
-      address_of<AutofillProfile>);
-  AutofillProfile::AdjustInferredLabels(&profile_pointers);
-
-  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
-  if (!wds)
-    return;
-
-  // Any profiles that are not in the new profile list should be removed from
-  // the web database.
-  for (std::vector<AutofillProfile*>::const_iterator iter =
-           web_profiles_.begin();
-       iter != web_profiles_.end(); ++iter) {
-    if (!FindByGUID<AutofillProfile>(*profiles, (*iter)->guid()))
-      wds->RemoveAutofillProfile((*iter)->guid());
-  }
-
-  // Update the web database with the existing profiles.
-  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
-       iter != profiles->end(); ++iter) {
-    if (FindByGUID<AutofillProfile>(web_profiles_, iter->guid()))
-      wds->UpdateAutofillProfile(*iter);
-  }
-
-  // Add the new profiles to the web database.  Don't add a duplicate.
-  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
-       iter != profiles->end(); ++iter) {
-    if (!FindByGUID<AutofillProfile>(web_profiles_, iter->guid()) &&
-        !FindByContents(web_profiles_, *iter))
-      wds->AddAutofillProfile(*iter);
-  }
-
-  // Copy in the new profiles.
-  web_profiles_.reset();
-  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
-       iter != profiles->end(); ++iter) {
-    web_profiles_.push_back(new AutofillProfile(*iter));
-  }
-
-  // Read our writes to ensure consistency with the database.
-  Refresh();
-
-  FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataChanged());
-}
-
-void PersonalDataManager::SetCreditCards(
-    std::vector<CreditCard>* credit_cards) {
-  if (profile_->IsOffTheRecord())
-    return;
-
-  // Remove empty credit cards from input.
-  credit_cards->erase(
-      std::remove_if(
-          credit_cards->begin(), credit_cards->end(),
-          std::mem_fun_ref(&CreditCard::IsEmpty)),
-      credit_cards->end());
-
-  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
-  if (!wds)
-    return;
-
-  // Any credit cards that are not in the new credit card list should be
-  // removed.
-  for (std::vector<CreditCard*>::const_iterator iter = credit_cards_.begin();
-       iter != credit_cards_.end(); ++iter) {
-    if (!FindByGUID<CreditCard>(*credit_cards, (*iter)->guid()))
-      wds->RemoveCreditCard((*iter)->guid());
-  }
-
-  // Update the web database with the existing credit cards.
-  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
-       iter != credit_cards->end(); ++iter) {
-    if (FindByGUID<CreditCard>(credit_cards_, iter->guid()))
-      wds->UpdateCreditCard(*iter);
-  }
-
-  // Add the new credit cards to the web database.  Don't add a duplicate.
-  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
-       iter != credit_cards->end(); ++iter) {
-    if (!FindByGUID<CreditCard>(credit_cards_, iter->guid()) &&
-        !FindByContents(credit_cards_, *iter))
-      wds->AddCreditCard(*iter);
-  }
-
-  // Copy in the new credit cards.
-  credit_cards_.reset();
-  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
-       iter != credit_cards->end(); ++iter) {
-    credit_cards_.push_back(new CreditCard(*iter));
-  }
-
-  // Read our writes to ensure consistency with the database.
-  Refresh();
-
-  FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataChanged());
-}
-
-// TODO(dhollowa): Refactor to eliminate batch update of |SetProfiles|.
-// http://crbug.com/73068
 void PersonalDataManager::AddProfile(const AutofillProfile& profile) {
-  std::vector<AutofillProfile> profiles(web_profiles_.size());
-  std::transform(web_profiles_.begin(), web_profiles_.end(),
-                 profiles.begin(),
-                 DereferenceFunctor<AutofillProfile>());
+  if (profile_->IsOffTheRecord())
+    return;
 
-  profiles.push_back(profile);
-  SetProfiles(&profiles);
+  if (profile.IsEmpty())
+    return;
+
+  // Don't add an existing profile.
+  if (FindByGUID<AutofillProfile>(web_profiles_, profile.guid()))
+    return;
+
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Don't add a duplicate.
+  if (FindByContents(web_profiles_, profile))
+    return;
+
+  // Add the new profile to the web database.
+  wds->AddAutofillProfile(profile);
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
 void PersonalDataManager::UpdateProfile(const AutofillProfile& profile) {
+  if (profile_->IsOffTheRecord())
+    return;
+
+  if (!FindByGUID<AutofillProfile>(web_profiles_, profile.guid()))
+    return;
+
+  if (profile.IsEmpty()) {
+    RemoveProfile(profile.guid());
+    return;
+  }
+
   WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
   if (!wds)
     return;
 
-  // Update the cached profile.
-  for (std::vector<AutofillProfile*>::iterator iter = web_profiles_->begin();
-       iter != web_profiles_->end(); ++iter) {
-    if ((*iter)->guid() == profile.guid()) {
-      delete *iter;
-      *iter = new AutofillProfile(profile);
-      break;
-    }
-  }
-
-  // Ensure that profile labels are up to date.
-  AutofillProfile::AdjustInferredLabels(&web_profiles_.get());
-
+  // Make the update.
   wds->UpdateAutofillProfile(profile);
-  FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataChanged());
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
-// TODO(dhollowa): Refactor to eliminate batch update of |SetProfiles|.
-// http://crbug.com/73068
 void PersonalDataManager::RemoveProfile(const std::string& guid) {
-  std::vector<AutofillProfile> profiles(web_profiles_.size());
-  std::transform(web_profiles_.begin(), web_profiles_.end(),
-                 profiles.begin(),
-                 DereferenceFunctor<AutofillProfile>());
+  if (profile_->IsOffTheRecord())
+    return;
 
-  // Remove the profile that matches |guid|.
-  profiles.erase(
-      std::remove_if(profiles.begin(), profiles.end(),
-                     FormGroupMatchesByGUIDFunctor<AutofillProfile>(guid)),
-      profiles.end());
+  if (!FindByGUID<AutofillProfile>(web_profiles_, guid))
+    return;
 
-  SetProfiles(&profiles);
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Remove the profile.
+  wds->RemoveAutofillProfile(guid);
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
 AutofillProfile* PersonalDataManager::GetProfileByGUID(
@@ -508,52 +423,70 @@ AutofillProfile* PersonalDataManager::GetProfileByGUID(
   return NULL;
 }
 
-// TODO(dhollowa): Refactor to eliminate batch update of |SetCreditCards|.
-// http://crbug.com/73068
 void PersonalDataManager::AddCreditCard(const CreditCard& credit_card) {
-  std::vector<CreditCard> credit_cards(credit_cards_.size());
-  std::transform(credit_cards_.begin(), credit_cards_.end(),
-                 credit_cards.begin(),
-                 DereferenceFunctor<CreditCard>());
+  if (profile_->IsOffTheRecord())
+    return;
 
-  credit_cards.push_back(credit_card);
-  SetCreditCards(&credit_cards);
-}
+  if (credit_card.IsEmpty())
+    return;
 
-void PersonalDataManager::UpdateCreditCard(const CreditCard& credit_card) {
+  if (FindByGUID<CreditCard>(credit_cards_, credit_card.guid()))
+    return;
+
   WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
   if (!wds)
     return;
 
-  // Update the cached credit card.
-  for (std::vector<CreditCard*>::iterator iter = credit_cards_->begin();
-       iter != credit_cards_->end(); ++iter) {
-    if ((*iter)->guid() == credit_card.guid()) {
-      delete *iter;
-      *iter = new CreditCard(credit_card);
-      break;
-    }
-  }
+  // Don't add a duplicate.
+  if (FindByContents(credit_cards_, credit_card))
+    return;
 
-  wds->UpdateCreditCard(credit_card);
-  FOR_EACH_OBSERVER(Observer, observers_, OnPersonalDataChanged());
+  // Add the new credit card to the web database.
+  wds->AddCreditCard(credit_card);
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
-// TODO(dhollowa): Refactor to eliminate batch update of |SetCreditCards|.
-// http://crbug.com/73068
+void PersonalDataManager::UpdateCreditCard(const CreditCard& credit_card) {
+  if (profile_->IsOffTheRecord())
+    return;
+
+  if (!FindByGUID<CreditCard>(credit_cards_, credit_card.guid()))
+    return;
+
+  if (credit_card.IsEmpty()) {
+    RemoveCreditCard(credit_card.guid());
+    return;
+  }
+
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Make the update.
+  wds->UpdateCreditCard(credit_card);
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
+}
+
 void PersonalDataManager::RemoveCreditCard(const std::string& guid) {
-  std::vector<CreditCard> credit_cards(credit_cards_.size());
-  std::transform(credit_cards_.begin(), credit_cards_.end(),
-                 credit_cards.begin(),
-                 DereferenceFunctor<CreditCard>());
+  if (profile_->IsOffTheRecord())
+    return;
 
-  // Remove the credit card that matches |guid|.
-  credit_cards.erase(
-      std::remove_if(credit_cards.begin(), credit_cards.end(),
-                     FormGroupMatchesByGUIDFunctor<CreditCard>(guid)),
-      credit_cards.end());
+  if (!FindByGUID<CreditCard>(credit_cards_, guid))
+    return;
 
-  SetCreditCards(&credit_cards);
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Remove the credit card.
+  wds->RemoveCreditCard(guid);
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
 CreditCard* PersonalDataManager::GetCreditCardByGUID(const std::string& guid) {
@@ -565,12 +498,11 @@ CreditCard* PersonalDataManager::GetCreditCardByGUID(const std::string& guid) {
   return NULL;
 }
 
-void PersonalDataManager::GetPossibleFieldTypes(
-    const string16& text,
-    FieldTypeSet* possible_types) const {
+void PersonalDataManager::GetMatchingTypes(const string16& text,
+                                           FieldTypeSet* matching_types) const {
   string16 clean_info = StringToLowerASCII(CollapseWhitespace(text, false));
   if (clean_info.empty()) {
-    possible_types->insert(EMPTY_TYPE);
+    matching_types->insert(EMPTY_TYPE);
     return;
   }
 
@@ -583,7 +515,7 @@ void PersonalDataManager::GetPossibleFieldTypes(
       continue;
     }
 
-    profile->GetPossibleFieldTypes(clean_info, possible_types);
+    profile->GetMatchingTypes(clean_info, matching_types);
   }
 
   for (ScopedVector<CreditCard>::const_iterator iter = credit_cards_.begin();
@@ -594,29 +526,25 @@ void PersonalDataManager::GetPossibleFieldTypes(
       continue;
     }
 
-    credit_card->GetPossibleFieldTypes(clean_info, possible_types);
+    credit_card->GetMatchingTypes(clean_info, matching_types);
   }
 
-  if (possible_types->empty())
-    possible_types->insert(UNKNOWN_TYPE);
+  if (matching_types->empty())
+    matching_types->insert(UNKNOWN_TYPE);
 }
 
-void PersonalDataManager::GetAvailableFieldTypes(
-    FieldTypeSet* available_types) const {
+void PersonalDataManager::GetNonEmptyTypes(
+    FieldTypeSet* non_empty_types) const {
   const std::vector<AutofillProfile*>& profiles = this->profiles();
   for (std::vector<AutofillProfile*>::const_iterator iter = profiles.begin();
        iter != profiles.end(); ++iter) {
-    (*iter)->GetAvailableFieldTypes(available_types);
+    (*iter)->GetNonEmptyTypes(non_empty_types);
   }
 
   for (ScopedVector<CreditCard>::const_iterator iter = credit_cards_.begin();
        iter != credit_cards_.end(); ++iter) {
-    (*iter)->GetAvailableFieldTypes(available_types);
+    (*iter)->GetNonEmptyTypes(non_empty_types);
   }
-}
-
-bool PersonalDataManager::HasPassword() {
-  return !password_hash_.empty();
 }
 
 bool PersonalDataManager::IsDataLoaded() const {
@@ -760,6 +688,114 @@ bool PersonalDataManager::MergeProfile(
     merged_profiles->push_back(profile);
 
   return merged;
+}
+
+void PersonalDataManager::SetProfiles(std::vector<AutofillProfile>* profiles) {
+  if (profile_->IsOffTheRecord())
+    return;
+
+  // Remove empty profiles from input.
+  profiles->erase(
+      std::remove_if(profiles->begin(), profiles->end(),
+                     std::mem_fun_ref(&AutofillProfile::IsEmpty)),
+      profiles->end());
+
+  // Ensure that profile labels are up to date.  Currently, sync relies on
+  // labels to identify a profile.
+  // TODO(dhollowa): We need to deprecate labels and update the way sync
+  // identifies profiles.
+  std::vector<AutofillProfile*> profile_pointers(profiles->size());
+  std::transform(profiles->begin(), profiles->end(), profile_pointers.begin(),
+      address_of<AutofillProfile>);
+  AutofillProfile::AdjustInferredLabels(&profile_pointers);
+
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Any profiles that are not in the new profile list should be removed from
+  // the web database.
+  for (std::vector<AutofillProfile*>::const_iterator iter =
+           web_profiles_.begin();
+       iter != web_profiles_.end(); ++iter) {
+    if (!FindByGUID<AutofillProfile>(*profiles, (*iter)->guid()))
+      wds->RemoveAutofillProfile((*iter)->guid());
+  }
+
+  // Update the web database with the existing profiles.
+  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
+       iter != profiles->end(); ++iter) {
+    if (FindByGUID<AutofillProfile>(web_profiles_, iter->guid()))
+      wds->UpdateAutofillProfile(*iter);
+  }
+
+  // Add the new profiles to the web database.  Don't add a duplicate.
+  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
+       iter != profiles->end(); ++iter) {
+    if (!FindByGUID<AutofillProfile>(web_profiles_, iter->guid()) &&
+        !FindByContents(web_profiles_, *iter))
+      wds->AddAutofillProfile(*iter);
+  }
+
+  // Copy in the new profiles.
+  web_profiles_.reset();
+  for (std::vector<AutofillProfile>::iterator iter = profiles->begin();
+       iter != profiles->end(); ++iter) {
+    web_profiles_.push_back(new AutofillProfile(*iter));
+  }
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
+}
+
+void PersonalDataManager::SetCreditCards(
+    std::vector<CreditCard>* credit_cards) {
+  if (profile_->IsOffTheRecord())
+    return;
+
+  // Remove empty credit cards from input.
+  credit_cards->erase(
+      std::remove_if(
+          credit_cards->begin(), credit_cards->end(),
+          std::mem_fun_ref(&CreditCard::IsEmpty)),
+      credit_cards->end());
+
+  WebDataService* wds = profile_->GetWebDataService(Profile::EXPLICIT_ACCESS);
+  if (!wds)
+    return;
+
+  // Any credit cards that are not in the new credit card list should be
+  // removed.
+  for (std::vector<CreditCard*>::const_iterator iter = credit_cards_.begin();
+       iter != credit_cards_.end(); ++iter) {
+    if (!FindByGUID<CreditCard>(*credit_cards, (*iter)->guid()))
+      wds->RemoveCreditCard((*iter)->guid());
+  }
+
+  // Update the web database with the existing credit cards.
+  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
+       iter != credit_cards->end(); ++iter) {
+    if (FindByGUID<CreditCard>(credit_cards_, iter->guid()))
+      wds->UpdateCreditCard(*iter);
+  }
+
+  // Add the new credit cards to the web database.  Don't add a duplicate.
+  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
+       iter != credit_cards->end(); ++iter) {
+    if (!FindByGUID<CreditCard>(credit_cards_, iter->guid()) &&
+        !FindByContents(credit_cards_, *iter))
+      wds->AddCreditCard(*iter);
+  }
+
+  // Copy in the new credit cards.
+  credit_cards_.reset();
+  for (std::vector<CreditCard>::iterator iter = credit_cards->begin();
+       iter != credit_cards->end(); ++iter) {
+    credit_cards_.push_back(new CreditCard(*iter));
+  }
+
+  // Refresh our local cache and send notifications to observers.
+  Refresh();
 }
 
 void PersonalDataManager::LoadProfiles() {

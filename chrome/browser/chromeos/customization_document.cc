@@ -79,6 +79,10 @@ namespace chromeos {
 
 // CustomizationDocument implementation. ---------------------------------------
 
+CustomizationDocument::CustomizationDocument() {}
+
+CustomizationDocument::~CustomizationDocument() {}
+
 bool CustomizationDocument::LoadManifestFromFile(
     const FilePath& manifest_path) {
   std::string manifest;
@@ -150,6 +154,8 @@ StartupCustomizationDocument::StartupCustomizationDocument(
   LoadManifestFromString(manifest);
   Init(system_access);
 }
+
+StartupCustomizationDocument::~StartupCustomizationDocument() {}
 
 StartupCustomizationDocument* StartupCustomizationDocument::GetInstance() {
   return Singleton<StartupCustomizationDocument,
@@ -256,6 +262,8 @@ ServicesCustomizationDocument::ServicesCustomizationDocument(
   LoadManifestFromString(manifest);
 }
 
+ServicesCustomizationDocument::~ServicesCustomizationDocument() {}
+
 // static
 ServicesCustomizationDocument* ServicesCustomizationDocument::GetInstance() {
   return Singleton<ServicesCustomizationDocument,
@@ -264,7 +272,8 @@ ServicesCustomizationDocument* ServicesCustomizationDocument::GetInstance() {
 
 // static
 void ServicesCustomizationDocument::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterBooleanPref(kServicesCustomizationAppliedPref, false);
+  local_state->RegisterBooleanPref(kServicesCustomizationAppliedPref, false,
+                                   PrefService::UNSYNCABLE_PREF);
 }
 
 // static

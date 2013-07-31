@@ -23,12 +23,20 @@ class LiveAppsSyncTest : public LiveSyncTest {
   // |extension_helper_|.
   virtual bool SetupClients() OVERRIDE WARN_UNUSED_RESULT;
 
+  // Returns true iff the profile with index |index| has the same apps as the
+  // verifier.
+  bool HasSameAppsAsVerifier(int index) WARN_UNUSED_RESULT;
+
   // Returns true iff all existing profiles have the same apps as the
   // verifier.
   bool AllProfilesHaveSameAppsAsVerifier() WARN_UNUSED_RESULT;
 
   // Installs the app for the given index to |profile|.
   void InstallApp(Profile* profile, int index);
+
+  // Uninstalls the app for the given index from |profile|. Assumes that it was
+  // previously installed.
+  void UninstallApp(Profile* profile, int index);
 
   // Installs all pending synced apps for |profile|.
   void InstallAppsPendingForSync(Profile* profile);

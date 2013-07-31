@@ -8,9 +8,12 @@
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/c/ppb_audio.h"
+#include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_image_data.h"
 #include "ppapi/proxy/interface_id.h"
 
+struct PP_FontDescription_Dev;
 struct PP_Size;
 
 namespace ppapi {
@@ -26,6 +29,18 @@ class ResourceCreationAPI {
   static const ::pp::proxy::InterfaceID interface_id =
       ::pp::proxy::INTERFACE_ID_RESOURCE_CREATION;
 
+  virtual PP_Resource CreateAudio(PP_Instance instance,
+                                  PP_Resource config_id,
+                                  PPB_Audio_Callback audio_callback,
+                                  void* user_data) = 0;
+  virtual PP_Resource CreateAudioTrusted(PP_Instance instace) = 0;
+  virtual PP_Resource CreateAudioConfig(PP_Instance instance,
+                                        PP_AudioSampleRate sample_rate,
+                                        uint32_t sample_frame_count) = 0;
+  // Note: can't be called CreateFont due to Windows #defines.
+  virtual PP_Resource CreateFontObject(
+      PP_Instance instance,
+      const PP_FontDescription_Dev* description) = 0;
   virtual PP_Resource CreateGraphics2D(PP_Instance instance,
                                        const PP_Size& size,
                                        PP_Bool is_always_opaque) = 0;

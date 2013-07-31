@@ -10,6 +10,7 @@
 #include "chrome/browser/extensions/extension_proxy_api.h"
 #include "chrome/browser/extensions/extension_webrequest_api.h"
 #include "chrome/browser/prefs/pref_member.h"
+#include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/browser_thread.h"
 #include "net/base/host_port_pair.h"
@@ -41,12 +42,10 @@ void ForwardProxyErrors(net::URLRequest* request,
 ChromeNetworkDelegate::ChromeNetworkDelegate(
     ExtensionEventRouterForwarder* event_router,
     ProfileId profile_id,
-    BooleanPrefMember* enable_referrers,
-    ProtocolHandlerRegistry* protocol_handler_registry)
+    BooleanPrefMember* enable_referrers)
     : event_router_(event_router),
       profile_id_(profile_id),
-      enable_referrers_(enable_referrers),
-      protocol_handler_registry_(protocol_handler_registry) {
+      enable_referrers_(enable_referrers) {
   DCHECK(event_router);
   DCHECK(enable_referrers);
 }
@@ -82,9 +81,10 @@ int ChromeNetworkDelegate::OnBeforeSendHeaders(
 
 void ChromeNetworkDelegate::OnRequestSent(
     uint64 request_id,
-    const net::HostPortPair& socket_address) {
+    const net::HostPortPair& socket_address,
+    const net::HttpRequestHeaders& headers) {
   ExtensionWebRequestEventRouter::GetInstance()->OnRequestSent(
-      profile_id_, event_router_.get(), request_id, socket_address);
+      profile_id_, event_router_.get(), request_id, socket_address, headers);
 }
 
 void ChromeNetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
@@ -98,6 +98,11 @@ void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
   ExtensionWebRequestEventRouter::GetInstance()->OnResponseStarted(
       profile_id_, event_router_.get(), request);
   ForwardProxyErrors(request, event_router_.get(), profile_id_);
+}
+
+void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
+                                           int bytes_read) {
+  TaskManager::GetInstance()->model()->NotifyBytesRead(request, bytes_read);
 }
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request) {
@@ -124,13 +129,6 @@ void ChromeNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
 void ChromeNetworkDelegate::OnHttpTransactionDestroyed(uint64 request_id) {
   ExtensionWebRequestEventRouter::GetInstance()->OnHttpTransactionDestroyed(
       profile_id_, request_id);
-}
-
-net::URLRequestJob* ChromeNetworkDelegate::OnMaybeCreateURLRequestJob(
-      net::URLRequest* request) {
-  if (!protocol_handler_registry_)
-    return NULL;
-  return protocol_handler_registry_->MaybeCreateJob(request);
 }
 
 void ChromeNetworkDelegate::OnPACScriptError(int line_number,

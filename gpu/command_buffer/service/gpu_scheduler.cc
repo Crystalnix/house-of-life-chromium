@@ -6,10 +6,11 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop.h"
-#include "gpu/common/gpu_trace_event.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_bindings.h"
+#include "ui/gfx/gl/gl_surface.h"
 
 using ::base::SharedMemory;
 
@@ -52,6 +53,7 @@ GpuScheduler::~GpuScheduler() {
 }
 
 bool GpuScheduler::InitializeCommon(
+    gfx::GLSurface* surface,
     gfx::GLContext* context,
     const gfx::Size& size,
     const gles2::DisallowedExtensions& disallowed_extensions,
@@ -61,12 +63,12 @@ bool GpuScheduler::InitializeCommon(
     uint32 parent_texture_id) {
   DCHECK(context);
 
-  if (!context->MakeCurrent())
+  if (!context->MakeCurrent(surface))
     return false;
 
   // Do not limit to a certain number of commands before scheduling another
   // update when rendering onscreen.
-  if (!context->IsOffscreen())
+  if (!surface->IsOffscreen())
     commands_per_update_ = INT_MAX;
 
   // Map the ring buffer and create the parser.
@@ -84,7 +86,10 @@ bool GpuScheduler::InitializeCommon(
   }
 
   // Initialize the decoder with either the view or pbuffer GLContext.
-  if (!decoder_->Initialize(context,
+  // TODO(apatrick): The GpuScheduler should know nothing about the surface the
+  // decoder is rendering to. Get rid of the surface parameter.
+  if (!decoder_->Initialize(surface,
+                            context,
                             size,
                             disallowed_extensions,
                             allowed_extensions,
@@ -128,7 +133,7 @@ void GpuScheduler::PutChanged(bool sync) {
 }
 
 void GpuScheduler::ProcessCommands() {
-  GPU_TRACE_EVENT0("gpu", "GpuScheduler:ProcessCommands");
+  TRACE_EVENT0("gpu", "GpuScheduler:ProcessCommands");
   CommandBuffer::State state = command_buffer_->GetState();
   if (state.error != error::kNoError)
     return;
@@ -196,11 +201,23 @@ void GpuScheduler::SetScheduled(bool scheduled) {
     --unscheduled_count_;
     DCHECK_GE(unscheduled_count_, 0);
 
-    if (unscheduled_count_ == 0)
+    if (unscheduled_count_ == 0) {
+      if (scheduled_callback_.get())
+        scheduled_callback_->Run();
+
       ScheduleProcessCommands();
+    }
   } else {
     ++unscheduled_count_;
   }
+}
+
+bool GpuScheduler::IsScheduled() {
+  return unscheduled_count_ == 0;
+}
+
+void GpuScheduler::SetScheduledCallback(Callback0::Type* scheduled_callback) {
+  scheduled_callback_.reset(scheduled_callback);
 }
 
 Buffer GpuScheduler::GetSharedMemoryBuffer(int32 shm_id) {

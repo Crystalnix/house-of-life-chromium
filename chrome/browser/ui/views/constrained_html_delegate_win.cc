@@ -11,7 +11,6 @@
 #include "content/browser/tab_contents/tab_contents.h"
 #include "ui/gfx/rect.h"
 #include "views/view.h"
-#include "views/widget/widget_win.h"
 #include "views/window/window_delegate.h"
 
 class ConstrainedHtmlDelegateWin : public TabContentsContainer,
@@ -33,6 +32,7 @@ class ConstrainedHtmlDelegateWin : public TabContentsContainer,
     return this;
   }
   virtual void WindowClosing() {
+    html_delegate_->OnWindowClosed();
     html_delegate_->OnDialogClosed("");
   }
 

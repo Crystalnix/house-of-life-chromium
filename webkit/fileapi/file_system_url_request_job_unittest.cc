@@ -17,10 +17,10 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
+#include "base/scoped_temp_dir.h"
 #include "base/string_piece.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
@@ -88,7 +88,7 @@ class FileSystemURLRequestJobTest : public testing::Test {
         new FileSystemContext(
             base::MessageLoopProxy::CreateForCurrentThread(),
             base::MessageLoopProxy::CreateForCurrentThread(),
-            special_storage_policy_,
+            special_storage_policy_, NULL,
             FilePath(), false /* is_incognito */,
             false, true,
             new FileSystemPathManager(
@@ -118,12 +118,9 @@ class FileSystemURLRequestJobTest : public testing::Test {
     origin_root_path_ = root_path;
   }
 
-  void TestRequest(const GURL& url) {
-    TestRequestWithHeaders(url, NULL);
-  }
-
-  void TestRequestWithHeaders(const GURL& url,
-                              const net::HttpRequestHeaders* headers) {
+  void TestRequestHelper(const GURL& url,
+                         const net::HttpRequestHeaders* headers,
+                         bool run_to_completion) {
     delegate_.reset(new TestDelegate());
     // Make delegate_ exit the MessageLoop when the request is done.
     delegate_->set_quit_on_complete(true);
@@ -138,7 +135,21 @@ class FileSystemURLRequestJobTest : public testing::Test {
 
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
-    MessageLoop::current()->Run();
+    if (run_to_completion)
+      MessageLoop::current()->Run();
+  }
+
+  void TestRequest(const GURL& url) {
+    TestRequestHelper(url, NULL, true);
+  }
+
+  void TestRequestWithHeaders(const GURL& url,
+                              const net::HttpRequestHeaders* headers) {
+    TestRequestHelper(url, headers, true);
+  }
+
+  void TestRequestNoRun(const GURL& url) {
+    TestRequestHelper(url, NULL, false);
   }
 
   void WriteFile(const base::StringPiece file_name,
@@ -290,7 +301,27 @@ TEST_F(FileSystemURLRequestJobTest, NoSuchFile) {
   TestRequest(CreateFileSystemURL("somefile"));
   ASSERT_FALSE(request_->is_pending());
   EXPECT_TRUE(delegate_->request_failed());
-  EXPECT_EQ(base::PLATFORM_FILE_ERROR_NOT_FOUND, request_->status().os_error());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().os_error());
+}
+
+class QuitNowTask : public Task {
+ public:
+  virtual void Run() {
+    MessageLoop::current()->QuitNow();
+  }
+};
+
+TEST_F(FileSystemURLRequestJobTest, Cancel) {
+  WriteFile("file1.dat", kTestFileData, arraysize(kTestFileData) - 1);
+  TestRequestNoRun(CreateFileSystemURL("file1.dat"));
+
+  // Run StartAsync() and only StartAsync().
+  MessageLoop::current()->PostTask(FROM_HERE, new QuitNowTask);
+  MessageLoop::current()->Run();
+
+  request_.reset();
+  MessageLoop::current()->RunAllPending();
+  // If we get here, success! we didn't crash!
 }
 
 }  // namespace (anonymous)

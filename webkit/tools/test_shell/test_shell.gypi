@@ -23,7 +23,7 @@
   'targets': [
     {
       'target_name': 'test_shell_common',
-      'type': '<(library)',
+      'type': 'static_library',
       'variables': {
         'chromium_code': 1,
       },
@@ -120,7 +120,7 @@
             'copy_npapi_test_plugin',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             'test_shell_resources',
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -161,7 +161,7 @@
         'pak_path': '<(INTERMEDIATE_DIR)/repack/test_shell.pak',
       },
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'actions': [
             {
               'action_name': 'test_shell_repack',
@@ -265,7 +265,7 @@
             },
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -372,6 +372,7 @@
         '../../blob/blob_url_request_job_unittest.cc',
         '../../blob/deletable_file_reference_unittest.cc',
         '../../database/database_connections_unittest.cc',
+        '../../database/database_quota_client_unittest.cc',
         '../../database/databases_table_unittest.cc',
         '../../database/database_tracker_unittest.cc',
         '../../database/database_util_unittest.cc',
@@ -381,12 +382,15 @@
         '../../fileapi/file_system_operation_unittest.cc',
         '../../fileapi/file_system_origin_database_unittest.cc',
         '../../fileapi/file_system_path_manager_unittest.cc',
+        '../../fileapi/file_system_quota_client_unittest.cc',
         '../../fileapi/file_system_usage_cache_unittest.cc',
-        '../../fileapi/file_system_usage_tracker_unittest.cc',
         '../../fileapi/file_system_util_unittest.cc',
         '../../fileapi/local_file_system_file_util_unittest.cc',
-        '../../fileapi/sandbox_mount_point_provider_unittest.cc',
+        '../../fileapi/obfuscated_file_system_file_util_unittest.cc',
         '../../fileapi/quota_file_util_unittest.cc',
+        '../../fileapi/sandbox_mount_point_provider_unittest.cc',
+        '../../fileapi/file_system_test_helper.cc',
+        '../../fileapi/file_system_test_helper.h',
         '../../fileapi/webfilewriter_base_unittest.cc',
         '../../glue/bookmarklet_unittest.cc',
         '../../glue/context_menu_unittest.cc',
@@ -409,8 +413,7 @@
         '../../glue/webkit_glue_unittest.cc',
         '../../glue/webview_unittest.cc',
         '../../mocks/mock_resource_loader_bridge.h',
-        '../../mocks/mock_webframe.cc',
-        '../../mocks/mock_webframe.h',
+        '../../mocks/mock_webframeclient.h',
         '../../mocks/mock_weburlloader.cc',
         '../../mocks/mock_weburlloader.h',
         '../../plugins/npapi/plugin_group_unittest.cc',
@@ -460,7 +463,7 @@
             },
           },
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             'test_shell_pak',
             '<(DEPTH)/build/linux/system.gyp:gtk',
@@ -502,7 +505,7 @@
             '../../../skia/ext/vector_canvas_unittest.cc',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
+        ['os_posix == 1 and OS != "mac"', {
           'conditions': [
             ['linux_use_tcmalloc==1', {
               'dependencies': [
@@ -622,13 +625,13 @@
                 ],
               },
             }],
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+            ['os_posix == 1 and OS != "mac"', {
               'sources!': [
                 # Needs simple event record type porting
                 '../../plugins/npapi/test/plugin_windowless_test.cc',
               ],
             }],
-            ['(OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris") and (target_arch=="x64" or target_arch=="arm")', {
+            ['os_posix == 1 and OS != "mac" and (target_arch == "x64" or target_arch == "arm")', {
               # Shared libraries need -fPIC on x86-64
               'cflags': ['-fPIC']
             }],
@@ -657,7 +660,7 @@
                 },
               ]
             }],
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+            ['os_posix == 1 and OS != "mac"', {
               'copies': [
                 {
                   'destination': '<(PRODUCT_DIR)/plugins',
@@ -669,7 +672,7 @@
         },
       ],
     }],
-    ['OS=="linux"  or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [
         {
           'target_name': 'test_shell_resources',

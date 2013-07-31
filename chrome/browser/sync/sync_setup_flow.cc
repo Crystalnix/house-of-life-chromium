@@ -16,8 +16,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_setup_flow_handler.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
 #include "chrome/common/pref_names.h"
@@ -64,18 +62,11 @@ SyncSetupFlow* SyncSetupFlow::Run(ProfileSyncService* service,
     SyncSetupFlow::GetArgsForConfigure(service, &args);
   else if (start == SyncSetupWizard::ENTER_PASSPHRASE)
     SyncSetupFlow::GetArgsForEnterPassphrase(false, false, &args);
-  else if (start == SyncSetupWizard::PASSPHRASE_MIGRATION)
-    args.SetString("iframeToShow", "firstpassphrase");
 
   std::string json_args;
   base::JSONWriter::Write(&args, false, &json_args);
 
-  SyncSetupFlow* flow = new SyncSetupFlow(start, end, json_args,
-      container, service);
-
-  Browser* b = BrowserList::GetLastActive();
-  b->ShowOptionsTab(chrome::kSyncSetupSubPage);
-  return flow;
+  return new SyncSetupFlow(start, end, json_args, container, service);
 }
 
 // static
@@ -259,12 +250,6 @@ void SyncSetupFlow::OnPassphraseCancel() {
   Advance(SyncSetupWizard::SETTING_UP);
 }
 
-// TODO(jhawkins): Remove this method.
-void SyncSetupFlow::OnFirstPassphraseEntry(const std::string& option,
-                                           const std::string& passphrase) {
-  NOTREACHED();
-}
-
 // TODO(jhawkins): Use this method instead of a direct link in the html.
 void SyncSetupFlow::OnGoToDashboard() {
   BrowserList::GetLastActive()->OpenPrivacyDashboardTabAndActivate();
@@ -303,8 +288,6 @@ bool SyncSetupFlow::ShouldAdvance(SyncSetupWizard::State state) {
       return current_state_ == SyncSetupWizard::SYNC_EVERYTHING ||
              current_state_ == SyncSetupWizard::CONFIGURE ||
              current_state_ == SyncSetupWizard::SETTING_UP;
-    case SyncSetupWizard::PASSPHRASE_MIGRATION:
-      return current_state_ == SyncSetupWizard::GAIA_LOGIN;
     case SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR:
       DCHECK(current_state_ != SyncSetupWizard::GAIA_LOGIN &&
              current_state_ != SyncSetupWizard::GAIA_SUCCESS);
@@ -312,8 +295,7 @@ bool SyncSetupFlow::ShouldAdvance(SyncSetupWizard::State state) {
     case SyncSetupWizard::SETTING_UP:
       return current_state_ == SyncSetupWizard::SYNC_EVERYTHING ||
              current_state_ == SyncSetupWizard::CONFIGURE ||
-             current_state_ == SyncSetupWizard::ENTER_PASSPHRASE ||
-             current_state_ == SyncSetupWizard::PASSPHRASE_MIGRATION;
+             current_state_ == SyncSetupWizard::ENTER_PASSPHRASE;
     case SyncSetupWizard::FATAL_ERROR:
       return true;  // You can always hit the panic button.
     case SyncSetupWizard::DONE:
@@ -360,11 +342,6 @@ void SyncSetupFlow::ActivateState(SyncSetupWizard::State state) {
           tried_setting_explicit_passphrase_,
           &args);
       flow_handler_->ShowPassphraseEntry(args);
-      break;
-    }
-    case SyncSetupWizard::PASSPHRASE_MIGRATION: {
-      DictionaryValue args;
-      flow_handler_->ShowFirstPassphrase(args);
       break;
     }
     case SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR: {

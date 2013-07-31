@@ -58,7 +58,7 @@
     },
     {
       'target_name': 'webkit_user_agent',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'DB162DE1-7D56-4C4A-8A9F-80D396CD7AA8',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
@@ -102,21 +102,20 @@
     },
     {
       'target_name': 'glue',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'C66B126D-0ECE-4CA2-B6DC-FA780AFBBF09',
       'dependencies': [
         '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/gpu/gpu.gyp:gpu_common',
         '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
         '<(DEPTH)/net/net.gyp:net',
-        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_shared_impl',
+        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_c',
+        '<(DEPTH)/ppapi/ppapi_internal.gyp:ppapi_shared',
         '<(DEPTH)/printing/printing.gyp:printing',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
-        '<(DEPTH)/ppapi/ppapi.gyp:ppapi_c',
         'webkit_resources',
         'webkit_strings',
         'webkit_user_agent',
@@ -204,14 +203,14 @@
         '../plugins/ppapi/callbacks.h',
         '../plugins/ppapi/common.h',
         '../plugins/ppapi/dir_contents.h',
-        '../plugins/ppapi/error_util.cc',
-        '../plugins/ppapi/error_util.h',
         '../plugins/ppapi/event_conversion.cc',
         '../plugins/ppapi/event_conversion.h',
         '../plugins/ppapi/file_callbacks.cc',
         '../plugins/ppapi/file_callbacks.h',
         '../plugins/ppapi/file_path.cc',
         '../plugins/ppapi/file_path.h',
+        '../plugins/ppapi/file_type_conversions.cc',
+        '../plugins/ppapi/file_type_conversions.h',
         '../plugins/ppapi/fullscreen_container.h',
         '../plugins/ppapi/message_channel.cc',
         '../plugins/ppapi/message_channel.h',
@@ -315,6 +314,8 @@
         '../plugins/ppapi/string.h',
         '../plugins/ppapi/var.cc',
         '../plugins/ppapi/var.h',
+        '../plugins/ppapi/webkit_forwarding_impl.cc',
+        '../plugins/ppapi/webkit_forwarding_impl.h',
         '../plugins/sad_plugin.cc',
         '../plugins/sad_plugin.h',
         'media/audio_decoder.cc',
@@ -444,15 +445,14 @@
       # own hard dependencies.
       'hard_dependency': 1,
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '<(DEPTH)/build/linux/system.gyp:gtk',
           ],
           'sources!': [
             'plugins/plugin_stubs.cc',
           ],
-        }, { # else: OS!="linux" and OS!="freebsd" and OS!="openbsd" \
-             # and OS!="solaris"'
+        }, { # else: toolkit_uses_gtk != 1
           'sources/': [['exclude', '_(linux|gtk)(_data)?\\.cc$'],
                        ['exclude', r'/gtk_']],
         }],

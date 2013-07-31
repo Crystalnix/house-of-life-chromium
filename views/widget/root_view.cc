@@ -22,6 +22,7 @@
 #endif
 
 namespace views {
+namespace internal {
 
 // static
 const char RootView::kViewClassName[] = "views/RootView";
@@ -335,7 +336,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   if (touch_pressed_handler_) {
     TouchEvent touch_event(e, this, touch_pressed_handler_);
     status = touch_pressed_handler_->ProcessTouchEvent(touch_event);
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     if (status == TOUCH_STATUS_END)
       touch_pressed_handler_ = NULL;
     return status;
@@ -373,7 +375,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
     if (status != TOUCH_STATUS_START)
       touch_pressed_handler_ = NULL;
 
-    gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+    if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+      status = View::TOUCH_STATUS_SYNTH_MOUSE;
     return status;
   }
 
@@ -381,7 +384,8 @@ View::TouchStatus RootView::OnTouchEvent(const TouchEvent& event) {
   touch_pressed_handler_ = NULL;
 
   // Give the touch event to the gesture manager.
-  gesture_manager_->ProcessTouchEventForGesture(e, this, status);
+  if (gesture_manager_->ProcessTouchEventForGesture(e, this, status))
+    status = View::TOUCH_STATUS_SYNTH_MOUSE;
   return status;
 }
 #endif
@@ -394,35 +398,6 @@ void RootView::SetMouseHandler(View *new_mh) {
 
 void RootView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_APPLICATION;
-}
-
-#if defined(TOUCH_UI)
-namespace {
-// Always show the mouse cursor, useful when debugging touch builds
-bool keep_mouse_cursor;
-}
-
-void RootView::SetKeepMouseCursor(bool keep) {
-  keep_mouse_cursor = keep;
-}
-
-bool RootView::GetKeepMouseCursor() {
-  return keep_mouse_cursor;
-}
-
-#endif
-
-namespace {
-// Set to true if a pure Views implementation is preferred
-bool use_pure_views;
-}
-
-void RootView::SetPureViews(bool pure) {
-  use_pure_views = pure;
-}
-
-bool RootView::IsPureViews() {
-  return use_pure_views;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -448,6 +423,18 @@ void RootView::OnPaint(gfx::Canvas* canvas) {
   canvas->AsCanvasSkia()->drawColor(SK_ColorBLACK, SkXfermode::kClear_Mode);
 }
 
+bool RootView::ShouldPaintToTexture() const {
+  return widget_->compositor() != NULL;
+}
+
+const ui::Compositor* RootView::GetCompositor() const {
+  return widget_->compositor();
+}
+
+ui::Compositor* RootView::GetCompositor() {
+  return widget_->compositor();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // RootView, private:
 
@@ -466,4 +453,6 @@ void RootView::SetMouseLocationAndFlags(const MouseEvent& event) {
   last_mouse_event_y_ = event.y();
 }
 
+}  // namespace internal
 }  // namespace views
+

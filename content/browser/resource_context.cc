@@ -22,6 +22,20 @@ ResourceContext::ResourceContext()
 
 ResourceContext::~ResourceContext() {}
 
+void* ResourceContext::GetUserData(const void* key) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  EnsureInitialized();
+  UserDataMap::const_iterator found = user_data_.find(key);
+  if (found != user_data_.end())
+    return found->second;
+  return NULL;
+}
+
+void ResourceContext::SetUserData(const void* key, void* data) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  user_data_[key] = data;
+}
+
 net::HostResolver* ResourceContext::host_resolver() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   EnsureInitialized();
@@ -94,6 +108,18 @@ void ResourceContext::set_blob_storage_context(
   blob_storage_context_ = context;
 }
 
+quota::QuotaManager* ResourceContext::quota_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  EnsureInitialized();
+  return quota_manager_;
+}
+
+void ResourceContext::set_quota_manager(
+    quota::QuotaManager* quota_manager) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  quota_manager_ = quota_manager;
+}
+
 HostZoomMap* ResourceContext::host_zoom_map() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   EnsureInitialized();
@@ -103,18 +129,6 @@ HostZoomMap* ResourceContext::host_zoom_map() const {
 void ResourceContext::set_host_zoom_map(HostZoomMap* host_zoom_map) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   host_zoom_map_ = host_zoom_map;
-}
-
-HostContentSettingsMap* ResourceContext::host_content_settings_map() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  EnsureInitialized();
-  return host_content_settings_map_;
-}
-
-void ResourceContext::set_host_content_settings_map(
-    HostContentSettingsMap* host_content_settings_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  host_content_settings_map_ = host_content_settings_map;
 }
 
 const ExtensionInfoMap* ResourceContext::extension_info_map() const {

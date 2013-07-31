@@ -9,14 +9,12 @@
 #include <deque>
 #include <map>
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/tab_contents/tab_specific_content_settings.h"
 #include "chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/tab_contents/constrained_window.h"
@@ -45,27 +43,22 @@ namespace history {
 class HistoryAddPageArgs;
 }
 
-class WebUI;
-class DownloadItem;
 class Extension;
-class InfoBarDelegate;
 class LoadNotificationDetails;
-class PluginObserver;
 class Profile;
+struct RendererPreferences;
 class RenderViewHost;
 class SessionStorageNamespace;
 class SiteInstance;
 class SkBitmap;
-class TabContents;
 class TabContentsDelegate;
 class TabContentsObserver;
-class TabContentsSSLHelper;
 class TabContentsView;
-class URLPattern;
-struct RendererPreferences;
 struct ThumbnailScore;
+class URLPattern;
 struct ViewHostMsg_FrameNavigate_Params;
 struct WebPreferences;
+class WebUI;
 
 // Describes what goes in the main content area of a tab. TabContents is
 // the only type of TabContents, and these should be merged together.
@@ -124,9 +117,6 @@ class TabContents : public PageNavigator,
 
   // Returns true if contains content rendered by an extension.
   bool HostsExtension() const;
-
-  // Returns the TabContentsSSLHelper, creating it if necessary.
-  TabContentsSSLHelper* GetSSLHelper();
 
   // Return the currently active RenderProcessHost and RenderViewHost. Each of
   // these may change over time.
@@ -291,9 +281,6 @@ class TabContents : public PageNavigator,
   // Stop any pending navigation.
   virtual void Stop();
 
-  // Called on a TabContents when it isn't a popup, but a new window.
-  virtual void DisassociateFromPopupCount();
-
   // Creates a new TabContents with the same state as this one. The returned
   // heap-allocated pointer is owned by the caller.
   virtual TabContents* Clone();
@@ -367,36 +354,10 @@ class TabContents : public PageNavigator,
   // Creates a view and sets the size for the specified RVH.
   virtual void CreateViewAndSetSizeForRVH(RenderViewHost* rvh);
 
-  // Infobars ------------------------------------------------------------------
-
-  // Adds an InfoBar for the specified |delegate|.
-  void AddInfoBar(InfoBarDelegate* delegate);
-
-  // Removes the InfoBar for the specified |delegate|.
-  void RemoveInfoBar(InfoBarDelegate* delegate);
-
-  // Replaces one infobar with another, without any animation in between.
-  void ReplaceInfoBar(InfoBarDelegate* old_delegate,
-                      InfoBarDelegate* new_delegate);
-
-  // Enumeration and access functions.
-  size_t infobar_count() const { return infobar_delegates_.size(); }
-  // WARNING: This does not sanity-check |index|!
-  InfoBarDelegate* GetInfoBarDelegateAt(size_t index) {
-    return infobar_delegates_[index];
-  }
-
   // Toolbars and such ---------------------------------------------------------
 
   // Returns true if a Bookmark Bar should be shown for this tab.
   virtual bool ShouldShowBookmarkBar();
-
-  // Notifies the delegate that a download is about to be started.
-  // This notification is fired before a local temporary file has been created.
-  bool CanDownload(int request_id);
-
-  // Notifies the delegate that a download started.
-  void OnStartDownload(DownloadItem* download);
 
   // Called when a ConstrainedWindow we own is about to be closed.
   void WillClose(ConstrainedWindow* window);
@@ -460,8 +421,6 @@ class TabContents : public PageNavigator,
   // ViewMsg_ResetPageEncodingToDefault to the renderer.
   void ResetOverrideEncoding();
 
-  void WindowMoveOrResizeStarted();
-
   RendererPreferences* GetMutableRendererPrefs() {
     return &renderer_preferences_;
   }
@@ -516,10 +475,6 @@ class TabContents : public PageNavigator,
   virtual void SetBookmarkDragDelegate(
       RenderViewHostDelegate::BookmarkDrag* bookmark_drag);
 
-  // The TabSpecificContentSettings object is used to query the blocked content
-  // state by various UI elements.
-  TabSpecificContentSettings* GetTabSpecificContentSettings() const;
-
   // Updates history with the specified navigation. This is called by
   // OnMsgNavigate to update history state.
   void UpdateHistoryForNavigation(
@@ -555,8 +510,6 @@ class TabContents : public PageNavigator,
   // the pending WebUI, the committed WebUI, or NULL.
   WebUI* GetWebUIForCurrentState();
 
-  // From RenderViewHostDelegate.
-  virtual RenderViewHostDelegate::ContentSettings* GetContentSettingsDelegate();
 
  protected:
   friend class TabContentsObserver;
@@ -588,7 +541,7 @@ class TabContents : public PageNavigator,
 
   // Temporary until the view/contents separation is complete.
   friend class TabContentsView;
-#if defined(OS_WIN)
+#if defined(TOOLKIT_VIEWS)
   friend class TabContentsViewViews;
 #elif defined(OS_MACOSX)
   friend class TabContentsViewMac;
@@ -611,8 +564,10 @@ class TabContents : public PageNavigator,
   // Message handlers.
   void OnDidStartProvisionalLoadForFrame(int64 frame_id,
                                          bool main_frame,
+                                         bool has_opener_set,
                                          const GURL& url);
   void OnDidRedirectProvisionalLoad(int32 page_id,
+                                    bool has_opener_set,
                                     const GURL& source_url,
                                     const GURL& target_url);
   void OnDidFailProvisionalLoadWithError(int64 frame_id,
@@ -628,8 +583,11 @@ class TabContents : public PageNavigator,
   void OnDocumentLoadedInFrame(int64 frame_id);
   void OnDidFinishLoad(int64 frame_id);
   void OnUpdateContentRestrictions(int restrictions);
-
   void OnGoToEntryAtOffset(int offset);
+  void OnUpdateZoomLimits(int minimum_percent,
+                          int maximum_percent,
+                          bool remember);
+  void OnFocusedNodeChanged(bool is_editable_node);
 
   // Changes the IsLoading state and notifies delegate as needed
   // |details| is used to provide details on the load that just finished
@@ -643,12 +601,6 @@ class TabContents : public PageNavigator,
   void SetNotWaitingForResponse() { waiting_for_response_ = false; }
 
   ConstrainedWindowList child_windows_;
-
-  // Expires InfoBars that need to be expired, according to the state carried
-  // in |details|, in response to a new NavigationEntry being committed (the
-  // user navigated to another page).
-  void ExpireInfoBars(
-      const NavigationController::LoadCommittedDetails& details);
 
   // Navigation helpers --------------------------------------------------------
   //
@@ -721,7 +673,6 @@ class TabContents : public PageNavigator,
   virtual RenderViewHostDelegate::View* GetViewDelegate();
   virtual RenderViewHostDelegate::RendererManagement*
       GetRendererManagementDelegate();
-  virtual RenderViewHostDelegate::SSL* GetSSLDelegate();
   virtual TabContents* GetAsTabContents();
   virtual ViewType::Type GetRenderViewType() const;
   virtual int GetBrowserWindowID() const;
@@ -756,16 +707,15 @@ class TabContents : public PageNavigator,
       int32 page_id);
   virtual void RequestOpenURL(const GURL& url, const GURL& referrer,
                               WindowOpenDisposition disposition);
-  virtual void ProcessExternalHostMessage(const std::string& message,
-                                          const std::string& origin,
-                                          const std::string& target);
-  virtual void RunJavaScriptMessage(const std::wstring& message,
+  virtual void RunJavaScriptMessage(const RenderViewHost* rvh,
+                                    const std::wstring& message,
                                     const std::wstring& default_prompt,
                                     const GURL& frame_url,
                                     const int flags,
                                     IPC::Message* reply_msg,
                                     bool* did_suppress_message);
-  virtual void RunBeforeUnloadConfirm(const std::wstring& message,
+  virtual void RunBeforeUnloadConfirm(const RenderViewHost* rvh,
+                                      const std::wstring& message,
                                       IPC::Message* reply_msg);
   virtual GURL GetAlternateErrorPageURL() const;
   virtual RendererPreferences GetRendererPrefs(Profile* profile) const;
@@ -780,11 +730,6 @@ class TabContents : public PageNavigator,
   virtual void LoadStateChanged(const GURL& url, net::LoadState load_state,
                                 uint64 upload_position, uint64 upload_size);
   virtual bool IsExternalTabContainer() const;
-  virtual void DidInsertCSS();
-  virtual void FocusedNodeChanged(bool is_editable_node);
-  virtual void UpdateZoomLimits(int minimum_percent,
-                                int maximum_percent,
-                                bool remember);
   virtual void WorkerCrashed();
   virtual void RequestDesktopNotificationPermission(const GURL& source_origin,
                                                     int callback_context);
@@ -856,17 +801,8 @@ class TabContents : public PageNavigator,
   // Registers and unregisters for pref notifications.
   PrefChangeRegistrar pref_change_registrar_;
 
-  // Handles plugin messages.
-  scoped_ptr<PluginObserver> plugin_observer_;
-
-  // TabContentsSSLHelper, lazily created.
-  scoped_ptr<TabContentsSSLHelper> ssl_helper_;
-
   // Handles drag and drop event forwarding to extensions.
   BookmarkDrag* bookmark_drag_;
-
-  // RenderViewHost::ContentSettingsDelegate.
-  scoped_ptr<TabSpecificContentSettings> content_settings_delegate_;
 
   // Data for loading state ----------------------------------------------------
 
@@ -914,11 +850,6 @@ class TabContents : public PageNavigator,
 
   // True if this is a secure page which displayed insecure content.
   bool displayed_insecure_content_;
-
-  // Data for shelves and stuff ------------------------------------------------
-
-  // Delegates for InfoBars associated with this TabContents.
-  std::vector<InfoBarDelegate*> infobar_delegates_;
 
   // Data for misc internal state ----------------------------------------------
 

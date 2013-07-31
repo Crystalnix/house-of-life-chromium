@@ -85,7 +85,7 @@
   'targets': [
     {
       'target_name': 'common',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': '899F1280-3441-4D1F-BA04-CCD6208D9146',
       'variables': {
         'chrome_common_target': 1,
@@ -144,6 +144,9 @@
         'common/chrome_content_client.h',
         'common/chrome_content_plugin_client.cc',
         'common/chrome_content_plugin_client.h',
+        'common/cloud_print/cloud_print_proxy_info.cc',
+        'common/cloud_print/cloud_print_proxy_info.h',
+        'common/common_api.h',
         'common/common_glue.cc',
         'common/common_message_generator.cc',
         'common/common_message_generator.h',
@@ -161,8 +164,6 @@
         'common/extensions/extension_constants.h',
         'common/extensions/extension_error_utils.cc',
         'common/extensions/extension_error_utils.h',
-        'common/extensions/extension_extent.cc',
-        'common/extensions/extension_extent.h',
         'common/extensions/extension_file_util.cc',
         'common/extensions/extension_file_util.h',
         'common/extensions/extension_icon_set.cc',
@@ -190,6 +191,8 @@
         'common/extensions/update_manifest.h',
         'common/extensions/url_pattern.cc',
         'common/extensions/url_pattern.h',
+        'common/extensions/url_pattern_set.cc',
+        'common/extensions/url_pattern_set.h',
         'common/extensions/user_script.cc',
         'common/extensions/user_script.h',
         'common/favicon_url.cc',
@@ -213,8 +216,6 @@
         'common/print_messages.h',
         'common/random.cc',
         'common/random.h',
-        'common/remoting/chromoting_host_info.cc',
-        'common/remoting/chromoting_host_info.h',
         'common/render_messages.cc',
         'common/render_messages.h',
         '<(protoc_out_dir)/chrome/common/safe_browsing/csd.pb.cc',
@@ -241,8 +242,6 @@
         'common/url_constants.cc',
         'common/url_constants.h',
         'common/utility_messages.h',
-        'common/view_types.cc',
-        'common/view_types.h',
         'common/visitedlink_common.cc',
         'common/visitedlink_common.h',
         'common/web_apps.cc',
@@ -255,7 +254,7 @@
         'common/zip.h',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
           ],
@@ -271,7 +270,7 @@
             ],
           },
         },],
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd" or OS == "solaris"', {
+        ['os_posix == 1 and OS != "mac"', {
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)',
           ],
@@ -340,7 +339,7 @@
         }],
         ['remoting==1', {
           'dependencies': [
-            '../remoting/remoting.gyp:chromoting_plugin',
+            '../remoting/remoting.gyp:remoting_client_plugin',
           ],
         }],
       ],
@@ -351,7 +350,7 @@
     },
     {
       'target_name': 'common_net',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         'common/net/http_return.h',
         'common/net/net_resource_provider.cc',
@@ -386,7 +385,7 @@
         '../third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
             'conditions': [
               ['use_openssl==1', {
                  'dependencies': [
@@ -474,7 +473,7 @@
       'targets': [
         {
           'target_name': 'common_nacl_win64',
-          'type': '<(library)',
+          'type': 'static_library',
           'msvs_guid': '3AB5C5E9-470C-419B-A0AE-C7381FB632FA',
           'variables': {
             'chrome_common_target': 1,

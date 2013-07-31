@@ -13,10 +13,13 @@ namespace chrome {
 class ChromeContentClient : public content::ContentClient {
  public:
   static const char* kPDFPluginName;
+  static const char* kNaClPluginName;
 
   virtual void SetActiveURL(const GURL& url);
   virtual void SetGpuInfo(const GPUInfo& gpu_info);
   virtual void AddPepperPlugins(std::vector<PepperPluginInfo>* plugins);
+  virtual bool CanSendWhileSwappedOut(const IPC::Message* msg);
+  virtual bool CanHandleWhileSwappedOut(const IPC::Message& msg);
 };
 
 }  // namespace chrome

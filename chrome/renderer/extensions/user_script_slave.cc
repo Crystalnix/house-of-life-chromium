@@ -12,7 +12,7 @@
 #include "base/pickle.h"
 #include "base/shared_memory.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
@@ -149,7 +149,7 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
     WebVector<WebString> patterns;
     std::vector<WebString> temp_patterns;
     for (size_t k = 0; k < script->url_patterns().size(); ++k) {
-      std::vector<URLPattern> explicit_patterns =
+      URLPatternList explicit_patterns =
           script->url_patterns()[k].ConvertToExplicitSchemes();
       for (size_t m = 0; m < explicit_patterns.size(); ++m) {
         temp_patterns.push_back(WebString::fromUTF8(
@@ -180,8 +180,9 @@ void UserScriptSlave::InsertInitExtensionCode(
   DCHECK(sources);
   bool incognito = ChromeRenderProcessObserver::is_incognito_process();
   sources->insert(sources->begin(), WebScriptSource(WebString::fromUTF8(
-      StringPrintf(kInitExtension, extension_id.c_str(),
-                   incognito ? "true" : "false"))));
+      base::StringPrintf(kInitExtension,
+                         extension_id.c_str(),
+                         incognito ? "true" : "false"))));
 }
 
 void UserScriptSlave::InjectScripts(WebFrame* frame,

@@ -53,8 +53,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/x/x11_util.h"
 #include "views/screen.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 namespace {
 
@@ -196,9 +195,11 @@ static base::LazyInstance<ScreenLockObserver> g_screen_lock_observer(
 
 // A ScreenLock window that covers entire screen to keep the keyboard
 // focus/events inside the grab widget.
-class LockWindow : public views::WidgetGtk {
+class LockWindow : public views::NativeWidgetGtk {
  public:
-  LockWindow() : toplevel_focus_widget_(NULL) {
+  LockWindow()
+      : views::NativeWidgetGtk(new views::Widget),
+        toplevel_focus_widget_(NULL) {
     EnableDoubleBuffer(true);
   }
 
@@ -218,7 +219,7 @@ class LockWindow : public views::WidgetGtk {
 
   virtual void OnDestroy(GtkWidget* object) OVERRIDE {
     VLOG(1) << "OnDestroy: LockWindow destroyed";
-    views::WidgetGtk::OnDestroy(object);
+    views::NativeWidgetGtk::OnDestroy(object);
   }
 
   virtual void ClearNativeFocus() OVERRIDE {
@@ -286,10 +287,11 @@ class GrabWidgetRootView
 };
 
 // A child widget that grabs both keyboard and pointer input.
-class GrabWidget : public views::WidgetGtk {
+class GrabWidget : public views::NativeWidgetGtk {
  public:
   explicit GrabWidget(chromeos::ScreenLocker* screen_locker)
-      : screen_locker_(screen_locker),
+      : views::NativeWidgetGtk(new views::Widget),
+        screen_locker_(screen_locker),
         ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
         grab_failure_count_(0),
         kbd_grab_status_(GDK_GRAB_INVALID_TIME),
@@ -299,7 +301,7 @@ class GrabWidget : public views::WidgetGtk {
   }
 
   virtual void Show() OVERRIDE {
-    views::WidgetGtk::Show();
+    views::NativeWidgetGtk::Show();
     signout_link_ =
         screen_locker_->GetViewByID(VIEW_ID_SCREEN_LOCKER_SIGNOUT_LINK);
     shutdown_ = screen_locker_->GetViewByID(VIEW_ID_SCREEN_LOCKER_SHUTDOWN);
@@ -325,7 +327,7 @@ class GrabWidget : public views::WidgetGtk {
     views::KeyEvent key_event(reinterpret_cast<GdkEvent*>(event));
     // This is a hack to workaround the issue crosbug.com/10655 due to
     // the limitation that a focus manager cannot handle views in
-    // TYPE_CHILD WidgetGtk correctly.
+    // TYPE_CHILD NativeWidgetGtk correctly.
     if (signout_link_ &&
         event->type == GDK_KEY_PRESS &&
         (event->keyval == GDK_Tab ||
@@ -342,12 +344,12 @@ class GrabWidget : public views::WidgetGtk {
         return true;
       }
     }
-    return views::WidgetGtk::OnEventKey(widget, event);
+    return views::NativeWidgetGtk::OnEventKey(widget, event);
   }
 
   virtual gboolean OnButtonPress(GtkWidget* widget,
                                  GdkEventButton* event) OVERRIDE {
-    WidgetGtk::OnButtonPress(widget, event);
+    NativeWidgetGtk::OnButtonPress(widget, event);
     // Never propagate event to parent.
     return true;
   }
@@ -369,6 +371,24 @@ class GrabWidget : public views::WidgetGtk {
     // SessionManager will terminate the session to logout.
     CHECK_NE(GDK_GRAB_SUCCESS, kbd_grab_status_);
     CHECK_NE(GDK_GRAB_SUCCESS, mouse_grab_status_);
+  }
+
+  // Define separate methods for each error code so that stack trace
+  // will tell which error the grab failed with.
+  void FailedWithGrabAlreadyGrabbed() {
+    LOG(FATAL) << "Grab already grabbed";
+  }
+  void FailedWithGrabInvalidTime() {
+    LOG(FATAL) << "Grab invalid time";
+  }
+  void FailedWithGrabNotViewable() {
+    LOG(FATAL) << "Grab not viewable";
+  }
+  void FailedWithGrabFrozen() {
+    LOG(FATAL) << "Grab frozen";
+  }
+  void FailedWithUnknownError() {
+    LOG(FATAL) << "Grab uknown";
   }
 
   chromeos::ScreenLocker* screen_locker_;
@@ -419,10 +439,29 @@ void GrabWidget::TryGrabAllInputs() {
         kRetryGrabIntervalMs);
   } else {
     gdk_x11_ungrab_server();
-    CHECK_EQ(GDK_GRAB_SUCCESS, kbd_grab_status_)
-        << "Failed to grab keyboard input:" << kbd_grab_status_;
-    CHECK_EQ(GDK_GRAB_SUCCESS, mouse_grab_status_)
-        << "Failed to grab pointer input:" << mouse_grab_status_;
+    GdkGrabStatus status = kbd_grab_status_;
+    if (status == GDK_GRAB_SUCCESS) {
+      status = mouse_grab_status_;
+    }
+    switch (status) {
+      case GDK_GRAB_SUCCESS:
+        break;
+      case GDK_GRAB_ALREADY_GRABBED:
+        FailedWithGrabAlreadyGrabbed();
+        break;
+      case GDK_GRAB_INVALID_TIME:
+        FailedWithGrabInvalidTime();
+        break;
+      case GDK_GRAB_NOT_VIEWABLE:
+        FailedWithGrabNotViewable();
+        break;
+      case GDK_GRAB_FROZEN:
+        FailedWithGrabFrozen();
+        break;
+      default:
+        FailedWithUnknownError();
+        break;
+    }
     DVLOG(1) << "Grab Success";
     screen_locker_->OnGrabInputs();
   }
@@ -693,9 +732,10 @@ void ScreenLocker::Init() {
   gfx::Rect init_bounds(views::Screen::GetMonitorAreaNearestPoint(left_top));
 
   LockWindow* lock_window = new LockWindow();
-  lock_window_ = lock_window;
+  lock_window_ = lock_window->GetWidget();
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
   params.bounds = init_bounds;
+  params.native_widget = lock_window;
   lock_window_->Init(params);
   gtk_widget_modify_bg(
       lock_window_->GetNativeView(), GTK_STATE_NORMAL, &kGdkBlack);
@@ -718,12 +758,13 @@ void ScreenLocker::Init() {
   // TryGrabAllInputs() method later.  (Nobody else needs to use it, so moving
   // its declaration to the header instead of keeping it in an anonymous
   // namespace feels a bit ugly.)
-  GrabWidget* cast_lock_widget = new GrabWidget(this);
-  lock_widget_ = cast_lock_widget;
+  GrabWidget* grab_widget = new GrabWidget(this);
+  lock_widget_ = grab_widget->GetWidget();
   views::Widget::InitParams lock_params(
       views::Widget::InitParams::TYPE_CONTROL);
   lock_params.transparent = true;
   lock_params.parent_widget = lock_window_;
+  lock_params.native_widget = grab_widget;
   lock_widget_->Init(lock_params);
   if (screen_lock_view_) {
     GrabWidgetRootView* root_view = new GrabWidgetRootView(screen_lock_view_);
@@ -753,11 +794,11 @@ void ScreenLocker::Init() {
   lock_window_->SetContentsView(background_view_);
   lock_window_->Show();
 
-  cast_lock_widget->ClearGtkGrab();
+  grab_widget->ClearGtkGrab();
 
   // Call this after lock_window_->Show(); otherwise the 1st invocation
   // of gdk_xxx_grab() will always fail.
-  cast_lock_widget->TryGrabAllInputs();
+  grab_widget->TryGrabAllInputs();
 
   // Add the window to its own group so that its grab won't be stolen if
   // gtk_grab_add() gets called on behalf on a non-screen-locker widget (e.g.
@@ -769,14 +810,8 @@ void ScreenLocker::Init() {
                               GTK_WINDOW(lock_window_->GetNativeView()));
   g_object_unref(window_group);
 
-  // Don't let X draw default background, which was causing flash on
-  // resume.
-  gdk_window_set_back_pixmap(lock_window_->GetNativeView()->window,
-                             NULL, false);
-  gdk_window_set_back_pixmap(lock_widget_->GetNativeView()->window,
-                             NULL, false);
   lock_window->set_toplevel_focus_widget(
-      static_cast<views::WidgetGtk*>(lock_widget_->native_widget())->
+      static_cast<views::NativeWidgetGtk*>(lock_widget_->native_widget())->
           window_contents());
 
   // Create the SystemKeyEventListener so it can listen for system keyboard
@@ -848,6 +883,14 @@ void ScreenLocker::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
     MessageLoopForUI::current()->RemoveObserver(mouse_event_relay_.get());
     mouse_event_relay_.reset();
   }
+}
+
+bool ScreenLocker::CloseOnEscape() {
+  return true;
+}
+
+bool ScreenLocker::FadeInOnShow() {
+  return false;
 }
 
 void ScreenLocker::OnCaptchaEntered(const std::string& captcha) {

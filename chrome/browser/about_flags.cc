@@ -12,9 +12,12 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/string_number_conversions.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/plugin_updater.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/user_metrics.h"
@@ -130,6 +133,20 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kEnableCrxlessWebApps)
   },
   {
+    "ignore-gpu-blacklist",
+    IDS_FLAGS_IGNORE_GPU_BLACKLIST_NAME,
+    IDS_FLAGS_IGNORE_GPU_BLACKLIST_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kIgnoreGpuBlacklist)
+  },
+  {
+    "force-compositing-mode",
+    IDS_FLAGS_FORCE_COMPOSITING_MODE_NAME,
+    IDS_FLAGS_FORCE_COMPOSITING_MODE_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kForceCompositingMode)
+  },
+  {
     "composited-layer-borders",
     IDS_FLAGS_COMPOSITED_LAYER_BORDERS,
     IDS_FLAGS_COMPOSITED_LAYER_BORDERS_DESCRIPTION,
@@ -150,15 +167,20 @@ const Experiment kExperiments[] = {
     kOsWin | kOsLinux | kOsCrOS,
     SINGLE_VALUE_TYPE(switches::kEnableAccelerated2dCanvas)
   },
+#if !defined(GOOGLE_CHROME_BUILD)
+  // Only expose this for Chromium builds where users may not have the PDF
+  // plugin. Do not give Google Chrome users the option to disable it here.
   {
     "print-preview",  // FLAGS:RECORD_UMA
     IDS_FLAGS_PRINT_PREVIEW_NAME,
     IDS_FLAGS_PRINT_PREVIEW_DESCRIPTION,
-    kOsMac | kOsWin | kOsLinux, // This switch is not available in CrOS.
+    kOsMac | kOsWin | kOsLinux,  // This switch is not available in CrOS.
     SINGLE_VALUE_TYPE(switches::kEnablePrintPreview)
   },
+#endif
+  // TODO(dspringer): When NaCl is on by default, remove this flag entry.
   {
-    "enable-nacl",  // FLAGS:RECORD_UMA
+    switches::kEnableNaCl,  // FLAGS:RECORD_UMA
     IDS_FLAGS_ENABLE_NACL_NAME,
     IDS_FLAGS_ENABLE_NACL_DESCRIPTION,
     kOsAll,
@@ -245,6 +267,13 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kFocusExistingTabOnOpen)
   },
   {
+    "compact-navigation",
+    IDS_FLAGS_ENABLE_COMPACT_NAVIGATION,
+    IDS_FLAGS_ENABLE_COMPACT_NAVIGATION_DESCRIPTION,
+    kOsWin,  // TODO(stevet): Add other platforms when ready.
+    SINGLE_VALUE_TYPE(switches::kEnableCompactNavigation)
+  },
+  {
     "new-tab-page-4",
     IDS_FLAGS_NEW_TAB_PAGE_4_NAME,
     IDS_FLAGS_NEW_TAB_PAGE_4_DESCRIPTION,
@@ -264,27 +293,6 @@ const Experiment kExperiments[] = {
     IDS_FLAGS_PPAPI_FLASH_IN_PROCESS_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kPpapiFlashInProcess)
-  },
-#if defined(TOOLKIT_GTK)
-  {
-    "global-gnome-menu",
-    IDS_FLAGS_LINUX_GLOBAL_MENUBAR_NAME,
-    IDS_FLAGS_LINUX_GLOBAL_MENUBAR_DESCRIPTION,
-    kOsLinux,
-    SINGLE_VALUE_TYPE(switches::kGlobalGnomeMenu)
-  },
-#endif
-  {
-    "enable-experimental-eap",
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_NAME,
-    IDS_FLAGS_ENABLE_EXPERIMENTAL_EAP_DESCRIPTION,
-    kOsCrOS,
-#if defined(OS_CHROMEOS)
-    // The switch exists only on Chrome OS.
-    SINGLE_VALUE_TYPE(switches::kEnableExperimentalEap)
-#else
-    SINGLE_VALUE_TYPE("")
-#endif
   },
   {
     "enable-vpn",
@@ -306,18 +314,18 @@ const Experiment kExperiments[] = {
     SINGLE_VALUE_TYPE(switches::kMultiProfiles)
   },
   {
-    "enable-history-quick-provider",
-    IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER,
-    IDS_FLAGS_ENABLE_HISTORY_QUICK_PROVIDER_DESCRIPTION,
-    kOsAll,
-    SINGLE_VALUE_TYPE(switches::kEnableHistoryQuickProvider)
-  },
-  {
     "restrict-instant-to-search",
     IDS_FLAGS_RESTRICT_INSTANT_TO_SEARCH_NAME,
     IDS_FLAGS_RESTRICT_INSTANT_TO_SEARCH_DESCRIPTION,
     kOsAll,
     SINGLE_VALUE_TYPE(switches::kRestrictInstantToSearch)
+  },
+  {
+    "indexeddb-use-leveldb",  // FLAGS:RECORD_UMA
+    IDS_FLAGS_INDEXEDDB_USE_LEVELDB_NAME,
+    IDS_FLAGS_INDEXEDDB_USE_LEVELDB_DESCRIPTION,
+    kOsAll,
+    SINGLE_VALUE_TYPE(switches::kLevelDBIndexedDatabase)
   },
 };
 
@@ -680,10 +688,21 @@ void FlagsState::SetExperimentEnabled(
   DCHECK(e);
 
   if (e->type == Experiment::SINGLE_VALUE) {
-    if (enable)
+    if (enable) {
       enabled_experiments.insert(internal_name);
-    else
+      // If enabling NaCl, make sure the plugin is also enabled. See bug
+      // http://code.google.com/p/chromium/issues/detail?id=81010 for more
+      // information.
+      // TODO(dspringer): When NaCl is on by default, remove this code.
+      if (internal_name == switches::kEnableNaCl) {
+        PluginUpdater* plugin_updater = PluginUpdater::GetInstance();
+        string16 nacl_plugin_name =
+            ASCIIToUTF16(chrome::ChromeContentClient::kNaClPluginName);
+        plugin_updater->EnablePluginGroup(true, nacl_plugin_name);
+      }
+    } else {
       enabled_experiments.erase(internal_name);
+    }
   } else {
     if (enable) {
       // Enable the first choice.
@@ -718,7 +737,7 @@ void FlagsState::reset() {
   flags_switches_.clear();
 }
 
-} // namespace
+}  // namespace
 
 namespace testing {
 

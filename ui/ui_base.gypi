@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'ui_base',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
@@ -60,7 +60,7 @@
         'base/range/range.mm',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
             '../build/linux/system.gyp:x11',

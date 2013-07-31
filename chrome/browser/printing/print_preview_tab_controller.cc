@@ -143,7 +143,7 @@ void PrintPreviewTabController::Observe(NotificationType type,
     // Initiator tab is closed. Disable the controls in preview tab.
     PrintPreviewUI* print_preview_ui =
         static_cast<PrintPreviewUI*>(preview_tab->web_ui());
-    print_preview_ui->OnInitiatorTabClosed();
+    print_preview_ui->OnInitiatorTabClosed(source_tab->GetURL().spec());
 
     // |source_tab| is an initiator tab, update the map entry.
     preview_tab_map_[preview_tab] = NULL;
@@ -170,6 +170,9 @@ TabContents* PrintPreviewTabController::CreatePrintPreviewTab(
     TabContents* initiator_tab) {
   Browser* current_browser = BrowserList::FindBrowserWithID(
       initiator_tab->controller().window_id().id());
+  if (!current_browser)
+    return NULL;
+
   // Add a new tab next to initiator tab.
   browser::NavigateParams params(current_browser,
                                  GURL(chrome::kChromeUIPrintURL),

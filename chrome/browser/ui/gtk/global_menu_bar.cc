@@ -56,23 +56,12 @@ GlobalMenuBarCommand file_menu[] = {
   { MENU_END, MENU_END }
 };
 
-// TODO(erg): Need to add support for undo/redo/other editing commands that
-// don't go through the command id framework.
 GlobalMenuBarCommand edit_menu[] = {
-  // TODO(erg): Undo
-  // TODO(erg): Redo
-
-  // TODO(erg): Separator
-
   { IDS_CUT, IDC_CUT },
   { IDS_COPY, IDC_COPY },
   { IDS_PASTE, IDC_PASTE },
-  // TODO(erg): Delete
 
   { MENU_SEPARATOR, MENU_SEPARATOR },
-
-  // TODO(erg): Select All
-  // TODO(erg): Another separator
 
   { IDS_FIND, IDC_FIND },
 
@@ -83,8 +72,6 @@ GlobalMenuBarCommand edit_menu[] = {
   { MENU_END, MENU_END }
 };
 
-// TODO(erg): The View menu should be overhauled and based on the Firefox view
-// menu.
 GlobalMenuBarCommand view_menu[] = {
   { IDS_SHOW_BOOKMARK_BAR, IDC_SHOW_BOOKMARK_BAR },
 
@@ -130,17 +117,6 @@ GlobalMenuBarCommand bookmark_menu[] = {
   { IDS_BOOKMARK_CURRENT_PAGE_LINUX, IDC_BOOKMARK_PAGE },
   { IDS_BOOKMARK_ALL_TABS_LINUX, IDC_BOOKMARK_ALL_TABS },
 
-  { MENU_SEPARATOR, MENU_SEPARATOR },
-  // TODO(erg): Real implementation of bookmark bar bookmarks!
-  { MENU_SEPARATOR, MENU_SEPARATOR },
-
-  { IDS_BOOMARK_BAR_OPEN_ALL, IDC_BOOKMARK_BAR_OPEN_ALL },
-  { IDS_BOOMARK_BAR_OPEN_ALL_NEW_WINDOW, IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW },
-  { IDS_BOOMARK_BAR_OPEN_ALL_INCOGNITO, IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO },
-
-  { MENU_SEPARATOR, MENU_SEPARATOR },
-  // TODO(erg): "Other bookmarks" bookmarks
-
   { MENU_END, MENU_END }
 };
 
@@ -176,6 +152,7 @@ GlobalMenuBar::GlobalMenuBar(Browser* browser)
       profile_(browser_->profile()),
       menu_bar_(gtk_menu_bar_new()),
       history_menu_(browser_),
+      bookmark_menu_(browser_),
       dummy_accel_group_(gtk_accel_group_new()),
       block_activation_(false) {
   // The global menu bar should never actually be shown in the app; it should
@@ -186,14 +163,15 @@ GlobalMenuBar::GlobalMenuBar(Browser* browser)
   // Set a nice name so it shows up in gtkparasite and others.
   gtk_widget_set_name(menu_bar_.get(), "chrome-hidden-global-menubar");
 
-  BuildGtkMenuFrom(IDS_FILE_MENU_LINUX, &id_to_menu_item_, file_menu);
-  BuildGtkMenuFrom(IDS_EDIT_MENU_LINUX, &id_to_menu_item_, edit_menu);
-  BuildGtkMenuFrom(IDS_VIEW_MENU_LINUX, &id_to_menu_item_, view_menu);
-  history_menu_.Init(BuildGtkMenuFrom(IDS_HISTORY_MENU_LINUX, &id_to_menu_item_,
-                                      history_menu));
-  BuildGtkMenuFrom(IDS_BOOKMARKS_MENU_LINUX, &id_to_menu_item_, bookmark_menu);
-  BuildGtkMenuFrom(IDS_TOOLS_MENU_LINUX, &id_to_menu_item_, tools_menu);
-  BuildGtkMenuFrom(IDS_HELP_MENU_LINUX, &id_to_menu_item_, help_menu);
+  BuildGtkMenuFrom(IDS_FILE_MENU_LINUX, &id_to_menu_item_, file_menu, NULL);
+  BuildGtkMenuFrom(IDS_EDIT_MENU_LINUX, &id_to_menu_item_, edit_menu, NULL);
+  BuildGtkMenuFrom(IDS_VIEW_MENU_LINUX, &id_to_menu_item_, view_menu, NULL);
+  BuildGtkMenuFrom(IDS_HISTORY_MENU_LINUX, &id_to_menu_item_,
+                   history_menu, &history_menu_);
+  BuildGtkMenuFrom(IDS_BOOKMARKS_MENU_LINUX, &id_to_menu_item_, bookmark_menu,
+                   &bookmark_menu_);
+  BuildGtkMenuFrom(IDS_TOOLS_MENU_LINUX, &id_to_menu_item_, tools_menu, NULL);
+  BuildGtkMenuFrom(IDS_HELP_MENU_LINUX, &id_to_menu_item_, help_menu, NULL);
 
   for (CommandIDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
        it != id_to_menu_item_.end(); ++it) {
@@ -235,10 +213,11 @@ GlobalMenuBar::~GlobalMenuBar() {
   g_object_unref(dummy_accel_group_);
 }
 
-GtkWidget* GlobalMenuBar::BuildGtkMenuFrom(
+void GlobalMenuBar::BuildGtkMenuFrom(
     int menu_str_id,
     std::map<int, GtkWidget*>* id_to_menu_item,
-    GlobalMenuBarCommand* commands) {
+    GlobalMenuBarCommand* commands,
+    GlobalMenuOwner* owner) {
   GtkWidget* menu = gtk_menu_new();
   for (int i = 0; commands[i].str_id != MENU_END; ++i) {
     GtkWidget* menu_item = BuildMenuItem(
@@ -252,11 +231,15 @@ GtkWidget* GlobalMenuBar::BuildGtkMenuFrom(
   GtkWidget* menu_item = gtk_menu_item_new_with_mnemonic(
       gfx::ConvertAcceleratorsFromWindowsStyle(
           l10n_util::GetStringUTF8(menu_str_id)).c_str());
+
+  // Give the owner a chance to sink the reference before we add it to the menu
+  // bar.
+  if (owner)
+    owner->Init(menu, menu_item);
+
   gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), menu);
   gtk_widget_show(menu_item);
   gtk_menu_shell_append(GTK_MENU_SHELL(menu_bar_.get()), menu_item);
-
-  return menu;
 }
 
 GtkWidget* GlobalMenuBar::BuildMenuItem(

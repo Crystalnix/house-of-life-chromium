@@ -11,6 +11,8 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/protocol/proto_enum_conversions.h"
+#include "chrome/browser/sync/sessions/session_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/chrome_switches.h"
@@ -239,8 +241,11 @@ MessageType GetStatus(ProfileSyncService* service) {
 }
 
 bool ShouldShowSyncErrorButton(ProfileSyncService* service) {
-  return service && !service->IsManaged() && service->HasSyncSetupCompleted() &&
-      (GetStatus(service) == sync_ui_util::SYNC_ERROR);
+  return service &&
+         ((!service->IsManaged() &&
+           service->HasSyncSetupCompleted()) &&
+         (GetStatus(service) == sync_ui_util::SYNC_ERROR ||
+          service->IsPassphraseRequired()));
 }
 
 string16 GetSyncMenuLabel(ProfileSyncService* service) {
@@ -272,7 +277,7 @@ void OpenSyncMyBookmarksDialog(Profile* profile,
     if (create_window)
       browser->window()->Show();
   } else {
-    service->ShowLoginDialog();
+    service->ShowLoginDialog(NULL);
     ProfileSyncService::SyncEvent(code);  // UMA stats
   }
 }
@@ -283,6 +288,14 @@ void AddBoolSyncDetail(ListValue* details,
   DictionaryValue* val = new DictionaryValue;
   val->SetString("stat_name", stat_name);
   val->SetBoolean("stat_value", stat_value);
+  details->Append(val);
+}
+
+void AddStringSyncDetails(ListValue* details, const std::string& stat_name,
+                          const std::string& stat_value) {
+  DictionaryValue* val = new DictionaryValue;
+  val->SetString("stat_name", stat_name);
+  val->SetString("stat_value", stat_value);
   details->Append(val);
 }
 
@@ -344,6 +357,8 @@ void ConstructAboutInformation(ProfileSyncService* service,
 
     ListValue* details = new ListValue();
     strings->Set("details", details);
+    sync_ui_util::AddBoolSyncDetail(details, "Sync Initialized",
+                                    service->sync_initialized());
     sync_ui_util::AddBoolSyncDetail(details, "Sync Setup Has Completed",
                                     service->HasSyncSetupCompleted());
     sync_ui_util::AddBoolSyncDetail(details,
@@ -362,8 +377,8 @@ void ConstructAboutInformation(ProfileSyncService* service,
                                    "Notifications Received",
                                    full_status.notifications_received);
     sync_ui_util::AddIntSyncDetail(details,
-                                   "Notifications Sent",
-                                   full_status.notifications_sent);
+                                   "Notifiable Commits",
+                                   full_status.notifiable_commits);
     sync_ui_util::AddIntSyncDetail(details,
                                    "Unsynced Count",
                                    full_status.unsynced_count);
@@ -398,18 +413,55 @@ void ConstructAboutInformation(ProfileSyncService* service,
     sync_ui_util::AddIntSyncDetail(details,
                                    "Max Consecutive Errors",
                                    full_status.max_consecutive_errors);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Empty GetUpdates",
+                                   full_status.empty_get_updates);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Nonempty GetUpdates",
+                                   full_status.nonempty_get_updates);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Useless Sync Cycles",
+                                   full_status.useless_sync_cycles);
+    sync_ui_util::AddIntSyncDetail(details,
+                                   "Useful Sync Cycles",
+                                   full_status.useful_sync_cycles);
+
+    const browser_sync::sessions::SyncSessionSnapshot* snapshot =
+        service->sync_initialized() ?
+        service->GetLastSessionSnapshot() : NULL;
+
+    // |snapshot| could be NULL if sync is not yet initialized.
+    if (snapshot) {
+      sync_ui_util::AddIntSyncDetail(details, "Download Count (This Session)",
+          snapshot->syncer_status.num_updates_downloaded_total);
+      sync_ui_util::AddIntSyncDetail(details, "Commit Count (This Session)",
+          snapshot->syncer_status.num_successful_commits);
+      sync_ui_util::AddStringSyncDetails(details, "Last Sync Source",
+          browser_sync::GetUpdatesSourceString(
+          snapshot->source.updates_source));
+
+      // Print the count of entries from snapshot. Warning: This might be
+      // slightly out of date if there are client side changes that are yet
+      // unsynced  However if we query the latest count here we will
+      // have to hold the transaction which means we cannot display this page
+      // when syncing.
+      sync_ui_util::AddIntSyncDetail(details, "Entries" ,
+                                     snapshot->num_entries);
+      sync_ui_util::AddBoolSyncDetail(details, "Throttled",
+                                      snapshot->is_silenced);
+    }
 
     if (service->unrecoverable_error_detected()) {
       strings->Set("unrecoverable_error_detected", new FundamentalValue(true));
-      strings->SetString("unrecoverable_error_message",
-                         service->unrecoverable_error_message());
       tracked_objects::Location loc(service->unrecoverable_error_location());
       std::string location_str;
       loc.Write(true, true, &location_str);
-      strings->SetString("unrecoverable_error_location", location_str);
-    } else if (!service->sync_initialized()) {
-      strings->SetString("summary", "Sync not yet initialized");
-    } else {
+      std::string unrecoverable_error_message =
+          "Unrecoverable error detected at " + location_str +
+          ": " + service->unrecoverable_error_message();
+      strings->SetString("unrecoverable_error_message",
+                         unrecoverable_error_message);
+    } else if (service->sync_initialized()) {
       browser_sync::ModelSafeRoutingInfo routes;
       service->GetModelSafeRoutingInfo(&routes);
       ListValue* routing_info = new ListValue();

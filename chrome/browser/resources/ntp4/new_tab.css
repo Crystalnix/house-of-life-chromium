@@ -6,9 +6,12 @@
  */
 
 html {
+  font-family: segoe ui, arial, helvetica, sans-serif;
+  font-size: 14px;
   /* It's necessary to put this here instead of in body in order to get the
      background-size of 100% to work properly */
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -21,10 +24,8 @@ body {
   -webkit-user-select: none;
 }
 
-body,
-button span {
-  font-family: segoe ui, arial, helvetica, sans-serif;
-  font-size: 14px;
+.hidden {
+  display: none !important;
 }
 
 #card-slider-frame {
@@ -43,6 +44,20 @@ button span {
   /* fill the apps-frame */
   height: 100%;
   display: -webkit-box;
+}
+
+#attribution {
+  bottom: 0;
+  position: absolute;
+  right: 0;
+  z-index: -5;
+}
+
+#attribution > span {
+  display: block;
+  font-size: 84%;
+  /* Text should be left aligned regardless of diretionality. */
+  text-align: left;
 }
 
 #footer {

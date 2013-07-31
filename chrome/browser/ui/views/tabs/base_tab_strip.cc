@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/views/tabs/base_tab_strip.h"
 
 #include "base/logging.h"
-#include "chrome/browser/ui/title_prefix_matcher.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/tabs/dragged_tab_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
@@ -13,7 +12,8 @@
 #include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include "views/widget/widget_win.h"
+// GET_X_LPARAM, et al.
+#include <windowsx.h>
 #endif
 
 namespace {
@@ -94,15 +94,14 @@ class BaseTabStrip::RemoveTabDelegate
     // This can be null during shutdown. See http://crbug.com/42737.
     if (!widget)
       return;
+
+    widget->ResetLastMouseMoveFlag();
+
     // Force the close button (that slides under the mouse) to highlight by
     // saying the mouse just moved, but sending the same coordinates.
     DWORD pos = GetMessagePos();
     POINT cursor_point = {GET_X_LPARAM(pos), GET_Y_LPARAM(pos)};
     MapWindowPoints(NULL, widget->GetNativeView(), &cursor_point, 1);
-
-    static_cast<views::WidgetWin*>(widget)->ResetLastMouseMoveFlag();
-    // Return to message loop - otherwise we may disrupt some operation that's
-    // in progress.
     SendMessage(widget->GetNativeView(), WM_MOUSEMOVE, 0,
                 MAKELPARAM(cursor_point.x, cursor_point.y));
 #else
@@ -132,7 +131,6 @@ void BaseTabStrip::AddTabAt(int model_index, const TabRendererData& data) {
 
   TabData d = { tab, gfx::Rect() };
   tab_data_.insert(tab_data_.begin() + ModelIndexToTabIndex(model_index), d);
-  UpdateCommonTitlePrefix();
 
   AddChildView(tab);
 
@@ -160,7 +158,6 @@ void BaseTabStrip::SetTabData(int model_index, const TabRendererData& data) {
   BaseTab* tab = GetBaseTabAtModelIndex(model_index);
   bool mini_state_changed = tab->data().mini != data.mini;
   tab->SetData(data);
-  UpdateCommonTitlePrefix();
 
   if (mini_state_changed) {
     if (GetWindow() && GetWindow()->IsVisible())
@@ -355,7 +352,8 @@ void BaseTabStrip::ContinueDrag(const views::MouseEvent& event) {
     if (drag_controller_->started_drag() && !started_drag) {
       // The drag just started. Redirect mouse events to us to that the tab that
       // originated the drag can be safely deleted.
-      GetRootView()->SetMouseHandler(this);
+      static_cast<views::internal::RootView*>(GetWidget()->GetRootView())->
+          SetMouseHandler(this);
     }
   }
 }
@@ -375,11 +373,36 @@ BaseTab* BaseTabStrip::GetTabAt(BaseTab* tab,
   return GetTabAtLocal(local_point);
 }
 
+void BaseTabStrip::ClickActiveTab(const BaseTab* tab) const {
+  DCHECK(IsActiveTab(tab));
+  int index = GetModelIndexOfBaseTab(tab);
+  if (controller() && IsValidModelIndex(index))
+    controller()->ClickActiveTab(index);
+}
+
 void BaseTabStrip::Layout() {
   // Only do a layout if our size changed.
   if (last_layout_size_ == size())
     return;
   DoLayout();
+}
+
+// Overridden to support automation. See automation_proxy_uitest.cc.
+const views::View* BaseTabStrip::GetViewByID(int view_id) const {
+  if (tab_count() > 0) {
+    if (view_id == VIEW_ID_TAB_LAST) {
+      return base_tab_at_tab_index(tab_count() - 1);
+    } else if ((view_id >= VIEW_ID_TAB_0) && (view_id < VIEW_ID_TAB_LAST)) {
+      int index = view_id - VIEW_ID_TAB_0;
+      if (index >= 0 && index < tab_count()) {
+        return base_tab_at_tab_index(index);
+      } else {
+        return NULL;
+      }
+    }
+  }
+
+  return View::GetViewByID(view_id);
 }
 
 bool BaseTabStrip::OnMouseDragged(const views::MouseEvent&  event) {
@@ -447,36 +470,6 @@ void BaseTabStrip::RemoveAndDeleteTab(BaseTab* tab) {
   tab_data_.erase(tab_data_.begin() + tab_data_index);
 
   delete tab;
-  UpdateCommonTitlePrefix();
-}
-
-bool BaseTabStrip::IgnoreTitlePrefixEliding(BaseTab* tab) {
-  DCHECK(tab != NULL);
-  return tab->data().mini || tab->data().title.empty();
-}
-
-void BaseTabStrip::UpdateCommonTitlePrefix() {
-  std::vector<TitlePrefixMatcher::TitleInfo> tab_title_infos;
-  for (int tab_index = 0; tab_index < tab_count(); ++tab_index) {
-    DCHECK(tab_data_[tab_index].tab != NULL);
-    if (!IgnoreTitlePrefixEliding(tab_data_[tab_index].tab)) {
-      tab_title_infos.push_back(TitlePrefixMatcher::TitleInfo(
-          &tab_data_[tab_index].tab->data().title,
-          tab_data_[tab_index].tab->data().url,
-          tab_index));
-    }
-  }
-  TitlePrefixMatcher::CalculatePrefixLengths(&tab_title_infos);
-  for (size_t title_index = 0; title_index < tab_title_infos.size();
-       ++title_index) {
-    int tab_index = tab_title_infos[title_index].caller_value;
-    TabRendererData data = tab_data_[tab_index].tab->data();
-    if (data.common_prefix_length !=
-        tab_title_infos[title_index].prefix_length) {
-      data.common_prefix_length = tab_title_infos[title_index].prefix_length;
-      tab_data_[tab_index].tab->SetData(data);
-    }
-  }
 }
 
 int BaseTabStrip::TabIndexOfTab(BaseTab* tab) const {

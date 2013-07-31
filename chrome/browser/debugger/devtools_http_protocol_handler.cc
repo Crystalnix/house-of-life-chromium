@@ -10,6 +10,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
+#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
@@ -152,11 +153,11 @@ void DevToolsHttpProtocolHandler::OnHttpRequest(
 
   net::URLRequest* request;
 
-  if (info.path.find("/devtools/") == 0)
+  if (info.path.find("/devtools/") == 0) {
     request = new net::URLRequest(GURL("chrome-devtools:/" + info.path), this);
-  else if (info.path.find("/thumb/") == 0)
+  } else if (info.path.find("/thumb/") == 0) {
     request = new net::URLRequest(GURL("chrome:/" + info.path), this);
-  else {
+  } else {
     server_->Send404(connection_id);
     return;
   }
@@ -285,11 +286,11 @@ void DevToolsHttpProtocolHandler::OnJsonRequestUI(
                            StringPrintf("ws://%s/devtools/page/%d",
                                         host.c_str(),
                                         i->id));
-      page_info->SetString(
-          "devtoolsFrontendUrl",
-          StringPrintf("http://%s/devtools/devtools.html?page=%d",
-                       host.c_str(),
-                       i->id));
+      page_info->SetString("devtoolsFrontendUrl",
+                           StringPrintf("%s?host=%s&page=%d",
+                                        overridden_frontend_url_.c_str(),
+                                        host.c_str(),
+                                        i->id));
     }
   }
 
@@ -430,10 +431,10 @@ DevToolsHttpProtocolHandler::DevToolsHttpProtocolHandler(
     TabContentsProvider* provider)
     : ip_(ip),
       port_(port),
-      overriden_frontend_url_(frontend_host),
+      overridden_frontend_url_(frontend_host),
       tab_contents_provider_(provider) {
-  if (overriden_frontend_url_.empty())
-      overriden_frontend_url_ = "/devtools/devtools.html";
+  if (overridden_frontend_url_.empty())
+      overridden_frontend_url_ = "/devtools/devtools.html";
 }
 
 void DevToolsHttpProtocolHandler::Init() {

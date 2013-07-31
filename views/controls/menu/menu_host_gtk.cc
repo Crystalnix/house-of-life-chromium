@@ -23,7 +23,8 @@ namespace views {
 // MenuHostGtk, public:
 
 MenuHostGtk::MenuHostGtk(internal::NativeMenuHostDelegate* delegate)
-    : did_input_grab_(false),
+    : NativeWidgetGtk(delegate->AsNativeWidgetDelegate()),
+      did_input_grab_(false),
       delegate_(delegate) {
 }
 
@@ -79,28 +80,18 @@ NativeWidget* MenuHostGtk::AsNativeWidget() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// MenuHostGtk, WidgetGtk overrides:
+// MenuHostGtk, NativeWidgetGtk overrides:
 
 void MenuHostGtk::InitNativeWidget(const Widget::InitParams& params) {
-  make_transient_to_parent();
-  WidgetGtk::InitNativeWidget(params);
+  NativeWidgetGtk::InitNativeWidget(params);
   // Make sure we get destroyed when the parent is destroyed.
   gtk_window_set_destroy_with_parent(GTK_WINDOW(GetNativeView()), TRUE);
   gtk_window_set_type_hint(GTK_WINDOW(GetNativeView()),
                            GDK_WINDOW_TYPE_HINT_MENU);
 }
 
-// TODO(beng): remove once MenuHost is-a Widget
-RootView* MenuHostGtk::CreateRootView() {
-  return delegate_->CreateRootView();
-}
-
-bool MenuHostGtk::ShouldReleaseCaptureOnMouseReleased() const {
-  return delegate_->ShouldReleaseCaptureOnMouseRelease();
-}
-
 void MenuHostGtk::ReleaseMouseCapture() {
-  WidgetGtk::ReleaseMouseCapture();
+  NativeWidgetGtk::ReleaseMouseCapture();
   if (did_input_grab_) {
     did_input_grab_ = false;
     gdk_pointer_ungrab(GDK_CURRENT_TIME);
@@ -114,7 +105,7 @@ void MenuHostGtk::ReleaseMouseCapture() {
 
 void MenuHostGtk::OnDestroy(GtkWidget* object) {
   delegate_->OnNativeMenuHostDestroy();
-  WidgetGtk::OnDestroy(object);
+  NativeWidgetGtk::OnDestroy(object);
 }
 
 void MenuHostGtk::HandleXGrabBroke() {
@@ -123,7 +114,7 @@ void MenuHostGtk::HandleXGrabBroke() {
     did_input_grab_ = false;
     delegate_->OnNativeMenuHostCancelCapture();
   }
-  WidgetGtk::HandleXGrabBroke();
+  NativeWidgetGtk::HandleXGrabBroke();
 }
 
 void MenuHostGtk::HandleGtkGrabBroke() {
@@ -132,7 +123,7 @@ void MenuHostGtk::HandleGtkGrabBroke() {
     ReleaseMouseCapture();
     delegate_->OnNativeMenuHostCancelCapture();
   }
-  WidgetGtk::HandleGtkGrabBroke();
+  NativeWidgetGtk::HandleGtkGrabBroke();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

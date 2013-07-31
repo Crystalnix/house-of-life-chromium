@@ -34,6 +34,29 @@ struct InstanceData {
 
 class PluginDispatcher : public Dispatcher {
  public:
+  class PluginDelegate : public ProxyChannel::Delegate {
+   public:
+    // Returns the set used for globally uniquifying PP_Instances. This same
+    // set must be returned for all channels.
+    //
+    // DEREFERENCE ONLY ON THE I/O THREAD.
+    virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() = 0;
+
+    // Returns the WebKit forwarding object used to make calls into WebKit.
+    // Necessary only on the plugin side.
+    virtual ppapi::WebKitForwarding* GetWebKitForwarding() = 0;
+
+    // Posts the given task to the WebKit thread associated with this plugin
+    // process. The WebKit thread should be lazily created if it does not
+    // exist yet.
+    virtual void PostToWebKitThread(const tracked_objects::Location& from_here,
+                                    const base::Closure& task) = 0;
+
+    // Sends the given message to the browser. Identical semantics to
+    // IPC::Message::Sender interface.
+    virtual bool SendToBrowser(IPC::Message* msg) = 0;
+  };
+
   // Constructor for the plugin side. The init and shutdown functions will be
   // will be automatically called when requested by the renderer side. The
   // module ID will be set upon receipt of the InitializeModule message.
@@ -54,9 +77,9 @@ class PluginDispatcher : public Dispatcher {
   // You must call this function before anything else. Returns true on success.
   // The delegate pointer must outlive this class, ownership is not
   // transferred.
-  virtual bool InitPluginWithChannel(Dispatcher::Delegate* delegate,
-                                     const IPC::ChannelHandle& channel_handle,
-                                     bool is_client);
+  bool InitPluginWithChannel(PluginDelegate* delegate,
+                             const IPC::ChannelHandle& channel_handle,
+                             bool is_client);
 
   // Dispatcher overrides.
   virtual bool IsPlugin() const;
@@ -75,11 +98,21 @@ class PluginDispatcher : public Dispatcher {
   // correspond to a known instance.
   InstanceData* GetInstanceData(PP_Instance instance);
 
+  // Posts the given task to the WebKit thread.
+  void PostToWebKitThread(const tracked_objects::Location& from_here,
+                          const base::Closure& task);
+
+  // Calls the PluginDelegate.SendToBrowser function.
+  bool SendToBrowser(IPC::Message* msg);
+
+  // Returns the WebKitForwarding object used to forward events to WebKit.
+  ppapi::WebKitForwarding* GetWebKitForwarding();
+
   // Returns the "new-style" function API for the given interface ID, creating
   // it if necessary.
   // TODO(brettw) this is in progress. It should be merged with the target
   // proxies so there is one list to consult.
-  ::ppapi::shared_impl::FunctionGroupBase* GetFunctionAPI(
+  ppapi::FunctionGroupBase* GetFunctionAPI(
       pp::proxy::InterfaceID id);
 
  private:
@@ -92,6 +125,8 @@ class PluginDispatcher : public Dispatcher {
   // IPC message handlers.
   void OnMsgSupportsInterface(const std::string& interface_name, bool* result);
 
+  PluginDelegate* plugin_delegate_;
+
   // All target proxies currently created. These are ones that receive
   // messages.
   scoped_ptr<InterfaceProxy> target_proxies_[INTERFACE_ID_COUNT];
@@ -99,7 +134,7 @@ class PluginDispatcher : public Dispatcher {
   // Function proxies created for "new-style" FunctionGroups.
   // TODO(brettw) this is in progress. It should be merged with the target
   // proxies so there is one list to consult.
-  scoped_ptr< ::ppapi::shared_impl::FunctionGroupBase >
+  scoped_ptr< ::ppapi::FunctionGroupBase >
       function_proxies_[INTERFACE_ID_COUNT];
 
   typedef base::hash_map<PP_Instance, InstanceData> InstanceDataMap;

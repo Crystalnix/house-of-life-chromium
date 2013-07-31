@@ -53,8 +53,8 @@
           <h1 i18n-content="copiesLabel"></h1>
           <div>
             <div>
-              <input id="copies" type="text" name="copies" value="1" min=1"
-                  max="999" class="number small" placeholder="1"/>
+              <input id="copies" type="text" name="copies" value="1" min="1"
+                  max="999" maxlength="3" class="number small"/>
               <button id="increment">+</button>
               <button id="decrement">–</button>
               <span id="collate-option" hidden>
@@ -70,24 +70,6 @@
             </div>
           </div>
         </div>
-        <div id="binding" class="hidden-section">
-          <div class="extra">
-            <div class="two-column">
-              <h1 i18n-content="bindingLabel"></h1>
-              <div>
-                <div>
-                  <input id="long-edge" type="radio" name="binding" checked/>
-                  <label for="long-edge"
-                      i18n-content="optionLongEdgeBinding"></label>
-                </div>
-                <div>
-                  <input id="short-edge "type="radio" name="binding"/>
-                  <label for="short-edge"
-                      i18n-content="optionShortEdgeBinding"></label>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
         <hr>
         <div class="two-column">
@@ -132,14 +114,20 @@
     </form>
   </div>
   <div id="mainview">
-    <p id="no-plugin" class="hidden" i18n-values=".innerHTML:noPlugin"></p>
-    <p id="preview-failed" class="hidden" i18n-content="previewFailed"></p>
-      <div id="dancing-dots" class="invisible">
+    <div id="dancing-dots" class="invisible">
+      <div id="messages">
         <div id="dancing-dots-text">
-          <span i18n-content="loading"></span>
+          <span id="loading" i18n-content="loading"></span>
           <span><span>.</span><span>.</span><span>.</span></span>
         </div>
+        <div id="error-text" class="hidden"></div>
+        <br>
+        <button id="reopen-page" class="hidden"
+            i18n-content="reopenPage"></button>
       </div>
+    </div>
   </div>
+  <object id="dummy-viewer" type="application/pdf"
+      src="chrome://print/dummy.pdf"/>
 </body>
 </html>

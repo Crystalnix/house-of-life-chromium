@@ -36,13 +36,14 @@
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
 #include "chrome/browser/printing/print_dialog_cloud.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
 #include "chrome/browser/sessions/session_restore.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_factory.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/browser/tab_contents/link_infobar_delegate.h"
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
 #include "chrome/browser/tabs/pinned_tab_codec.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
@@ -61,7 +62,6 @@
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/tab_contents/tab_contents_view.h"
 #include "content/common/result_codes.h"
 #include "grit/chromium_strings.h"
@@ -70,7 +70,6 @@
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "net/base/net_util.h"
-#include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "webkit/glue/webkit_glue.h"
@@ -79,7 +78,7 @@
 #include "chrome/browser/ui/cocoa/keystone_infobar.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #endif
 
@@ -187,7 +186,7 @@ DefaultBrowserInfoBarDelegate::~DefaultBrowserInfoBarDelegate() {
 
 bool DefaultBrowserInfoBarDelegate::ShouldExpire(
     const NavigationController::LoadCommittedDetails& details) const {
-  return should_expire_;
+  return details.is_user_initiated_main_frame_load() && should_expire_;
 }
 
 gfx::Image* DefaultBrowserInfoBarDelegate::GetIcon() const {
@@ -253,10 +252,10 @@ void NotifyNotDefaultBrowserTask::Run() {
   // Don't show the info-bar if there are already info-bars showing.
   // In ChromeBot tests, there might be a race. This line appears to get
   // called during shutdown and |tab| can be NULL.
-  TabContents* tab = browser->GetSelectedTabContents();
+  TabContentsWrapper* tab = browser->GetSelectedTabContentsWrapper();
   if (!tab || tab->infobar_count() > 0)
     return;
-  tab->AddInfoBar(new DefaultBrowserInfoBarDelegate(tab));
+  tab->AddInfoBar(new DefaultBrowserInfoBarDelegate(tab->tab_contents()));
 }
 
 
@@ -991,7 +990,8 @@ Browser* BrowserInit::LaunchWithProfile::OpenTabsInBrowser(
     // This avoids us getting into an infinite loop asking ourselves to open
     // a URL, should the handler be (incorrectly) configured to be us. Anyone
     // asking us to open such a URL should really ask the handler directly.
-    if (!process_startup && !net::URLRequest::IsHandledURL(tabs[i].url))
+    if (!process_startup &&
+        !ProfileIOData::IsHandledURL(tabs[i].url))
       continue;
 
     int add_types = first_tab ? TabStripModel::ADD_ACTIVE :
@@ -1023,14 +1023,15 @@ void BrowserInit::LaunchWithProfile::AddInfoBarsIfNecessary(Browser* browser) {
   if (!browser || !profile_ || browser->tab_count() == 0)
     return;
 
-  TabContents* tab_contents = browser->GetSelectedTabContents();
+  TabContentsWrapper* tab_contents = browser->GetSelectedTabContentsWrapper();
   AddCrashedInfoBarIfNecessary(tab_contents);
   AddBadFlagsInfoBarIfNecessary(tab_contents);
   AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(tab_contents);
+  AddObsoleteSystemInfoBarIfNecessary(tab_contents);
 }
 
 void BrowserInit::LaunchWithProfile::AddCrashedInfoBarIfNecessary(
-    TabContents* tab) {
+    TabContentsWrapper* tab) {
   // Assume that if the user is launching incognito they were previously
   // running incognito so that we have nothing to restore from.
   if (!profile_->DidLastSessionExitCleanly() &&
@@ -1038,15 +1039,19 @@ void BrowserInit::LaunchWithProfile::AddCrashedInfoBarIfNecessary(
     // The last session didn't exit cleanly. Show an infobar to the user
     // so that they can restore if they want. The delegate deletes itself when
     // it is closed.
-    tab->AddInfoBar(new SessionCrashedInfoBarDelegate(tab));
+    tab->AddInfoBar(new SessionCrashedInfoBarDelegate(tab->tab_contents()));
   }
 }
 
 void BrowserInit::LaunchWithProfile::AddBadFlagsInfoBarIfNecessary(
-    TabContents* tab) {
+    TabContentsWrapper* tab) {
   // Unsupported flags for which to display a warning that "stability and
   // security will suffer".
   static const char* kBadFlags[] = {
+    // Warn when accelerated 2d canvas is enabled as its presence can
+    // affect stability and rendering correctness of certain pages.
+    // TODO(vangelis): Remove when accelerated 2d canvas is enabled by default.
+    switches::kEnableAccelerated2dCanvas,
     // These imply disabling the sandbox.
     switches::kSingleProcess,
     switches::kNoSandbox,
@@ -1063,70 +1068,101 @@ void BrowserInit::LaunchWithProfile::AddBadFlagsInfoBarIfNecessary(
   }
 
   if (bad_flag) {
-    tab->AddInfoBar(new SimpleAlertInfoBarDelegate(tab, NULL,
+    tab->AddInfoBar(new SimpleAlertInfoBarDelegate(tab->tab_contents(), NULL,
         l10n_util::GetStringFUTF16(IDS_BAD_FLAGS_WARNING_MESSAGE,
                                    UTF8ToUTF16(std::string("--") + bad_flag)),
         false));
   }
 }
 
-class DNSCertProvenanceCheckingInfoBar : public ConfirmInfoBarDelegate {
+class LearnMoreInfoBar : public LinkInfoBarDelegate {
  public:
-  explicit DNSCertProvenanceCheckingInfoBar(TabContents* tab_contents);
-  virtual ~DNSCertProvenanceCheckingInfoBar();
+  explicit LearnMoreInfoBar(TabContents* tab_contents,
+                            const string16& message,
+                            const GURL& url);
+  virtual ~LearnMoreInfoBar();
 
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
+  virtual string16 GetMessageTextWithOffset(size_t* link_offset) const OVERRIDE;
+  virtual string16 GetLinkText() const OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
  private:
-  static const char kLearnMoreURL[];
   TabContents* const tab_contents_;
+  string16 message_;
+  GURL learn_more_url_;
 
-  DISALLOW_COPY_AND_ASSIGN(DNSCertProvenanceCheckingInfoBar);
+  DISALLOW_COPY_AND_ASSIGN(LearnMoreInfoBar);
 };
 
-DNSCertProvenanceCheckingInfoBar::DNSCertProvenanceCheckingInfoBar(
-    TabContents* tab_contents)
-    : ConfirmInfoBarDelegate(tab_contents),
-      tab_contents_(tab_contents) {
+LearnMoreInfoBar::LearnMoreInfoBar(TabContents* tab_contents,
+                                   const string16& message,
+                                   const GURL& url)
+    : LinkInfoBarDelegate(tab_contents),
+      tab_contents_(tab_contents),
+      message_(message),
+      learn_more_url_(url) {
 }
 
-DNSCertProvenanceCheckingInfoBar::~DNSCertProvenanceCheckingInfoBar() {
+LearnMoreInfoBar::~LearnMoreInfoBar() {
 }
 
-string16 DNSCertProvenanceCheckingInfoBar::GetMessageText() const {
-  return l10n_util::GetStringUTF16(
-      IDS_DNS_CERT_PROVENANCE_CHECKING_WARNING_MESSAGE);
+string16 LearnMoreInfoBar::GetMessageTextWithOffset(size_t* link_offset) const {
+  string16 text = message_;
+  text.push_back(' ');  // Add a space before the following link.
+  *link_offset = text.size();
+  return text;
 }
 
-int DNSCertProvenanceCheckingInfoBar::GetButtons() const {
-  return BUTTON_OK;
-}
-
-string16 DNSCertProvenanceCheckingInfoBar::GetButtonLabel(
-    InfoBarButton button) const {
+string16 LearnMoreInfoBar::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
-bool DNSCertProvenanceCheckingInfoBar::Accept() {
-  tab_contents_->OpenURL(GURL(kLearnMoreURL), GURL(), NEW_FOREGROUND_TAB,
-                         PageTransition::AUTO_BOOKMARK);
-  return true;
+bool LearnMoreInfoBar::LinkClicked(WindowOpenDisposition disposition) {
+  tab_contents_->OpenURL(learn_more_url_, GURL(), disposition,
+                         PageTransition::LINK);
+  return false;
 }
 
 // This is the page which provides information on DNS certificate provenance
 // checking.
-const char DNSCertProvenanceCheckingInfoBar::kLearnMoreURL[] =
-    "http://dev.chromium.org/dnscertprovenancechecking";
-
 void BrowserInit::LaunchWithProfile::
-    AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(TabContents* tab) {
+    AddDNSCertProvenanceCheckingWarningInfoBarIfNecessary(
+        TabContentsWrapper* tab) {
   if (!command_line_.HasSwitch(switches::kEnableDNSCertProvenanceChecking))
     return;
 
-  tab->AddInfoBar(new DNSCertProvenanceCheckingInfoBar(tab));
+  const char* kLearnMoreURL =
+      "http://dev.chromium.org/dnscertprovenancechecking";
+  string16 message = l10n_util::GetStringUTF16(
+      IDS_DNS_CERT_PROVENANCE_CHECKING_WARNING_MESSAGE);
+  tab->AddInfoBar(new LearnMoreInfoBar(tab->tab_contents(),
+                                       message,
+                                       GURL(kLearnMoreURL)));
+}
+
+void BrowserInit::LaunchWithProfile::AddObsoleteSystemInfoBarIfNecessary(
+    TabContentsWrapper* tab) {
+#if defined(TOOLKIT_USES_GTK)
+  // We've deprecated support for Ubuntu Hardy.  Rather than attempting to
+  // determine whether you're using that, we instead key off the GTK version;
+  // this will also deprecate other distributions (including variants of Ubuntu)
+  // that are of a similar age.
+  // Version key:
+  //   Ubuntu Hardy: GTK 2.12
+  //   RHEL 6:       GTK 2.18
+  //   Ubuntu Lucid: GTK 2.20
+  if (gtk_check_version(2, 18, 0)) {
+    string16 message =
+        l10n_util::GetStringFUTF16(IDS_SYSTEM_OBSOLETE_MESSAGE,
+                                   l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+    // Link to an article in the help center on minimum system requirements.
+    const char* kLearnMoreURL =
+        "http://www.google.com/support/chrome/bin/answer.py?answer=95411";
+    tab->AddInfoBar(new LearnMoreInfoBar(tab->tab_contents(),
+                                         message,
+                                         GURL(kLearnMoreURL)));
+  }
+#endif
 }
 
 void BrowserInit::LaunchWithProfile::AddStartupURLs(
@@ -1200,7 +1236,7 @@ std::vector<GURL> BrowserInit::GetURLsFromCommandLine(
     const FilePath& cur_dir,
     Profile* profile) {
   std::vector<GURL> urls;
-  const std::vector<CommandLine::StringType>& params = command_line.args();
+  CommandLine::StringVector params = command_line.args();
 
   for (size_t i = 0; i < params.size(); ++i) {
     FilePath param = FilePath(params[i]);

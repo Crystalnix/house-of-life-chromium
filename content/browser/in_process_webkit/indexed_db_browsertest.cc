@@ -6,7 +6,7 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_temp_dir.h"
+#include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
@@ -49,7 +49,18 @@ class IndexedDBBrowserTest : public InProcessBrowserTest {
   }
 };
 
+class IndexedDBLevelDBBrowserTest : public IndexedDBBrowserTest {
+ public:
+  virtual void SetUpCommandLine(CommandLine* command_line) {
+    command_line->AppendSwitch(switches::kLevelDBIndexedDatabase);
+  }
+};
+
 IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, CursorTest) {
+  SimpleTest(testUrl(FilePath(FILE_PATH_LITERAL("cursor_test.html"))));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBLevelDBBrowserTest, CursorTest) {
   SimpleTest(testUrl(FilePath(FILE_PATH_LITERAL("cursor_test.html"))));
 }
 

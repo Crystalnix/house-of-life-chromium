@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/scoped_temp_dir.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/scoped_temp_dir.h"
 #include "base/stl_util-inl.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
@@ -14,10 +14,10 @@
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "content/browser/browser_thread.h"
 #include "content/common/notification_details.h"
 #include "content/common/notification_observer_mock.h"
 #include "content/common/notification_source.h"
-#include "content/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -38,15 +38,15 @@ const char kDefaultPref4[] = "default pref 4";
 
 }  // namespace
 
-static void AddPattern(ExtensionExtent* extent, const std::string& pattern) {
+static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
   int schemes = URLPattern::SCHEME_ALL;
   extent->AddPattern(URLPattern(schemes, pattern));
 }
 
-static void AssertEqualExtents(ExtensionExtent* extent1,
-                               ExtensionExtent* extent2) {
-  std::vector<URLPattern> patterns1 = extent1->patterns();
-  std::vector<URLPattern> patterns2 = extent2->patterns();
+static void AssertEqualExtents(URLPatternSet* extent1,
+                               URLPatternSet* extent2) {
+  URLPatternList patterns1 = extent1->patterns();
+  URLPatternList patterns2 = extent2->patterns();
   std::set<std::string> strings1;
   EXPECT_EQ(patterns1.size(), patterns2.size());
 
@@ -231,8 +231,8 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
     std::set<std::string> empty_set;
     std::set<std::string> api_perms;
     bool full_access = false;
-    ExtensionExtent host_perms;
-    ExtensionExtent empty_extent;
+    URLPatternSet host_perms;
+    URLPatternSet empty_extent;
 
     // Make sure both granted api and host permissions start empty.
     EXPECT_FALSE(prefs()->GetGrantedPermissions(
@@ -249,7 +249,7 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
     EXPECT_EQ(api_perm_set1_, api_perms);
     EXPECT_TRUE(host_perms.is_empty());
     EXPECT_FALSE(full_access);
-    host_perms.ClearPaths();
+    host_perms.ClearPatterns();
     api_perms.clear();
 
     // Add part of the host permissions.
@@ -260,7 +260,7 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
     EXPECT_FALSE(full_access);
     EXPECT_EQ(api_perm_set1_, api_perms);
     AssertEqualExtents(&host_perm_set1_, &host_perms);
-    host_perms.ClearPaths();
+    host_perms.ClearPatterns();
     api_perms.clear();
 
     // Add the rest of both the api and host permissions.
@@ -278,7 +278,7 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
 
   virtual void Verify() {
     std::set<std::string> api_perms;
-    ExtensionExtent host_perms;
+    URLPatternSet host_perms;
     bool full_access;
 
     EXPECT_TRUE(prefs()->GetGrantedPermissions(
@@ -292,12 +292,12 @@ class ExtensionPrefsGrantedPermissions : public ExtensionPrefsTest {
   std::string extension_id_;
   std::set<std::string> api_perm_set1_;
   std::set<std::string> api_perm_set2_;
-  ExtensionExtent host_perm_set1_;
-  ExtensionExtent host_perm_set2_;
+  URLPatternSet host_perm_set1_;
+  URLPatternSet host_perm_set2_;
 
 
   std::set<std::string> api_permissions_;
-  ExtensionExtent host_permissions_;
+  URLPatternSet host_permissions_;
 };
 TEST_F(ExtensionPrefsGrantedPermissions, GrantedPermissions) {}
 
@@ -678,10 +678,18 @@ class ExtensionPrefsPreferencesBase : public ExtensionPrefsTest {
   }
 
   void RegisterPreferences() {
-    prefs()->pref_service()->RegisterStringPref(kPref1, kDefaultPref1);
-    prefs()->pref_service()->RegisterStringPref(kPref2, kDefaultPref2);
-    prefs()->pref_service()->RegisterStringPref(kPref3, kDefaultPref3);
-    prefs()->pref_service()->RegisterStringPref(kPref4, kDefaultPref4);
+    prefs()->pref_service()->RegisterStringPref(kPref1,
+                                                kDefaultPref1,
+                                                PrefService::UNSYNCABLE_PREF);
+    prefs()->pref_service()->RegisterStringPref(kPref2,
+                                                kDefaultPref2,
+                                                PrefService::UNSYNCABLE_PREF);
+    prefs()->pref_service()->RegisterStringPref(kPref3,
+                                                kDefaultPref3,
+                                                PrefService::UNSYNCABLE_PREF);
+    prefs()->pref_service()->RegisterStringPref(kPref4,
+                                                kDefaultPref4,
+                                                PrefService::UNSYNCABLE_PREF);
   }
 
   void InstallExtControlledPref(Extension *ext,

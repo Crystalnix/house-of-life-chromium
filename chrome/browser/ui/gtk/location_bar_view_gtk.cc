@@ -18,6 +18,7 @@
 #include "chrome/browser/alternate_nav_url_fetcher.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -62,6 +63,7 @@
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image.h"
 #include "webkit/glue/window_open_disposition.h"
 
 namespace {
@@ -230,7 +232,7 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   GtkWidget* tab_to_search_hbox = gtk_hbox_new(FALSE, 0);
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   tab_to_search_magnifier_ = gtk_image_new_from_pixbuf(
-      rb.GetPixbufNamed(IDR_KEYWORD_SEARCH_MAGNIFIER));
+      rb.GetNativeImageNamed(IDR_KEYWORD_SEARCH_MAGNIFIER));
   gtk_box_pack_start(GTK_BOX(tab_to_search_hbox), tab_to_search_magnifier_,
                      FALSE, FALSE, 0);
   gtk_util::CenterWidgetInHBox(tab_to_search_hbox, tab_to_search_label_hbox,
@@ -269,7 +271,7 @@ void LocationBarViewGtk::Init(bool popup_window_mode) {
   tab_to_search_hint_leading_label_ = gtk_label_new(NULL);
   gtk_widget_set_sensitive(tab_to_search_hint_leading_label_, FALSE);
   tab_to_search_hint_icon_ = gtk_image_new_from_pixbuf(
-      rb.GetPixbufNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB));
+      rb.GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB));
   tab_to_search_hint_trailing_label_ = gtk_label_new(NULL);
   gtk_widget_set_sensitive(tab_to_search_hint_trailing_label_, FALSE);
   gtk_box_pack_start(GTK_BOX(tab_to_search_hint_),
@@ -977,7 +979,7 @@ void LocationBarViewGtk::SetKeywordLabel(const string16& keyword) {
     } else {
       ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       gtk_image_set_from_pixbuf(GTK_IMAGE(tab_to_search_magnifier_),
-                                rb.GetPixbufNamed(IDR_OMNIBOX_SEARCH));
+                                rb.GetNativeImageNamed(IDR_OMNIBOX_SEARCH));
     }
   }
 }
@@ -1285,8 +1287,11 @@ void LocationBarViewGtk::ContentSettingImageViewGtk::UpdateFromTabContents(
       content_setting_image_model_->get_tooltip().c_str());
   gtk_widget_show_all(widget());
 
-  TabSpecificContentSettings* content_settings = tab_contents ?
-      tab_contents->GetTabSpecificContentSettings() : NULL;
+  TabSpecificContentSettings* content_settings = NULL;
+  if (tab_contents) {
+    content_settings = TabContentsWrapper::GetCurrentWrapperForContents(
+        tab_contents)->content_settings();
+  }
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
     return;
@@ -1366,7 +1371,7 @@ gboolean LocationBarViewGtk::ContentSettingImageViewGtk::OnButtonPressed(
   content_setting_bubble_ = new ContentSettingBubbleGtk(
       sender, this,
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          tab_contents, profile_, content_settings_type),
+          parent_->browser(), tab_contents, profile_, content_settings_type),
       profile_, tab_contents->tab_contents());
   return TRUE;
 }

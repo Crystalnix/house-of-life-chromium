@@ -1204,30 +1204,30 @@ DocumentPrintedNotificationObserver::~DocumentPrintedNotificationObserver() {
 }
 
 void DocumentPrintedNotificationObserver::Observe(
-    NotificationType type, const NotificationSource& source,
+    NotificationType type,
+    const NotificationSource& source,
     const NotificationDetails& details) {
-  using namespace printing;
   DCHECK(type == NotificationType::PRINT_JOB_EVENT);
-  switch (Details<JobEventDetails>(details)->type()) {
-    case JobEventDetails::JOB_DONE: {
+  switch (Details<printing::JobEventDetails>(details)->type()) {
+    case printing::JobEventDetails::JOB_DONE: {
       // Succeeded.
       success_ = true;
       delete this;
       break;
     }
-    case JobEventDetails::USER_INIT_CANCELED:
-    case JobEventDetails::FAILED: {
+    case printing::JobEventDetails::USER_INIT_CANCELED:
+    case printing::JobEventDetails::FAILED: {
       // Failed.
       delete this;
       break;
     }
-    case JobEventDetails::NEW_DOC:
-    case JobEventDetails::USER_INIT_DONE:
-    case JobEventDetails::DEFAULT_INIT_DONE:
-    case JobEventDetails::NEW_PAGE:
-    case JobEventDetails::PAGE_DONE:
-    case JobEventDetails::DOC_DONE:
-    case JobEventDetails::ALL_PAGES_REQUESTED: {
+    case printing::JobEventDetails::NEW_DOC:
+    case printing::JobEventDetails::USER_INIT_DONE:
+    case printing::JobEventDetails::DEFAULT_INIT_DONE:
+    case printing::JobEventDetails::NEW_PAGE:
+    case printing::JobEventDetails::PAGE_DONE:
+    case printing::JobEventDetails::DOC_DONE:
+    case printing::JobEventDetails::ALL_PAGES_REQUESTED: {
       // Don't care.
       break;
     }
@@ -1385,7 +1385,9 @@ void InfoBarCountObserver::Observe(NotificationType type,
 }
 
 void InfoBarCountObserver::CheckCount() {
-  if (tab_contents_->infobar_count() != target_count_)
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_);
+  if (wrapper->infobar_count() != target_count_)
     return;
 
   if (automation_) {
@@ -1658,7 +1660,7 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
 
   ListValue* passwords = new ListValue;
   for (std::vector<webkit_glue::PasswordForm*>::const_iterator it =
-          result.begin(); it != result.end(); ++it) {
+           result.begin(); it != result.end(); ++it) {
     DictionaryValue* password_val = new DictionaryValue;
     webkit_glue::PasswordForm* password_form = *it;
     password_val->SetString("username_value", password_form->username_value);
@@ -1671,8 +1673,7 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
                             password_form->username_element);
     password_val->SetString("password_element",
                             password_form->password_element);
-    password_val->SetString("submit_element",
-                                     password_form->submit_element);
+    password_val->SetString("submit_element", password_form->submit_element);
     password_val->SetString("action_target", password_form->action.spec());
     password_val->SetBoolean("blacklist", password_form->blacklisted_by_user);
     passwords->Append(password_val);
@@ -1682,6 +1683,66 @@ void AutomationProviderGetPasswordsObserver::OnPasswordStoreRequestDone(
   AutomationJSONReply(provider_, reply_message_.release()).SendSuccess(
       return_value.get());
   delete this;
+}
+
+PasswordStoreLoginsChangedObserver::PasswordStoreLoginsChangedObserver(
+    AutomationProvider* automation,
+    IPC::Message* reply_message,
+    const std::string& result_key)
+    : automation_(automation->AsWeakPtr()),
+      reply_message_(reply_message),
+      result_key_(result_key),
+      done_event_(false, false) {
+  AddRef();
+}
+
+PasswordStoreLoginsChangedObserver::~PasswordStoreLoginsChangedObserver() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+}
+
+void PasswordStoreLoginsChangedObserver::Init() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BrowserThread::PostTask(
+      BrowserThread::DB,
+      FROM_HERE,
+      NewRunnableMethod(
+          this, &PasswordStoreLoginsChangedObserver::RegisterObserversTask));
+  done_event_.Wait();
+}
+
+void PasswordStoreLoginsChangedObserver::RegisterObserversTask() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  registrar_.Add(this, NotificationType::LOGINS_CHANGED,
+                 NotificationService::AllSources());
+  done_event_.Signal();
+}
+
+void PasswordStoreLoginsChangedObserver::Observe(
+    NotificationType type,
+    const NotificationSource& source,
+    const NotificationDetails& details) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  DCHECK(type.value == NotificationType::LOGINS_CHANGED);
+
+  registrar_.RemoveAll();  // Must be done from thread BrowserThread::DB.
+
+  // Notify thread BrowserThread::UI that we're done listening.
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      NewRunnableMethod(
+          this, &PasswordStoreLoginsChangedObserver::IndicateDone));
+}
+
+void PasswordStoreLoginsChangedObserver::IndicateDone() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (automation_) {
+    scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+    return_value->SetBoolean(result_key_, true);
+    AutomationJSONReply(
+        automation_, reply_message_.release()).SendSuccess(return_value.get());
+  }
+  Release();
 }
 
 AutomationProviderBrowsingDataObserver::AutomationProviderBrowsingDataObserver(
@@ -2087,6 +2148,34 @@ void AutocompleteEditFocusedObserver::Observe(
   delete this;
 }
 
+AutofillDisplayedObserver::AutofillDisplayedObserver(
+    NotificationType notification,
+    RenderViewHost* render_view_host,
+    AutomationProvider* automation,
+    IPC::Message* reply_message)
+    : notification_(notification),
+      render_view_host_(render_view_host),
+      automation_(automation->AsWeakPtr()),
+      reply_message_(reply_message) {
+  Source<RenderViewHost> source(render_view_host_);
+  registrar_.Add(this, notification_, source);
+}
+
+AutofillDisplayedObserver::~AutofillDisplayedObserver() {}
+
+void AutofillDisplayedObserver::Observe(
+    NotificationType type,
+    const NotificationSource& source,
+    const NotificationDetails& details) {
+  DCHECK_EQ(type.value, notification_.value);
+  DCHECK_EQ(Source<RenderViewHost>(source).ptr(), render_view_host_);
+  if (automation_) {
+    AutomationJSONReply(automation_,
+                        reply_message_.release()).SendSuccess(NULL);
+  }
+  delete this;
+}
+
 AutofillChangedObserver::AutofillChangedObserver(
     AutomationProvider* automation,
     IPC::Message* reply_message,
@@ -2160,14 +2249,6 @@ void AutofillChangedObserver::IndicateDone() {
 
 namespace {
 
-// Returns whether the notification's host has a non-null process handle.
-bool IsNotificationProcessReady(Balloon* balloon) {
-  return balloon->view() &&
-         balloon->view()->GetHost() &&
-         balloon->view()->GetHost()->render_view_host() &&
-         balloon->view()->GetHost()->render_view_host()->process()->GetHandle();
-}
-
 // Returns whether all active notifications have an associated process ID.
 bool AreActiveNotificationProcessesReady() {
   NotificationUIManager* manager = g_browser_process->notification_ui_manager();
@@ -2175,7 +2256,7 @@ bool AreActiveNotificationProcessesReady() {
       manager->balloon_collection()->GetActiveBalloons();
   BalloonCollection::Balloons::const_iterator iter;
   for (iter = balloons.begin(); iter != balloons.end(); ++iter) {
-    if (!IsNotificationProcessReady(*iter))
+    if (!(*iter)->view()->GetHost()->IsRenderViewReady())
       return false;
   }
   return true;
@@ -2186,11 +2267,12 @@ bool AreActiveNotificationProcessesReady() {
 GetActiveNotificationsObserver::GetActiveNotificationsObserver(
     AutomationProvider* automation,
     IPC::Message* reply_message)
-    : reply_(automation, reply_message) {
+    : automation_(automation->AsWeakPtr()),
+      reply_message_(reply_message) {
   if (AreActiveNotificationProcessesReady()) {
     SendMessage();
   } else {
-    registrar_.Add(this, NotificationType::RENDERER_PROCESS_CREATED,
+    registrar_.Add(this, NotificationType::NOTIFY_BALLOON_CONNECTED,
                    NotificationService::AllSources());
   }
 }
@@ -2201,6 +2283,10 @@ void GetActiveNotificationsObserver::Observe(
     NotificationType type,
     const NotificationSource& source,
     const NotificationDetails& details) {
+  if (!automation_) {
+    delete this;
+    return;
+  }
   if (AreActiveNotificationProcessesReady())
     SendMessage();
 }
@@ -2210,9 +2296,9 @@ void GetActiveNotificationsObserver::SendMessage() {
       g_browser_process->notification_ui_manager();
   const BalloonCollection::Balloons& balloons =
       manager->balloon_collection()->GetActiveBalloons();
-  scoped_ptr<DictionaryValue> return_value(new DictionaryValue);
+  DictionaryValue return_value;
   ListValue* list = new ListValue;
-  return_value->Set("notifications", list);
+  return_value.Set("notifications", list);
   BalloonCollection::Balloons::const_iterator iter;
   for (iter = balloons.begin(); iter != balloons.end(); ++iter) {
     const Notification& notification = (*iter)->notification();
@@ -2225,26 +2311,48 @@ void GetActiveNotificationsObserver::SendMessage() {
         view->GetHost()->render_view_host()->process()->GetHandle()));
     list->Append(balloon);
   }
-  reply_.SendSuccess(return_value.get());
+  AutomationJSONReply(automation_,
+                      reply_message_.release()).SendSuccess(&return_value);
   delete this;
 }
 
 OnNotificationBalloonCountObserver::OnNotificationBalloonCountObserver(
     AutomationProvider* provider,
     IPC::Message* reply_message,
-    BalloonCollection* collection,
     int count)
-    : reply_(provider, reply_message),
-      collection_(collection),
+    : automation_(provider->AsWeakPtr()),
+      reply_message_(reply_message),
+      collection_(
+          g_browser_process->notification_ui_manager()->balloon_collection()),
       count_(count) {
-  collection->set_on_collection_changed_callback(NewCallback(
-      this, &OnNotificationBalloonCountObserver::OnBalloonCollectionChanged));
+  registrar_.Add(this, NotificationType::NOTIFY_BALLOON_CONNECTED,
+                 NotificationService::AllSources());
+  collection_->set_on_collection_changed_callback(NewCallback(
+      this, &OnNotificationBalloonCountObserver::CheckBalloonCount));
+  CheckBalloonCount();
 }
 
-void OnNotificationBalloonCountObserver::OnBalloonCollectionChanged() {
-  if (static_cast<int>(collection_->GetActiveBalloons().size()) == count_) {
+OnNotificationBalloonCountObserver::~OnNotificationBalloonCountObserver() {
+}
+
+void OnNotificationBalloonCountObserver::Observe(
+    NotificationType type,
+    const NotificationSource& source,
+    const NotificationDetails& details) {
+  CheckBalloonCount();
+}
+
+void OnNotificationBalloonCountObserver::CheckBalloonCount() {
+  bool balloon_count_met = AreActiveNotificationProcessesReady() &&
+      static_cast<int>(collection_->GetActiveBalloons().size()) == count_;
+
+  if (balloon_count_met && automation_) {
+    AutomationJSONReply(automation_,
+                        reply_message_.release()).SendSuccess(NULL);
+  }
+
+  if (balloon_count_met || !automation_) {
     collection_->set_on_collection_changed_callback(NULL);
-    reply_.SendSuccess(NULL);
     delete this;
   }
 }

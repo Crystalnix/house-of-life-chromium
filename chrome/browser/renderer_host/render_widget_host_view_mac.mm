@@ -6,6 +6,7 @@
 
 #include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
@@ -24,8 +25,8 @@
 #include "chrome/common/render_messages.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "content/browser/browser_thread.h"
-#include "content/browser/gpu_process_host.h"
-#include "content/browser/gpu_process_host_ui_shim.h"
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/plugin_process_host.h"
 #include "content/browser/renderer_host/backing_store_mac.h"
 #include "content/browser/renderer_host/render_process_host.h"
@@ -377,6 +378,7 @@ gfx::NativeView RenderWidgetHostViewMac::GetNativeView() {
 
 void RenderWidgetHostViewMac::MovePluginWindows(
     const std::vector<webkit::npapi::WebPluginGeometry>& moves) {
+  TRACE_EVENT0("browser", "RenderWidgetHostViewMac::MovePluginWindows");
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Handle movement of accelerated plugins, which are the only "windowed"
   // plugins that exist on the Mac.
@@ -492,8 +494,13 @@ void RenderWidgetHostViewMac::ImeUpdateTextInputState(
     const gfx::Rect& caret_rect) {
   if (text_input_type_ != type) {
     text_input_type_ = type;
-    if (HasFocus())
+    if (HasFocus()) {
       SetTextInputActive(true);
+
+      // Let AppKit cache the new input context to make IMEs happy.
+      // See http://crbug.com/73039.
+      [NSApp updateWindows];
+    }
   }
 }
 
@@ -803,6 +810,8 @@ void RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped(
     int32 route_id,
     int gpu_host_id,
     uint64 swap_buffers_count) {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostViewMac::AcceleratedSurfaceBuffersSwapped");
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   AcceleratedPluginView* view = ViewForPluginWindowHandle(window);
   DCHECK(view);
@@ -854,6 +863,8 @@ void RenderWidgetHostViewMac::AcknowledgeSwapBuffers(
     int32 route_id,
     int gpu_host_id,
     uint64 swap_buffers_count) {
+  TRACE_EVENT1("gpu", "RenderWidgetHostViewMac::AcknowledgeSwapBuffers",
+      "swap_buffers_count", swap_buffers_count);
   // Called on the display link thread. Hand actual work off to the IO thread,
   // because |GpuProcessHost::Get()| can only be called there.
   // Currently, this is never called for plugins.
@@ -915,6 +926,8 @@ void RenderWidgetHostViewMac::DrawAcceleratedSurfaceInstance(
       CGLContextObj context,
       gfx::PluginWindowHandle plugin_handle,
       NSSize size) {
+  TRACE_EVENT0("browser",
+      "RenderWidgetHostViewMac::DrawAcceleratedSurfaceInstance");
   // Called on the display link thread.
   CGLSetCurrentContext(context);
 
@@ -961,8 +974,10 @@ gfx::Rect RenderWidgetHostViewMac::GetRootWindowRect() {
 }
 
 void RenderWidgetHostViewMac::SetActive(bool active) {
-  if (render_widget_host_)
-    render_widget_host_->SetActive(active);
+  if (render_widget_host_) {
+    render_widget_host_->Send(new ViewMsg_SetActive(
+        render_widget_host_->routing_id(), active));
+  }
   if (HasFocus())
     SetTextInputActive(active);
   if (!active)
@@ -1292,8 +1307,10 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
     if (hasEditCommands_ && !hasMarkedText_)
       delayEventUntilAfterImeCompostion = YES;
   } else {
-    if (!editCommands_.empty())
-      widgetHost->ForwardEditCommandsForNextKeyEvent(editCommands_);
+    if (!editCommands_.empty()) {
+      widgetHost->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+          widgetHost->routing_id(), editCommands_));
+    }
     widgetHost->ForwardKeyboardEvent(event);
   }
 
@@ -1356,8 +1373,10 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
     // a key event with |skip_in_browser| == true won't be handled by browser,
     // thus it won't destroy the widget.
 
-    if (!editCommands_.empty())
-      widgetHost->ForwardEditCommandsForNextKeyEvent(editCommands_);
+    if (!editCommands_.empty()) {
+      widgetHost->Send(new ViewMsg_SetEditCommandsForNextKeyEvent(
+        widgetHost->routing_id(), editCommands_));
+    }
     widgetHost->ForwardKeyboardEvent(event);
 
     // Calling ForwardKeyboardEvent() could have destroyed the widget. When the
@@ -1795,8 +1814,9 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 }
 
 - (void)doDefaultAction:(int32)accessibilityObjectId {
-  renderWidgetHostView_->render_widget_host_->
-      AccessibilityDoDefaultAction(accessibilityObjectId);
+  RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+  rwh->Send(new ViewMsg_AccessibilityDoDefaultAction(
+      rwh->routing_id(), accessibilityObjectId));
 }
 
 // Convert a web accessibility's location in web coordinates into a cocoa
@@ -1815,9 +1835,32 @@ void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
 - (void)setAccessibilityFocus:(BOOL)focus
               accessibilityId:(int32)accessibilityObjectId {
   if (focus) {
-    renderWidgetHostView_->render_widget_host_->
-        SetAccessibilityFocus(accessibilityObjectId);
+    RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_SetAccessibilityFocus(
+        rwh->routing_id(), accessibilityObjectId));
   }
+}
+
+- (void)performShowMenuAction:(BrowserAccessibilityCocoa*)accessibility {
+  // Performs a right click copying WebKit's
+  // accessibilityPerformShowMenuAction.
+  NSPoint location = [self accessibilityPointInScreen:accessibility];
+  location = [[self window] convertScreenToBase:location];
+  location.x += [accessibility size].width/2;
+  location.y += [accessibility size].height/2;
+
+  NSEvent* fakeRightClick = [NSEvent
+                           mouseEventWithType:NSRightMouseDown
+                                     location:location
+                                modifierFlags:nil
+                                    timestamp:0
+                                 windowNumber:[[self window] windowNumber]
+                                      context:[NSGraphicsContext currentContext]
+                                  eventNumber:0
+                                   clickCount:1
+                                     pressure:0];
+
+  [self mouseEvent:fakeRightClick];
 }
 
 // Spellchecking methods
@@ -2287,7 +2330,8 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
     if (!StartsWithASCII(command, "insert", false))
       editCommands_.push_back(EditCommand(command, ""));
   } else {
-    renderWidgetHostView_->render_widget_host_->ForwardEditCommand(command, "");
+    RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_ExecuteEditCommand(rwh->routing_id(), command, ""));
   }
 }
 
@@ -2393,8 +2437,9 @@ extern NSString *NSTextInputReplacementRangeAttributeName;
 
 - (void)pasteAsPlainText:(id)sender {
   if (renderWidgetHostView_->render_widget_host_->IsRenderView()) {
-    static_cast<RenderViewHost*>(renderWidgetHostView_->render_widget_host_)->
-      ForwardEditCommand("PasteAndMatchStyle", "");
+      RenderWidgetHost* rwh = renderWidgetHostView_->render_widget_host_;
+    rwh->Send(new ViewMsg_ExecuteEditCommand(
+        rwh->routing_id(), "PasteAndMatchStyle", ""));
   }
 }
 

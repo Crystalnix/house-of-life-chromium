@@ -53,7 +53,8 @@ static bool IsWhitelistedForContentSettings(WebFrame* frame) {
 
 ContentSettingsObserver::ContentSettingsObserver(RenderView* render_view)
     : RenderViewObserver(render_view),
-      RenderViewObserverTracker<ContentSettingsObserver>(render_view) {
+      RenderViewObserverTracker<ContentSettingsObserver>(render_view),
+      plugins_temporarily_allowed_(false) {
   ClearBlockedContentSettings();
 }
 
@@ -68,6 +69,10 @@ void ContentSettingsObserver::SetContentSettings(
 
 ContentSetting ContentSettingsObserver::GetContentSetting(
     ContentSettingsType type) {
+  if (type == CONTENT_SETTINGS_TYPE_PLUGINS &&
+      plugins_temporarily_allowed_) {
+    return CONTENT_SETTING_ALLOW;
+  }
   return current_content_settings_.settings[type];
 }
 
@@ -88,6 +93,10 @@ void ContentSettingsObserver::DidBlockContentType(
 bool ContentSettingsObserver::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ContentSettingsObserver, message)
+    // Don't swallow LoadBlockedPlugins messages, as they're sent to every
+    // blocked plugin.
+    IPC_MESSAGE_HANDLER_GENERIC(ViewMsg_LoadBlockedPlugins,
+                                OnLoadBlockedPlugins(); handled = false)
     IPC_MESSAGE_HANDLER(ViewMsg_SetContentSettingsForLoadingURL,
                         OnSetContentSettingsForLoadingURL)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -139,16 +148,20 @@ bool ContentSettingsObserver::AllowDatabase(WebFrame* frame,
   if (origin.isEmpty())
     return false;  // Uninitialized document?
 
-  bool result;
-  if (!Send(new ViewHostMsg_AllowDatabase(
-      origin.toString().utf8(), name, display_name, estimated_size, &result)))
-    return false;
-  Send(new ViewHostMsg_WebDatabaseAccessed(routing_id(),
-                                           GURL(origin.toString().utf8()),
-                                           name,
-                                           display_name,
-                                           estimated_size,
-                                           !result));
+  bool result = false;
+  Send(new ViewHostMsg_AllowDatabase(
+      routing_id(), GURL(origin.toString()), name, display_name, &result));
+  return result;
+}
+
+bool ContentSettingsObserver::AllowFileSystem(WebFrame* frame) {
+  WebSecurityOrigin origin = frame->securityOrigin();
+  if (origin.isEmpty())
+    return false;  // Uninitialized document?
+
+  bool result = false;
+  Send(new ViewHostMsg_AllowFileSystem(
+      routing_id(), GURL(origin.toString()), &result));
   return result;
 }
 
@@ -164,6 +177,15 @@ bool ContentSettingsObserver::AllowImages(WebFrame* frame,
 
   DidBlockContentType(CONTENT_SETTINGS_TYPE_IMAGES, std::string());
   return false;  // Other protocols fall through here.
+}
+
+bool ContentSettingsObserver::AllowIndexedDB(WebFrame* frame,
+                                             const WebString& name,
+                                             const WebSecurityOrigin& origin) {
+  bool result = false;
+  Send(new ViewHostMsg_AllowIndexedDB(
+      routing_id(), origin.databaseIdentifier(), name, &result));
+  return result;
 }
 
 bool ContentSettingsObserver::AllowPlugins(WebFrame* frame,
@@ -205,6 +227,10 @@ void ContentSettingsObserver::OnSetContentSettingsForLoadingURL(
     const GURL& url,
     const ContentSettings& content_settings) {
   host_content_settings_[url] = content_settings;
+}
+
+void ContentSettingsObserver::OnLoadBlockedPlugins() {
+  plugins_temporarily_allowed_ = true;
 }
 
 bool ContentSettingsObserver::AllowContentType(

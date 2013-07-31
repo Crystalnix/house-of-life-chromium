@@ -27,14 +27,14 @@ using protocol::KeyEvent;
 // A class to generate events on Mac.
 class EventExecutorMac : public EventExecutor {
  public:
-  EventExecutorMac(MessageLoopForUI* message_loop, Capturer* capturer);
+  EventExecutorMac(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorMac() {}
 
   virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
   virtual void InjectMouseEvent(const MouseEvent* event, Task* done) OVERRIDE;
 
  private:
-  MessageLoopForUI* message_loop_;
+  MessageLoop* message_loop_;
   Capturer* capturer_;
   int last_x_, last_y_;
   int modifiers_, mouse_buttons_;
@@ -43,7 +43,7 @@ class EventExecutorMac : public EventExecutor {
 };
 
 EventExecutorMac::EventExecutorMac(
-    MessageLoopForUI* message_loop, Capturer* capturer)
+    MessageLoop* message_loop, Capturer* capturer)
     : message_loop_(message_loop),
       capturer_(capturer), last_x_(0), last_y_(0), modifiers_(0),
       mouse_buttons_(0) {
@@ -171,9 +171,9 @@ const int kUsVkeyToKeysym[256] = {
   /* XF86kVK_Mail */ -1, /* XF86kVK_AudioMedia */ -1, /* XF86kVK_Launch0 */ -1,
   /* XF86kVK_Launch1 */ -1,
   // 0xB8 - 0xBB
-  -1, -1, kVK_ANSI_Semicolon, kVK_ANSI_KeypadPlus,
+  -1, -1, kVK_ANSI_Semicolon, kVK_ANSI_Equal,
   // 0xBC - 0xBF
-  kVK_ANSI_Comma, kVK_ANSI_KeypadMinus, kVK_ANSI_Period, kVK_ANSI_Slash,
+  kVK_ANSI_Comma, kVK_ANSI_Minus, kVK_ANSI_Period, kVK_ANSI_Slash,
 
   // 0xC0 - 0xC3
   kVK_ANSI_Grave, -1, -1, -1,
@@ -308,7 +308,7 @@ void EventExecutorMac::InjectMouseEvent(const MouseEvent* event, Task* done) {
 
 }  // namespace
 
-EventExecutor* EventExecutor::Create(MessageLoopForUI* message_loop,
+EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
                                      Capturer* capturer) {
   return new EventExecutorMac(message_loop, capturer);
 }

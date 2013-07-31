@@ -22,6 +22,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
@@ -98,12 +99,12 @@ static const int kNormalModeBackgroundImages[] = {
 // LocationBarView -----------------------------------------------------------
 
 LocationBarView::LocationBarView(Profile* profile,
-                                 CommandUpdater* command_updater,
+                                 Browser* browser,
                                  ToolbarModel* model,
                                  Delegate* delegate,
                                  Mode mode)
     : profile_(profile),
-      command_updater_(command_updater),
+      browser_(browser),
       model_(model),
       delegate_(delegate),
       disposition_(CURRENT_TAB),
@@ -120,7 +121,8 @@ LocationBarView::LocationBarView(Profile* profile,
       mode_(mode),
       show_focus_rect_(false),
       bubble_type_(FirstRun::MINIMAL_BUBBLE),
-      template_url_model_(NULL) {
+      template_url_model_(NULL),
+      animation_offset_(0) {
   DCHECK(profile_);
   SetID(VIEW_ID_LOCATION_BAR);
   SetFocusable(true);
@@ -169,11 +171,11 @@ void LocationBarView::Init() {
   // View container for URL edit field.
 #if defined(OS_WIN)
   location_entry_.reset(new OmniboxViewWin(font_, this, model_, this,
-      GetWidget()->GetNativeView(), profile_, command_updater_,
+      GetWidget()->GetNativeView(), profile_, browser_->command_updater(),
       mode_ == POPUP, this));
 #else
   location_entry_.reset(OmniboxViewGtk::Create(this, model_, profile_,
-      command_updater_, mode_ == POPUP, this));
+      browser_->command_updater(), mode_ == POPUP, this));
 #endif
 
   location_entry_view_ = location_entry_->AddToView(this);
@@ -204,7 +206,7 @@ void LocationBarView::Init() {
 
   // The star is not visible in popups and in the app launcher.
   if (browser_defaults::bookmarks_enabled && (mode_ == NORMAL)) {
-    star_view_ = new StarView(command_updater_);
+    star_view_ = new StarView(browser_->command_updater());
     AddChildView(star_view_);
     star_view_->SetVisible(true);
   }
@@ -269,10 +271,20 @@ SkColor LocationBarView::GetColor(ToolbarModel::SecurityLevel security_level,
   }
 }
 
+// DropdownBarHostDelegate
+void LocationBarView::SetFocusAndSelection(bool select_all) {
+  FocusLocation(select_all);
+}
+
+void LocationBarView::SetAnimationOffset(int offset) {
+  animation_offset_ = offset;
+}
+
 void LocationBarView::Update(const TabContents* tab_for_state_restoring) {
   bool star_enabled = star_view_ && !model_->input_in_progress() &&
                       edit_bookmarks_enabled_.GetValue();
-  command_updater_->UpdateCommandEnabled(IDC_BOOKMARK_PAGE, star_enabled);
+  browser_->command_updater()->UpdateCommandEnabled(
+      IDC_BOOKMARK_PAGE, star_enabled);
   if (star_view_)
     star_view_->SetVisible(star_enabled);
   RefreshContentSettingViews();
@@ -780,16 +792,16 @@ void LocationBarView::OnAutocompleteAccept(
     disposition_ = disposition;
     transition_ = transition;
 
-    if (command_updater_) {
+    if (browser_->command_updater()) {
       if (!alternate_nav_url.is_valid()) {
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
+        browser_->command_updater()->ExecuteCommand(IDC_OPEN_CURRENT_URL);
       } else {
         AlternateNavURLFetcher* fetcher =
             new AlternateNavURLFetcher(alternate_nav_url);
         // The AlternateNavURLFetcher will listen for the pending navigation
         // notification that will be issued as a result of the "open URL." It
         // will automatically install itself into that navigation controller.
-        command_updater_->ExecuteCommand(IDC_OPEN_CURRENT_URL);
+        browser_->command_updater()->ExecuteCommand(IDC_OPEN_CURRENT_URL);
         if (fetcher->state() == AlternateNavURLFetcher::NOT_STARTED) {
           // I'm not sure this should be reachable, but I'm not also sure enough
           // that it shouldn't to stick in a NOTREACHED().  In any case, this is
@@ -964,11 +976,6 @@ void LocationBarView::OnMouseEvent(const views::MouseEvent& event, UINT msg) {
 void LocationBarView::ShowFirstRunBubbleInternal(
     FirstRun::BubbleType bubble_type) {
 #if defined(OS_WIN)  // First run bubble doesn't make sense for Chrome OS.
-  // If the browser is no longer active, let's not show the info bubble, as this
-  // would make the browser the active window again.
-  if (!location_entry_view_ || !location_entry_view_->GetWidget()->IsActive())
-    return;
-
   // Point at the start of the edit control; adjust to look as good as possible.
   const int kXOffset = kNormalHorizontalEdgeThickness + kEdgeItemPadding +
       ResourceBundle::GetSharedInstance().GetBitmapNamed(
@@ -1189,7 +1196,10 @@ void LocationBarView::TestPageActionPressed(size_t index) {
 void LocationBarView::OnTemplateURLModelChanged() {
   template_url_model_->RemoveObserver(this);
   template_url_model_ = NULL;
-  ShowFirstRunBubble(bubble_type_);
+  // If the browser is no longer active, let's not show the info bubble, as this
+  // would make the browser the active window again.
+  if (location_entry_view_ && location_entry_view_->GetWidget()->IsActive())
+    ShowFirstRunBubble(bubble_type_);
 }
 
 void LocationBarView::Observe(NotificationType type,

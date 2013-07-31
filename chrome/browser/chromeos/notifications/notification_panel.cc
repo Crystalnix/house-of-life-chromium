@@ -20,8 +20,7 @@
 #include "views/background.h"
 #include "views/controls/native/native_view_host.h"
 #include "views/controls/scroll_view.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget_gtk.h"
+#include "views/widget/native_widget_gtk.h"
 
 #define SET_STATE(state) SetState(state, __PRETTY_FUNCTION__)
 
@@ -72,8 +71,7 @@ chromeos::BalloonViewImpl* GetBalloonViewOf(const Balloon* balloon) {
 // renderer's native gtk widgets are moved one by one via
 // View::VisibleBoundsInRootChanged() notification, which makes scrolling not
 // smooth.
-// TODO: this should subclass Widget and not WidgetGtk.
-class ViewportWidget : public views::WidgetGtk {
+class ViewportWidget : public views::Widget {
  public:
   explicit ViewportWidget(chromeos::NotificationPanel* panel)
       : panel_(panel),
@@ -425,7 +423,7 @@ NotificationPanel::~NotificationPanel() {
 
 void NotificationPanel::Show() {
   if (!panel_widget_) {
-    panel_widget_ = views::Widget::CreateWidget();
+    panel_widget_ = new views::Widget;
     // TODO(oshima): Using window because Popup widget behaves weird
     // when resizing. This needs to be investigated.
     Widget::InitParams params(Widget::InitParams::TYPE_WINDOW);
@@ -447,15 +445,15 @@ void NotificationPanel::Show() {
     panel_widget_->SetContentsView(scroll_view_.get());
 
     // Add the view port after scroll_view is attached to the panel widget.
-    ViewportWidget* widget = new ViewportWidget(this);
-    container_host_ = widget;
+    ViewportWidget* viewport_widget = new ViewportWidget(this);
+    container_host_ = viewport_widget;
     container_host_->Init(
         views::Widget::InitParams(views::Widget::InitParams::TYPE_CONTROL));
     container_host_->SetContentsView(balloon_container_.get());
     // The window_contents_ is onwed by the Widget. Increase ref count
     // so that window_contents does not get deleted when detached.
-    g_object_ref(widget->window_contents());
-    native->Attach(widget->window_contents());
+    g_object_ref(viewport_widget->GetNativeView());
+    native->Attach(viewport_widget->GetNativeView());
 
     UnregisterNotification();
     panel_controller_.reset(
@@ -487,7 +485,7 @@ void NotificationPanel::Hide() {
     MessageLoop::current()->DeleteSoon(FROM_HERE, panel_controller_.release());
     // We need to remove & detach the scroll view from hierarchy to
     // avoid GTK deleting child.
-    // TODO(oshima): handle this details in WidgetGtk.
+    // TODO(oshima): handle this details in NativeWidgetGtk.
     panel_widget_->GetRootView()->RemoveChildView(scroll_view_.get());
     panel_widget_->Close();
     panel_widget_ = NULL;

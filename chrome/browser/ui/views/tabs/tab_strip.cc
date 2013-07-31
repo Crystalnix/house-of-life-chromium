@@ -32,9 +32,6 @@
 
 #if defined(OS_WIN)
 #include "views/widget/monitor_win.h"
-#include "views/widget/widget_win.h"
-#elif defined(TOOLKIT_USES_GTK)
-#include "views/widget/widget_gtk.h"
 #endif
 
 #undef min
@@ -302,7 +299,7 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
     }
   }
 
-  if (GetWindow()->non_client_view()->UseNativeFrame()) {
+  if (GetWindow()->ShouldUseNativeFrame()) {
     bool multiple_tabs_selected = (!selected_tabs.empty() ||
                                    tabs_dragging.size() > 1);
     // Make sure non-active tabs are somewhat transparent.
@@ -337,24 +334,6 @@ void TabStrip::PaintChildren(gfx::Canvas* canvas) {
   // If the active tab is being dragged, it goes last.
   if (active_tab && is_dragging)
     active_tab->Paint(canvas);
-}
-
-// Overridden to support automation. See automation_proxy_uitest.cc.
-const views::View* TabStrip::GetViewByID(int view_id) const {
-  if (tab_count() > 0) {
-    if (view_id == VIEW_ID_TAB_LAST) {
-      return GetTabAtTabDataIndex(tab_count() - 1);
-    } else if ((view_id >= VIEW_ID_TAB_0) && (view_id < VIEW_ID_TAB_LAST)) {
-      int index = view_id - VIEW_ID_TAB_0;
-      if (index >= 0 && index < tab_count()) {
-        return GetTabAtTabDataIndex(index);
-      } else {
-        return NULL;
-      }
-    }
-  }
-
-  return View::GetViewByID(view_id);
 }
 
 gfx::Size TabStrip::GetPreferredSize() {
@@ -860,7 +839,7 @@ TabStrip::DropInfo::DropInfo(int drop_index, bool drop_before, bool point_down)
   arrow_view = new views::ImageView;
   arrow_view->SetImage(GetDropArrowImage(point_down));
 
-  arrow_window = views::Widget::CreateWidget();
+  arrow_window = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.keep_on_top = true;
   params.transparent = true;

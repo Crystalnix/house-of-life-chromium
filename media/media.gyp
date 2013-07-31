@@ -10,7 +10,7 @@
   'targets': [
     {
       'target_name': 'media',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'yuv_convert',
         '../base/base.gyp:base',
@@ -82,6 +82,8 @@
         'base/buffers.h',
         'base/callback.cc',
         'base/callback.h',
+        'base/channel_layout.cc',
+        'base/channel_layout.h',
         'base/clock.cc',
         'base/clock.h',
         'base/composite_data_source_factory.cc',
@@ -179,11 +181,15 @@
         'video/capture/linux/video_capture_device_linux.h',
         'video/capture/video_capture.h',
         'video/capture/video_capture_device.h',
+        'video/capture/video_capture_device_dummy.cc',
+        'video/capture/video_capture_device_dummy.h',
         'video/capture/video_capture_types.h',
         'video/ffmpeg_video_allocator.cc',
         'video/ffmpeg_video_allocator.h',
         'video/ffmpeg_video_decode_engine.cc',
         'video/ffmpeg_video_decode_engine.h',
+        'video/picture.cc',
+        'video/picture.h',
         'video/video_decode_accelerator.cc',
         'video/video_decode_accelerator.h',
         'video/video_decode_engine.h',
@@ -200,7 +206,7 @@
             'video/mft_h264_decode_engine.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd"', {
+        ['OS == "linux" or OS == "freebsd" or OS == "solaris"', {
           'link_settings': {
             'libraries': [
               '-lasound',
@@ -222,7 +228,7 @@
             'audio/openbsd/audio_manager_openbsd.h',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+        ['os_posix == 1 and OS != "mac"', {
           'sources': [
             'filters/omx_video_decoder.cc',
             'filters/omx_video_decoder.h',
@@ -230,6 +236,12 @@
           'dependencies': [
             'omx_wrapper',
           ]
+        }],
+        ['os_posix == 1 and OS != "mac"', {
+          'sources!': [
+            'video/capture/video_capture_device_dummy.cc',
+            'video/capture/video_capture_device_dummy.h',
+          ],
         }],
         ['OS=="mac"', {
           'link_settings': {
@@ -244,7 +256,7 @@
     },
     {
       'target_name': 'cpu_features',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -266,7 +278,7 @@
     },
     {
       'target_name': 'yuv_convert',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
@@ -293,12 +305,12 @@
     },
     {
       'target_name': 'yuv_convert_sse2',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '..',
       ],
       'conditions': [
-        [ 'OS == "linux" or OS == "freebsd" or OS == "openbsd"', {
+        [ 'os_posix == 1 and OS != "mac"', {
           'cflags': [
             '-msse2',
           ],
@@ -325,7 +337,7 @@
         'ffmpeg/ffmpeg_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             # Needed for the following #include chain:
             #   base/run_all_unittests.cc
@@ -410,7 +422,7 @@
         'video/ffmpeg_video_decode_engine_unittest.cc',
       ],
       'conditions': [
-        ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': [
             # Needed for the following #include chain:
             #   base/run_all_unittests.cc
@@ -433,7 +445,7 @@
     },
     {
       'target_name': 'media_test_support',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         'media',
         '../base/base.gyp:base',
@@ -613,7 +625,7 @@
             'tools/shader_bench/window.h',
           ],
           'conditions': [
-            ['OS=="linux"', {
+            ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
               ],
@@ -653,7 +665,7 @@
         },
       ],
     }],
-    ['OS=="linux" or OS=="freebsd" or OS=="openbsd"', {
+    ['os_posix == 1 and OS != "mac"', {
       'targets': [
         {
           'target_name': 'omx_test',
@@ -685,7 +697,7 @@
             '../testing/gtest.gyp:gtest',
           ],
           'conditions': [
-            ['OS=="linux" or OS=="freebsd" or OS=="openbsd" or OS=="solaris"', {
+            ['toolkit_uses_gtk == 1', {
               'dependencies': [
                 '../build/linux/system.gyp:gtk',
               ],
@@ -698,7 +710,7 @@
         },
         {
           'target_name': 'omx_wrapper',
-          'type': '<(library)',
+          'type': 'static_library',
           'dependencies': [
             '../base/base.gyp:base',
             '../third_party/openmax/openmax.gyp:il',

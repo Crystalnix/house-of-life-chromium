@@ -167,6 +167,7 @@ extern const char kEnableScreenLock[];
 extern const char kShowPlanNotifications[];
 extern const char kShow3gPromoNotification[];
 extern const char kCarrierDealPromoShown[];
+extern const char kLastUsedFileBrowserHandlers[];
 #endif
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -226,7 +227,6 @@ extern const char kPerHostContentSettings[];  // OBSOLETE
 extern const char kContentSettingsVersion[];
 extern const char kContentSettingsPatterns[];
 extern const char kBlockThirdPartyCookies[];
-extern const char kBlockNonsandboxedPlugins[];
 extern const char kClearSiteDataOnExit[];
 extern const char kDefaultZoomLevel[];
 extern const char kPerHostZoomLevels[];
@@ -239,6 +239,7 @@ extern const char kAutofillPersonalDataManagerFirstRun[];
 extern const char kEditBookmarksEnabled[];
 
 extern const char kUseVerticalTabs[];
+extern const char kUseCompactNavigationBar[];
 extern const char kEnableTranslate[];
 extern const char kEnableBookmarkBar[];
 extern const char kPinnedTabs[];
@@ -320,10 +321,6 @@ extern const char kSaveFileDefaultDirectory[];
 extern const char kSaveFileType[];
 
 extern const char kAllowFileSelectionDialogs[];
-
-extern const char kChromotingEnabled[];
-extern const char kChromotingHostEnabled[];
-extern const char kChromotingHostFirewallTraversal[];
 
 extern const char kSelectFileLastDirectory[];
 
@@ -461,9 +458,6 @@ extern const char kCloudPrintEnableJobPoll[];
 extern const char kCloudPrintRobotRefreshToken[];
 extern const char kCloudPrintRobotEmail[];
 
-extern const char kRemotingHasSetupCompleted[];
-extern const char kRemotingHostEnabled[];
-
 extern const char kProxy[];
 
 extern const char kManagedDefaultCookiesSetting[];
@@ -500,13 +494,14 @@ extern const char kAuthServerWhitelist[];
 extern const char kAuthNegotiateDelegateWhitelist[];
 extern const char kGSSAPILibraryName[];
 
-extern const char kKnownBackgroundPages[];
-
 extern const char kRegisteredProtocolHandlers[];
 extern const char kIgnoredProtocolHandlers[];
 extern const char kCustomHandlersEnabled[];
 
 extern const char kUserCreatedLoginItem[];
+extern const char kBackgroundModeEnabled[];
+
+extern const char kAutomaticUpdatesEnabled[];
 
 }  // namespace prefs
 

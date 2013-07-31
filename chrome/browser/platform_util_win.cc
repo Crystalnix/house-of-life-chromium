@@ -242,4 +242,8 @@ bool CanSetAsDefaultBrowser() {
   return BrowserDistribution::GetDistribution()->CanSetAsDefault();
 }
 
+void setUseAutomaticUpdates(bool useAutomaticUpdates)
+{
+}
+  
 }  // namespace platform_util

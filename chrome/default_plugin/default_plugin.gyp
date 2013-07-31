@@ -9,7 +9,7 @@
   'targets': [
     {
       'target_name': 'default_plugin',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         ':default_plugin_resources',
         '<(DEPTH)/base/base.gyp:base',
@@ -51,7 +51,7 @@
               'plugin_install_job_monitor.h',
             ],
          }],
-         ['OS=="linux"', {
+         ['toolkit_uses_gtk == 1', {
             'dependencies': [
               '<(DEPTH)/build/linux/system.gyp:gtk',
             ],

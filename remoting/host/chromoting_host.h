@@ -69,11 +69,15 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
  public:
   // Factory methods that must be used to create ChromotingHost instances.
   // Default capturer and input stub are used if it is not specified.
-  static ChromotingHost* Create(ChromotingHostContext* context,
-                                MutableHostConfig* config);
+  // Returned instance takes ownership of |access_verifier| and |environment|,
+  // and adds a reference to |config|. It does NOT take ownership of |context|.
   static ChromotingHost* Create(ChromotingHostContext* context,
                                 MutableHostConfig* config,
-                                DesktopEnvironment* environment);
+                                AccessVerifier* access_verifier);
+  static ChromotingHost* Create(ChromotingHostContext* context,
+                                MutableHostConfig* config,
+                                DesktopEnvironment* environment,
+                                AccessVerifier* access_verifier);
 
   // Asynchronously start the host process.
   //
@@ -119,6 +123,10 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   // |config| is transferred to the object. Must be called before Start().
   void set_protocol_config(protocol::CandidateSessionConfig* config);
 
+  void set_preauthenticated(bool preauthenticated) {
+    preauthenticated_ = preauthenticated;
+  }
+
  private:
   friend class base::RefCountedThreadSafe<ChromotingHost>;
   friend class ChromotingHostTest;
@@ -126,8 +134,12 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
   typedef std::vector<scoped_refptr<HostStatusObserver> > StatusObserverList;
   typedef std::vector<scoped_refptr<ClientSession> > ClientList;
 
-  ChromotingHost(ChromotingHostContext* context, MutableHostConfig* config,
-                 DesktopEnvironment* environment);
+  // Takes ownership of |access_verifier| and |environment|, and adds a
+  // reference to |config|. Does NOT take ownership of |context|.
+  ChromotingHost(ChromotingHostContext* context,
+                 MutableHostConfig* config,
+                 DesktopEnvironment* environment,
+                 AccessVerifier* access_verifier);
   virtual ~ChromotingHost();
 
   enum State {
@@ -151,6 +163,9 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   void EnableCurtainMode(bool enable);
 
+  void ProcessPreAuthentication(
+      const scoped_refptr<protocol::ConnectionToClient>& connection);
+
   // The context that the chromoting host runs on.
   ChromotingHostContext* context_;
 
@@ -168,7 +183,7 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   StatusObserverList status_observers_;
 
-  AccessVerifier access_verifier_;
+  scoped_ptr<AccessVerifier> access_verifier_;
 
   // The connections to remote clients.
   ClientList clients_;
@@ -193,6 +208,10 @@ class ChromotingHost : public base::RefCountedThreadSafe<ChromotingHost>,
 
   // Whether or not the host is currently curtained.
   bool is_curtained_;
+
+  // Whether or not the host is running in "Me2Mom" mode, in which connections
+  // are pre-authenticated, and hence the local login challenge can be bypassed.
+  bool preauthenticated_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingHost);
 };

@@ -24,7 +24,7 @@
 #include "views/events/event.h"
 #include "views/focus/focus_manager.h"
 #include "views/layout/layout_constants.h"
-#include "views/widget/widget_win.h"
+#include "views/widget/native_widget_win.h"
 #include "views/window/window.h"
 
 namespace {
@@ -357,7 +357,7 @@ gfx::Size FirstRunOEMBubbleView::GetPreferredSize() {
   // now, we force Vista to show a correctly-sized box by taking account of
   // the difference in font size calculation. The coefficient should not be
   // stored in a variable because it's a hack and should go away.
-  if (views::WidgetWin::IsAeroGlassEnabled()) {
+  if (views::NativeWidgetWin::IsAeroGlassEnabled()) {
     size.set_width(static_cast<int>(size.width() * 0.85));
     size.set_height(static_cast<int>(size.height() * 0.85));
   }
@@ -491,7 +491,7 @@ FirstRunBubble* FirstRunBubble::Show(Profile* profile,
   bubble->set_view(view);
   bubble->InitBubble(
       parent, position_relative_to, arrow_location, view, bubble);
-  bubble->GetFocusManager()->AddFocusChangeListener(view);
+  bubble->GetWidget()->GetFocusManager()->AddFocusChangeListener(view);
   view->BubbleShown();
   return bubble;
 }
@@ -504,11 +504,20 @@ FirstRunBubble::FirstRunBubble()
 
 FirstRunBubble::~FirstRunBubble() {
   enable_window_method_factory_.RevokeAll();
-  GetFocusManager()->RemoveFocusChangeListener(view_);
+  GetWidget()->GetFocusManager()->RemoveFocusChangeListener(view_);
 }
 
 void FirstRunBubble::EnableParent() {
   ::EnableWindow(GetParent(), true);
+  // The EnableWindow() call above causes the parent to become active, which
+  // resets the flag set by Bubble's call to DisableInactiveRendering(), so we
+  // have to call it again before activating the bubble to prevent the parent
+  // window from rendering inactive.
+  // TODO(beng): this only works in custom-frame mode, not glass-frame mode.
+  views::NativeWidget* parent =
+      views::NativeWidget::GetNativeWidgetForNativeView(GetParent());
+  if (parent)
+    parent->GetWidget()->GetContainingWindow()->DisableInactiveRendering();
   // Reactivate the FirstRunBubble so it responds to OnActivate messages.
   SetWindowPos(GetParent(), 0, 0, 0, 0,
                SWP_NOSIZE | SWP_NOMOVE | SWP_NOREDRAW | SWP_SHOWWINDOW);

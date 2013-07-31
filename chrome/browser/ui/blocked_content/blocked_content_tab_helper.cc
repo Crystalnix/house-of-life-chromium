@@ -6,6 +6,7 @@
 
 #include "base/auto_reset.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_container.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
@@ -42,7 +43,7 @@ void BlockedContentTabHelper::PopupNotificationVisibilityChanged(
     bool visible) {
   if (tab_contents()->is_being_destroyed())
     return;
-  tab_contents()->GetTabSpecificContentSettings()->SetPopupsBlocked(visible);
+  tab_contents_wrapper_->content_settings()->SetPopupsBlocked(visible);
 }
 
 void BlockedContentTabHelper::SetAllContentsBlocked(bool value) {
@@ -95,7 +96,7 @@ void BlockedContentTabHelper::AddPopup(TabContentsWrapper* new_contents,
                                       NEW_POPUP,
                                       initial_pos,
                                       true);  // user_gesture
-    tab_contents()->GetContentSettingsDelegate()->OnContentBlocked(
+    tab_contents_wrapper_->content_settings()->OnContentBlocked(
           CONTENT_SETTINGS_TYPE_POPUPS, std::string());
   }
 }

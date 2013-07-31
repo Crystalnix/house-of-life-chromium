@@ -125,10 +125,16 @@ INSTANTIATE_TEST_CASE_P(
                     prefs::kAuthServerWhitelist),
         TypeAndName(kPolicyAuthNegotiateDelegateWhitelist,
                     prefs::kAuthNegotiateDelegateWhitelist),
-        TypeAndName(kPolicyDownloadDirectory,
-                    prefs::kDownloadDefaultDirectory),
         TypeAndName(kPolicyGSSAPILibraryName,
                     prefs::kGSSAPILibraryName)));
+
+#if !defined(OS_CHROMEOS)
+INSTANTIATE_TEST_CASE_P(
+    ConfigurationPolicyPrefStoreDownloadDirectoryInstance,
+    ConfigurationPolicyPrefStoreStringTest,
+    testing::Values(TypeAndName(kPolicyDownloadDirectory,
+                                prefs::kDownloadDefaultDirectory)));
+#endif  // !defined(OS_CHROMEOS)
 
 // Test cases for boolean-valued policy settings.
 class ConfigurationPolicyPrefStoreBooleanTest
@@ -225,13 +231,7 @@ INSTANTIATE_TEST_CASE_P(
         TypeAndName(kPolicyEditBookmarksEnabled,
                     prefs::kEditBookmarksEnabled),
         TypeAndName(kPolicyAllowFileSelectionDialogs,
-                    prefs::kAllowFileSelectionDialogs),
-        TypeAndName(kPolicyChromotingEnabled,
-                    prefs::kChromotingEnabled),
-        TypeAndName(kPolicyChromotingHostEnabled,
-                    prefs::kChromotingHostEnabled),
-        TypeAndName(kPolicyChromotingHostFirewallTraversal,
-                    prefs::kChromotingHostFirewallTraversal)));
+                    prefs::kAllowFileSelectionDialogs)));
 
 #if defined(OS_CHROMEOS)
 INSTANTIATE_TEST_CASE_P(
@@ -344,6 +344,19 @@ TEST_F(ConfigurationPolicyPrefStoreProxyTest, ManualOptionsReversedApplyOrder) {
       ProxyPrefs::MODE_FIXED_SERVERS);
 }
 
+TEST_F(ConfigurationPolicyPrefStoreProxyTest, ManualOptionsInvalid) {
+  MockConfigurationPolicyProvider provider;
+  provider.AddPolicy(kPolicyProxyServerMode,
+                     Value::CreateIntegerValue(
+                         kPolicyManuallyConfiguredProxyServerMode));
+
+  scoped_refptr<ConfigurationPolicyPrefStore> store(
+      new ConfigurationPolicyPrefStore(&provider));
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_NO_VALUE, store->GetValue(prefs::kProxy, &value));
+}
+
+
 TEST_F(ConfigurationPolicyPrefStoreProxyTest, NoProxyServerMode) {
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyProxyServerMode,
@@ -399,6 +412,18 @@ TEST_F(ConfigurationPolicyPrefStoreProxyTest, PacScriptProxyMode) {
       new ConfigurationPolicyPrefStore(&provider));
   VerifyProxyPrefs(*store, "", "http://short.org/proxy.pac", "",
                    ProxyPrefs::MODE_PAC_SCRIPT);
+}
+
+TEST_F(ConfigurationPolicyPrefStoreProxyTest, PacScriptProxyModeInvalid) {
+  MockConfigurationPolicyProvider provider;
+  provider.AddPolicy(
+      kPolicyProxyMode,
+      Value::CreateStringValue(ProxyPrefs::kPacScriptProxyModeName));
+
+  scoped_refptr<ConfigurationPolicyPrefStore> store(
+      new ConfigurationPolicyPrefStore(&provider));
+  const Value* value = NULL;
+  EXPECT_EQ(PrefStore::READ_NO_VALUE, store->GetValue(prefs::kProxy, &value));
 }
 
 // Regression test for http://crbug.com/78016, CPanel returns empty strings
@@ -530,7 +555,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -544,8 +571,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -573,7 +599,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, FullyDefined) {
 
   EXPECT_EQ(PrefStore::READ_OK,
             store->GetValue(prefs::kDefaultSearchProviderEncodings, &value));
-  EXPECT_TRUE(StringValue(encodings).Equals(value));
+  EXPECT_TRUE(StringValue("UTF-16;UTF-8").Equals(value));
 }
 
 // Checks that if the default search policy is missing, that no elements of the
@@ -583,7 +609,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, MissingUrl) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -595,8 +623,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, MissingUrl) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -623,7 +650,9 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, Invalid) {
   const char* const icon_url = "http://test.com/icon.jpg";
   const char* const name = "MyName";
   const char* const keyword = "MyKeyword";
-  const char* const encodings = "UTF-16;UTF-8";
+  ListValue* encodings = new ListValue();
+  encodings->Append(Value::CreateStringValue("UTF-16"));
+  encodings->Append(Value::CreateStringValue("UTF-8"));
   MockConfigurationPolicyProvider provider;
   provider.AddPolicy(kPolicyDefaultSearchProviderEnabled,
                      Value::CreateBooleanValue(true));
@@ -637,8 +666,7 @@ TEST_F(ConfigurationPolicyPrefStoreDefaultSearchTest, Invalid) {
                      Value::CreateStringValue(suggest_url));
   provider.AddPolicy(kPolicyDefaultSearchProviderIconURL,
                      Value::CreateStringValue(icon_url));
-  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings,
-                     Value::CreateStringValue(encodings));
+  provider.AddPolicy(kPolicyDefaultSearchProviderEncodings, encodings);
 
   scoped_refptr<ConfigurationPolicyPrefStore> store(
       new ConfigurationPolicyPrefStore(&provider));
@@ -699,6 +727,7 @@ TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, Default) {
             store_->GetValue(prefs::kPromptForDownload, NULL));
 }
 
+#if !defined(OS_CHROMEOS)
 TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, SetDownloadDirectory) {
   EXPECT_EQ(PrefStore::READ_NO_VALUE,
             store_->GetValue(prefs::kPromptForDownload, NULL));
@@ -715,6 +744,7 @@ TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest, SetDownloadDirectory) {
   ASSERT_TRUE(result);
   EXPECT_FALSE(prompt_for_download);
 }
+#endif  // !defined(OS_CHROMEOS)
 
 TEST_F(ConfigurationPolicyPrefStorePromptDownloadTest,
        EnableFileSelectionDialogs) {
@@ -825,7 +855,7 @@ TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Refresh) {
 TEST_F(ConfigurationPolicyPrefStoreRefreshTest, Initialization) {
   EXPECT_FALSE(store_->IsInitializationComplete());
 
-  EXPECT_CALL(observer_, OnInitializationCompleted()).Times(1);
+  EXPECT_CALL(observer_, OnInitializationCompleted(true)).Times(1);
 
   provider_.SetInitializationComplete(true);
   EXPECT_FALSE(store_->IsInitializationComplete());

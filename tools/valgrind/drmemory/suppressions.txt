@@ -5,6 +5,10 @@ UNINITIALIZED READ
 *!deflate_*
 *!MOZ_Z_deflate
 
+LEAK
+ADVAPI32.dll!WmiOpenBlock
+ADVAPI32.dll!WmiOpenBlock
+
 ############################
 # Suppress some false reports due to bugs in Dr.Memory like wrong analysis
 # assumptions or unhandled syscalls
@@ -38,6 +42,10 @@ UNINITIALIZED READ
 SHELL32.dll!SHFileOperation*
 
 UNINITIALIZED READ
+...
+SHELL32.dll!SHGetFolderPath*
+
+LEAK
 ...
 SHELL32.dll!SHGetFolderPath*
 
@@ -278,10 +286,16 @@ LEAK
 ...
 GDI32.dll!CreateDCW
 
-# http://code.google.com/p/drmemory/issues/detail?id=274
+# http://code.google.com/p/drmemory/issues/detail?id=275
 LEAK
 *!_getptd_noexit
-*!_getptd
+
+# http://code.google.com/p/drmemory/issues/detail?id=276
+UNINITIALIZED READ
+...
+ntdll.dll!RtlConvertUlongToLargeInteger
+ntdll.dll!RtlConvertUlongToLargeInteger
+ntdll.dll!KiUserExceptionDispatcher
 
 # http://code.google.com/p/drmemory/issues/detail?id=304
 UNINITIALIZED READ
@@ -312,6 +326,36 @@ GDI32.dll!CreateICW
 # http://code.google.com/p/drmemory/issues/detail?id=362
 UNINITIALIZED READ
 USER32.dll!UnregisterClass*
+
+# http://code.google.com/p/drmemory/issues/detail?id=382
+LEAK
+...
+ntdll.dll!CsrNewThread
+
+# http://code.google.com/p/drmemory/issues/detail?id=395
+UNINITIALIZED READ
+...
+*!gfx::PlatformFontWin::CreateHFontRef
+*!gfx::PlatformFontWin::GetBaseFontRef
+*!gfx::PlatformFontWin::PlatformFontWin
+*!gfx::PlatformFont::CreateDefault
+*!gfx::Font::Font
+
+# http://code.google.com/p/drmemory/issues/detail?id=397
+UNINITIALIZED READ
+system call NtDeviceIoControlFile InputBuffer
+ADVAPI32.dll!ImpersonateAnonymousToken
+
+# http://code.google.com/p/drmemory/issues/detail?id=407
+UNINITIALIZED READ
+system call NtRequestWaitReplyPort
+RPCRT4.dll!I_RpcSendReceive
+RPCRT4.dll!NdrSendReceive
+
+UNINITIALIZED READ
+IMM32.dll!*
+ntdll.dll!LdrInitializeThunk
+ntdll.dll!LdrShutdownThread
 
 ############################
 # TODO(timurrrr): investigate these
@@ -470,6 +514,12 @@ LEAK
 *!operator new
 *!base::*Histogram::FactoryGet
 
+# Deliberate LazyInstance leaks
+LEAK
+...
+*!base::LeakyLazyInstanceTraits*::New
+*!base::LazyInstance*::Pointer
+
 ############################
 # Real issues in Chromium
 
@@ -519,11 +569,6 @@ LEAK
 LEAK
 *!operator new
 *!disk_cache::BackendImpl::NewEntry
-
-# http://crbug.com/75020
-LEAK
-*!operator new
-*!remoting::ChromotingHostTest::SetUp
 
 # http://crbug.com/81522
 LEAK

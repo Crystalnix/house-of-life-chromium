@@ -296,6 +296,7 @@ IPC_STRUCT_TRAITS_BEGIN(WebPreferences)
   IPC_STRUCT_TRAITS_MEMBER(remote_fonts_enabled)
   IPC_STRUCT_TRAITS_MEMBER(javascript_can_access_clipboard)
   IPC_STRUCT_TRAITS_MEMBER(xss_auditor_enabled)
+  IPC_STRUCT_TRAITS_MEMBER(dns_prefetching_enabled)
   IPC_STRUCT_TRAITS_MEMBER(local_storage_enabled)
   IPC_STRUCT_TRAITS_MEMBER(databases_enabled)
   IPC_STRUCT_TRAITS_MEMBER(application_cache_enabled)
@@ -631,37 +632,26 @@ IPC_STRUCT_BEGIN(ViewHostMsg_UpdateRect_Params)
   IPC_STRUCT_MEMBER(int, flags)
 IPC_STRUCT_END()
 
-IPC_STRUCT_BEGIN(ViewMsg_ClosePage_Params)
+IPC_STRUCT_BEGIN(ViewMsg_SwapOut_Params)
   // The identifier of the RenderProcessHost for the currently closing view.
   //
   // These first two parameters are technically redundant since they are
   // needed only when processing the ACK message, and the processor
   // theoretically knows both the process and route ID. However, this is
   // difficult to figure out with our current implementation, so this
-  // information is duplicate here.
+  // information is duplicated here.
   IPC_STRUCT_MEMBER(int, closing_process_id)
 
   // The route identifier for the currently closing RenderView.
   IPC_STRUCT_MEMBER(int, closing_route_id)
 
-  // True when this close is for the first (closing) tab of a cross-site
-  // transition where we switch processes. False indicates the close is for the
-  // entire tab.
-  //
-  // When true, the new_* variables below must be filled in. Otherwise they must
-  // both be -1.
-  IPC_STRUCT_MEMBER(bool, for_cross_site_transition)
-
   // The identifier of the RenderProcessHost for the new view attempting to
-  // replace the closing one above. This must be valid when
-  // for_cross_site_transition is set, and must be -1 otherwise.
+  // replace the closing one above.
   IPC_STRUCT_MEMBER(int, new_render_process_host_id)
 
   // The identifier of the *request* the new view made that is causing the
   // cross-site transition. This is *not* a route_id, but the request that we
-  // will resume once the ACK from the closing view has been received. This
-  // must be valid when for_cross_site_transition is set, and must be -1
-  // otherwise.
+  // will resume once the ACK from the closing view has been received.
   IPC_STRUCT_MEMBER(int, new_request_id)
 IPC_STRUCT_END()
 
@@ -795,6 +785,10 @@ IPC_MESSAGE_ROUTED0(ViewMsg_WasHidden)
 // message does not trigger a message in response.
 IPC_MESSAGE_ROUTED1(ViewMsg_WasRestored,
                     bool /* needs_repainting */)
+
+// Sent to inform the view that it was swapped out.  This allows the process to
+// exit if no other views are using it.
+IPC_MESSAGE_ROUTED0(ViewMsg_WasSwappedOut)
 
 // Sent to render the view into the supplied transport DIB, resize
 // the web widget to match the |page_size|, scale it by the
@@ -1062,13 +1056,19 @@ IPC_MESSAGE_ROUTED0(ViewMsg_CantFocus)
 // via ViewHostMsg_ShouldClose.
 IPC_MESSAGE_ROUTED0(ViewMsg_ShouldClose)
 
-// Instructs the renderer to close the current page, including running the
-// onunload event handler. See the struct in render_messages.h for more.
+// Instructs the renderer to swap out for a cross-site transition, including
+// running the unload event handler. See the struct above for more details.
 //
-// Expects a ClosePage_ACK message when finished, where the parameters are
+// Expects a SwapOut_ACK message when finished, where the parameters are
 // echoed back.
-IPC_MESSAGE_ROUTED1(ViewMsg_ClosePage,
-                    ViewMsg_ClosePage_Params)
+IPC_MESSAGE_ROUTED1(ViewMsg_SwapOut,
+                    ViewMsg_SwapOut_Params)
+
+// Instructs the renderer to close the current page, including running the
+// onunload event handler.
+//
+// Expects a ClosePage_ACK message when finished.
+IPC_MESSAGE_ROUTED0(ViewMsg_ClosePage)
 
 // Notifies the renderer about ui theme changes
 IPC_MESSAGE_ROUTED0(ViewMsg_ThemeChanged)
@@ -1280,10 +1280,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_ScriptEvalResponse,
                     int  /* id */,
                     ListValue  /* result */)
 
-// Sent by the renderer process to acknowledge receipt of a
-// ViewMsg_CSSInsertRequest message and css has been inserted into the frame.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_OnCSSInserted)
-
 // Result of string search in the page.
 // Response to ViewMsg_Find with the results of the requested find-in-page
 // search, the number of matches found and the selection rect (in screen
@@ -1304,10 +1300,14 @@ IPC_MESSAGE_ROUTED5(ViewHostMsg_Find_Reply,
 IPC_MESSAGE_ROUTED1(ViewHostMsg_ShouldClose_ACK,
                     bool /* proceed */)
 
+// Indicates that the current renderer has swapped out, after a SwapOut
+// message. The parameters are just echoed from the SwapOut request.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_SwapOut_ACK,
+                    ViewMsg_SwapOut_Params)
+
 // Indicates that the current page has been closed, after a ClosePage
-// message. The parameters are just echoed from the ClosePage request.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_ClosePage_ACK,
-                    ViewMsg_ClosePage_Params)
+// message.
+IPC_MESSAGE_ROUTED0(ViewHostMsg_ClosePage_ACK)
 
 // Notifies the browser that we have session history information.
 // page_id: unique ID that allows us to distinguish between history entries.
@@ -1386,9 +1386,10 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_DidRunInsecureContent,
                     GURL         /* target URL */)
 
 // Sent when the renderer starts a provisional load for a frame.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DidStartProvisionalLoadForFrame,
+IPC_MESSAGE_ROUTED4(ViewHostMsg_DidStartProvisionalLoadForFrame,
                     int64 /* frame_id */,
                     bool /* true if it is the main frame */,
+                    bool /* true if the frame has an opener set */,
                     GURL /* url */)
 
 // Sent when the renderer fails a provisional load with an error.
@@ -1459,11 +1460,11 @@ IPC_SYNC_MESSAGE_ROUTED2_1(ViewHostMsg_GetCookies,
 
 // Used to get raw cookie information for the given URL. This may block
 // waiting for a previous SetCookie message to be processed.
-IPC_SYNC_MESSAGE_ROUTED2_1(ViewHostMsg_GetRawCookies,
-                           GURL /* url */,
-                           GURL /* first_party_for_cookies */,
-                           std::vector<webkit_glue::WebCookie>
-                               /* raw_cookies */)
+IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_GetRawCookies,
+                            GURL /* url */,
+                            GURL /* first_party_for_cookies */,
+                            std::vector<webkit_glue::WebCookie>
+                                /* raw_cookies */)
 
 // Used to delete cookie for the given URL and name
 IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_DeleteCookie,
@@ -1472,10 +1473,10 @@ IPC_SYNC_MESSAGE_CONTROL2_0(ViewHostMsg_DeleteCookie,
 
 // Used to check if cookies are enabled for the given URL. This may block
 // waiting for a previous SetCookie message to be processed.
-IPC_SYNC_MESSAGE_ROUTED2_1(ViewHostMsg_CookiesEnabled,
-                           GURL /* url */,
-                           GURL /* first_party_for_cookies */,
-                           bool /* cookies_enabled */)
+IPC_SYNC_MESSAGE_CONTROL2_1(ViewHostMsg_CookiesEnabled,
+                            GURL /* url */,
+                            GURL /* first_party_for_cookies */,
+                            bool /* cookies_enabled */)
 
 // Used to get the list of plugins
 IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_GetPlugins,
@@ -1486,34 +1487,16 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ViewHostMsg_GetPlugins,
 // type. If there is no matching plugin, |found| is false.  If
 // |enabled| in the WebPluginInfo struct is false, the plug-in is
 // treated as if it was not installed at all.
-//
-// TODO(jam): until we get ContentSetting out of content completely, sending it
-// as int temporarily so we can move these messages to content.
-//
-// If |setting| is set to CONTENT_SETTING_BLOCK, the plug-in is
-// blocked by the content settings for |policy_url|. It still
-// appears in navigator.plugins in Javascript though, and can be
-// loaded via click-to-play.
-//
-// If |setting| is set to CONTENT_SETTING_ALLOW, the domain is
-// explicitly white-listed for the plug-in, or the user has chosen
-// not to block nonsandboxed plugins.
-//
-// If |setting| is set to CONTENT_SETTING_DEFAULT, the plug-in is
-// neither blocked nor white-listed, which means that it's allowed
-// by default and can still be blocked if it's non-sandboxed.
-//
 // |actual_mime_type| is the actual mime type supported by the
 // plugin found that match the URL given (one for each item in
 // |info|).
-IPC_SYNC_MESSAGE_CONTROL4_4(ViewHostMsg_GetPluginInfo,
+IPC_SYNC_MESSAGE_CONTROL4_3(ViewHostMsg_GetPluginInfo,
                             int /* routing_id */,
                             GURL /* url */,
                             GURL /* policy_url */,
                             std::string /* mime_type */,
                             bool /* found */,
                             webkit::npapi::WebPluginInfo /* plugin info */,
-                            int /* setting */,
                             std::string /* actual_mime_type */)
 
 // A renderer sends this to the browser process when it wants to
@@ -1743,8 +1726,9 @@ IPC_MESSAGE_CONTROL1(ViewHostMsg_RevealFolderInOS,
                      FilePath /* path */)
 
 // Sent when a provisional load on the main frame redirects.
-IPC_MESSAGE_ROUTED3(ViewHostMsg_DidRedirectProvisionalLoad,
+IPC_MESSAGE_ROUTED4(ViewHostMsg_DidRedirectProvisionalLoad,
                     int /* page_id */,
+                    bool /* true if the frame has an opener set */,
                     GURL /* last url */,
                     GURL /* url redirected to */)
 
